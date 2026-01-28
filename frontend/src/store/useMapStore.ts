@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { Store, BrandKey, TradeAreaAnalysis, POICategory } from '../types/store';
 
+// Target market states
+const TARGET_STATES = ['IA', 'NE', 'NV', 'ID'];
+
 interface MapState {
   // View state
   viewport: {
@@ -19,9 +22,14 @@ interface MapState {
   toggleBrand: (brand: BrandKey) => void;
   setAllBrandsVisible: (visible: boolean) => void;
 
-  // State filter
-  selectedState: string | null;
-  setSelectedState: (state: string | null) => void;
+  // State visibility (which states' stores are shown)
+  visibleStates: Set<string>;
+  toggleStateVisibility: (state: string) => void;
+  setAllStatesVisible: (visible: boolean) => void;
+
+  // State display order (for drag-and-drop reordering)
+  stateOrder: string[];
+  setStateOrder: (order: string[]) => void;
 
   // Hover state
   hoveredStoreId: number | null;
@@ -98,9 +106,24 @@ export const useMapStore = create<MapState>((set) => ({
   setAllBrandsVisible: (visible) =>
     set({ visibleBrands: visible ? new Set(ALL_BRANDS) : new Set() }),
 
-  // State filter
-  selectedState: null,
-  setSelectedState: (state) => set({ selectedState: state }),
+  // State visibility - only target markets visible by default
+  visibleStates: new Set(TARGET_STATES),
+  toggleStateVisibility: (stateCode) =>
+    set((state) => {
+      const newStates = new Set(state.visibleStates);
+      if (newStates.has(stateCode)) {
+        newStates.delete(stateCode);
+      } else {
+        newStates.add(stateCode);
+      }
+      return { visibleStates: newStates };
+    }),
+  setAllStatesVisible: (visible) =>
+    set({ visibleStates: visible ? new Set(TARGET_STATES) : new Set() }),
+
+  // State order - default order with priority markets first
+  stateOrder: ['IA', 'NE', 'NV', 'ID'],
+  setStateOrder: (order) => set({ stateOrder: order }),
 
   // Hover
   hoveredStoreId: null,

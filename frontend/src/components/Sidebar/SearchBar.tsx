@@ -6,7 +6,7 @@ export function SearchBar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { setViewport, setSelectedState } = useMapStore();
+  const { setViewport, setAllStatesVisible } = useMapStore();
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
@@ -43,8 +43,8 @@ export function SearchBar() {
       const lat = location.lat();
       const lng = location.lng();
 
-      // Clear state filter when searching to show all stores in area
-      setSelectedState(null);
+      // Enable all states when searching to show stores in the searched area
+      setAllStatesVisible(true);
 
       // Update viewport to center on the search result
       setViewport({
@@ -60,7 +60,7 @@ export function SearchBar() {
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, setViewport, setSelectedState]);
+  }, [searchQuery, setViewport, setAllStatesVisible]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {

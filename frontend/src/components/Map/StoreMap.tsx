@@ -45,7 +45,7 @@ export function StoreMap() {
     selectedStore,
     setSelectedStore,
     visibleBrands,
-    selectedState,
+    visibleStates,
     analysisResult,
     setAnalysisResult,
     isAnalyzing,
@@ -81,17 +81,17 @@ export function StoreMap() {
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
   });
 
-  // Fetch stores based on state filter
+  // Fetch all stores (filtering done client-side for performance)
   const { data: storeData, isLoading } = useStores({
-    state: selectedState || undefined,
     limit: 5000,
   });
 
-  // Convert Set to Array for reliable checking
+  // Convert Sets to Arrays for reliable checking
   const visibleBrandsArray = useMemo(() => Array.from(visibleBrands), [visibleBrands]);
+  const visibleStatesArray = useMemo(() => Array.from(visibleStates), [visibleStates]);
   const visiblePOICategoriesArray = useMemo(() => Array.from(visiblePOICategories), [visiblePOICategories]);
 
-  // Filter stores by visible brands and those with coordinates
+  // Filter stores by visible brands, visible states, and those with coordinates
   const visibleStores = useMemo(() => {
     if (!storeData?.stores) return [];
 
@@ -99,9 +99,11 @@ export function StoreMap() {
       (store) =>
         store.latitude != null &&
         store.longitude != null &&
-        visibleBrandsArray.includes(store.brand as BrandKey)
+        store.state != null &&
+        visibleBrandsArray.includes(store.brand as BrandKey) &&
+        visibleStatesArray.includes(store.state)
     );
-  }, [storeData?.stores, visibleBrandsArray]);
+  }, [storeData?.stores, visibleBrandsArray, visibleStatesArray]);
 
   // Filter POIs by visible categories (limit to 100 to prevent map overload)
   const visiblePOIs = useMemo(() => {
