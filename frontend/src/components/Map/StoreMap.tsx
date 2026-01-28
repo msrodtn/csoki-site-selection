@@ -254,8 +254,6 @@ export function StoreMap() {
 
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
-        center={INITIAL_CENTER}
-        zoom={INITIAL_ZOOM}
         onLoad={onLoad}
         onUnmount={onUnmount}
         onClick={handleMapClick}
