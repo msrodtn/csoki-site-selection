@@ -13,330 +13,215 @@ Enable data-driven expansion decisions by visualizing competitor landscapes, dem
 
 ---
 
+## Current Status (Updated Jan 28, 2026)
+
+### Phase 1: COMPLETE
+- [x] Project scaffolding (backend + frontend)
+- [x] Database setup with PostGIS on Railway
+- [x] Import all 6 competitor datasets (1,918 stores total)
+- [x] Geocode addresses using US Census Bureau Batch Geocoder (88% success - 1,688 stores)
+- [x] Google Maps visualization with competitor pins
+- [x] Brand toggle filters (6 competitors)
+- [x] Market/state selection
+- [x] Password protection (`!FiveCo`)
+- [x] Production deployment on Railway with custom domain
+
+### Live URLs
+- **Dashboard:** https://dashboard.fivecodevelopment.com
+- **Backend API:** https://backend-production-cf26.up.railway.app
+- **API Docs:** https://backend-production-cf26.up.railway.app/docs
+
+---
+
 ## Technical Architecture
 
-### Stack
-- **Backend:** Python 3.11+ with FastAPI
-- **Frontend:** React 18+ with TypeScript
-- **Database:** PostgreSQL 15+ with PostGIS extension (geospatial)
-- **Maps:** Mapbox GL JS or Deck.gl for interactive visualization
+### Stack (Implemented)
+- **Backend:** Python 3.11, FastAPI, SQLAlchemy 2.0, GeoAlchemy2
+- **Frontend:** React 18, TypeScript, Google Maps API, TailwindCSS, Zustand
+- **Database:** PostgreSQL 15 with PostGIS (Railway hosted)
+- **Hosting:** Railway (backend + frontend + PostgreSQL)
+- **Domain:** GoDaddy DNS → Railway
+
+### Stack (Planned for Future Phases)
 - **AI/ML:** OpenAI API for conversational features, scikit-learn for scoring models
 - **Cache:** Redis for API response caching
-- **Task Queue:** Celery for background data processing
-
-### Project Structure
-```
-csoki-site-selection/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── routes/
-│   │   │   │   ├── locations.py
-│   │   │   │   ├── analysis.py
-│   │   │   │   ├── chat.py
-│   │   │   │   └── reports.py
-│   │   │   └── deps.py
-│   │   ├── core/
-│   │   │   ├── config.py
-│   │   │   ├── security.py
-│   │   │   └── database.py
-│   │   ├── models/
-│   │   │   ├── store.py
-│   │   │   ├── competitor.py
-│   │   │   ├── market.py
-│   │   │   └── analysis.py
-│   │   ├── services/
-│   │   │   ├── scoring.py
-│   │   │   ├── demographics.py
-│   │   │   ├── traffic.py
-│   │   │   ├── geocoding.py
-│   │   │   └── ai_assistant.py
-│   │   └── main.py
-│   ├── data/
-│   │   ├── competitors/
-│   │   │   ├── csoki_stores.csv
-│   │   │   ├── russell_cellular_stores.csv
-│   │   │   ├── verizon_corporate.csv
-│   │   │   ├── victra_stores.csv
-│   │   │   ├── tmobile_stores.csv
-│   │   │   └── uscellular_stores.csv
-│   │   └── reference/
-│   │       ├── zip_demographics.csv
-│   │       └── market_definitions.json
-│   ├── tests/
-│   ├── alembic/
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Map/
-│   │   │   ├── Dashboard/
-│   │   │   ├── Analysis/
-│   │   │   ├── Chat/
-│   │   │   └── Reports/
-│   │   ├── hooks/
-│   │   ├── services/
-│   │   ├── store/
-│   │   ├── types/
-│   │   └── App.tsx
-│   ├── package.json
-│   └── Dockerfile
-├── docker-compose.yml
-├── CLAUDE.md
-└── README.md
-```
+- **Demographics:** US Census API
 
 ---
 
 ## Data Architecture
 
-### Competitor Data (Collected)
-| Source | Records | Status |
-|--------|---------|--------|
-| CSOKi (Cellular Sales) | 860 | ✅ Complete |
-| Russell Cellular | 686 | ✅ Complete |
-| Verizon Corporate | TBD | ❌ Pending |
-| Victra | TBD | ❌ Pending |
-| T-Mobile | TBD | ❌ Pending |
-| US Cellular | TBD | ❌ Pending |
+### Competitor Data (All Complete)
+| Source | Records | Geocoded | Status |
+|--------|---------|----------|--------|
+| CSOKi (Cellular Sales) | 860 | 749 | ✅ Complete |
+| Russell Cellular | 686 | 593 | ✅ Complete |
+| T-Mobile | 210 | 198 | ✅ Complete |
+| US Cellular | 85 | 79 | ✅ Complete |
+| Verizon Corporate | 40 | 38 | ✅ Complete |
+| Victra | 37 | 31 | ✅ Complete |
+| **Total** | **1,918** | **1,688** | **88% geocoded** |
 
-### Store Data Schema
+### Store Data Schema (Implemented)
 ```sql
-CREATE TABLE competitors (
+CREATE TABLE stores (
     id SERIAL PRIMARY KEY,
     brand VARCHAR(50) NOT NULL,
     street VARCHAR(255),
     city VARCHAR(100),
     state VARCHAR(2),
     postal_code VARCHAR(10),
+    latitude FLOAT,
+    longitude FLOAT,
     location GEOGRAPHY(POINT, 4326),
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_competitors_location ON competitors USING GIST(location);
-CREATE INDEX idx_competitors_brand ON competitors(brand);
-CREATE INDEX idx_competitors_state ON competitors(state);
+CREATE INDEX idx_stores_brand_state ON stores(brand, state);
+-- GeoAlchemy2 auto-creates spatial index for location column
 ```
 
-### External Data Sources to Integrate
-1. **Demographics:** US Census API (population, income, age, education)
-2. **Traffic Data:** SafeGraph or similar foot traffic provider
-3. **Points of Interest:** OpenStreetMap / Overpass API
-4. **Economic Indicators:** BLS, BEA APIs
-5. **Retail Trends:** Consider Placer.ai or similar
+### CSV Data Files (Pre-geocoded)
+Located in `/backend/data/competitors/`:
+- `csoki_all_stores.csv` - 860 stores
+- `russell_cellular_all_stores.csv` - 686 stores
+- `tmobile_stores.csv` - 210 stores
+- `uscellular_stores.csv` - 85 stores
+- `verizon_corporate_stores.csv` - 40 stores
+- `victra_stores.csv` - 37 stores
 
 ---
 
-## Core Features
+## Implemented Features
 
 ### 1. Interactive Map Dashboard
-- Multi-layer competitor visualization (toggle by brand)
-- Heat maps showing competition density
-- Draw custom analysis areas (polygon/radius)
-- Drive-time isochrones (5/10/15 minute)
-- Demographic overlay layers
+- [x] Google Maps with 1,688 geocoded store locations
+- [x] Multi-layer competitor visualization (toggle by brand)
+- [x] Color-coded markers by brand
+- [x] Store info popups on click (address, brand)
+- [x] Market/state filtering (IA, NE, NV, ID)
+- [ ] Heat maps showing competition density (Phase 3)
+- [ ] Draw custom analysis areas (Phase 3)
+- [ ] Drive-time isochrones (Phase 3)
 
-### 2. AI Location Scoring
-Weighted algorithm considering:
-- **Competition Factor (30%):** Distance to nearest competitors, competitor density
-- **Demographics (25%):** Population density, median income, age distribution
-- **Traffic (20%):** Foot traffic, vehicle counts, retail activity
-- **Accessibility (15%):** Major road proximity, visibility, parking
-- **Market Gaps (10%):** Underserved areas relative to population
+### 2. Password Protection
+- Simple password gate: `!FiveCo`
+- Uses sessionStorage for session persistence
 
-### 3. Conversational AI Assistant
-Natural language queries like:
-- "Show me the best opportunities in Des Moines"
-- "Where are Russell Cellular stores without nearby CSOKi presence?"
-- "Compare demographics of Omaha vs Lincoln markets"
-- "What's the competition density within 5 miles of [address]?"
-
-### 4. Predictive Analytics
-- Estimate potential revenue based on comparable locations
-- Cannibalization risk assessment for new locations
-- Market saturation analysis
-
-### 5. Reporting & Export
-- Executive summary PDFs
-- Custom area reports
-- Data export (CSV, GeoJSON)
-- Saved analysis workflows
+### 3. API Endpoints (Implemented)
+```
+GET  /api/v1/locations/           # List all stores with filtering
+GET  /api/v1/locations/brands/    # Get available brand names
+GET  /api/v1/locations/stats/     # Store count by brand with states
+GET  /api/v1/locations/state/{state}/  # Stores in specific state
+POST /api/v1/locations/within-bounds/  # Stores in map viewport
+POST /api/v1/locations/within-radius/  # Stores within radius
+GET  /health                      # Health check
+```
 
 ---
 
-## Development Phases
+## Remaining Development Phases
 
-### Phase 1: Foundation (Weeks 1-2)
-- [ ] Project scaffolding (backend + frontend)
-- [ ] Database setup with PostGIS
-- [ ] Import existing competitor data (CSOKi, Russell Cellular)
-- [ ] Basic map visualization with competitor pins
-- [ ] Geocode all addresses to lat/lng
+### Phase 2: Data Enrichment
+- [ ] Census API integration for demographics (population, income, age)
+- [ ] Demographic overlay layers on map
+- [ ] Zip code / city search functionality
+- [ ] Population density visualization
 
-### Phase 2: Data Enrichment (Weeks 3-4)
-- [ ] Scrape remaining competitors (Verizon, Victra, T-Mobile, US Cellular)
-- [ ] Census API integration for demographics
-- [ ] Basic demographic overlay on map
-- [ ] Filter/search functionality
-
-### Phase 3: Analysis Tools (Weeks 5-6)
-- [ ] Location scoring algorithm
+### Phase 3: Analysis Tools (Priority)
+- [ ] Location scoring algorithm:
+  - Competition Factor (30%): Distance to competitors, density
+  - Demographics (25%): Population, income, age distribution
+  - Traffic (20%): Foot traffic, retail activity
+  - Accessibility (15%): Road proximity, visibility
+  - Market Gaps (10%): Underserved areas
 - [ ] Draw-to-analyze tool (custom polygons)
-- [ ] Drive-time radius analysis
+- [ ] Drive-time radius analysis (5/10/15 min isochrones)
 - [ ] Competition density heat maps
 
-### Phase 4: AI Integration (Weeks 7-8)
+### Phase 4: AI Integration
 - [ ] Conversational assistant (OpenAI integration)
-- [ ] Natural language to map query translation
+- [ ] Natural language queries: "Show best opportunities in Des Moines"
 - [ ] AI-generated location recommendations
 - [ ] Insight summarization
 
-### Phase 5: Polish & Reports (Weeks 9-10)
+### Phase 5: Reports & Recommendations
+- [ ] **Top 5-10 site prospect recommendations** (main goal)
 - [ ] Executive dashboard view
 - [ ] PDF report generation
 - [ ] Saved analyses / bookmarks
-- [ ] Performance optimization
-- [ ] User documentation
 
 ---
 
-## API Endpoints
-
-### Locations
-```
-GET    /api/v1/locations                    # List all competitor locations
-GET    /api/v1/locations/{id}               # Get single location
-GET    /api/v1/locations/brand/{brand}      # Filter by brand
-GET    /api/v1/locations/state/{state}      # Filter by state
-POST   /api/v1/locations/within-bounds      # Locations within map bounds
-POST   /api/v1/locations/within-radius      # Locations within radius of point
-```
-
-### Analysis
-```
-POST   /api/v1/analysis/score-location      # Score a potential location
-POST   /api/v1/analysis/competition-density # Get density for area
-POST   /api/v1/analysis/demographics        # Demographics for area
-POST   /api/v1/analysis/drive-time          # Generate isochrone
-GET    /api/v1/analysis/market-gaps         # Identify underserved areas
-```
-
-### AI Assistant
-```
-POST   /api/v1/chat/message                 # Send message to AI
-GET    /api/v1/chat/history                 # Get conversation history
-POST   /api/v1/chat/execute-action          # Execute AI-suggested action
-```
-
-### Reports
-```
-POST   /api/v1/reports/generate             # Generate PDF report
-GET    /api/v1/reports/{id}                 # Download report
-GET    /api/v1/reports/templates            # List report templates
-```
-
----
-
-## Environment Variables
-
-```env
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/csoki_sites
-REDIS_URL=redis://localhost:6379
-
-# APIs
-OPENAI_API_KEY=sk-...
-MAPBOX_ACCESS_TOKEN=pk-...
-CENSUS_API_KEY=...
-
-# App
-SECRET_KEY=...
-DEBUG=true
-CORS_ORIGINS=http://localhost:3000
-```
-
----
-
-## Coding Standards
-
-### Python (Backend)
-- Use type hints throughout
-- Pydantic models for request/response validation
-- Async endpoints where beneficial
-- SQLAlchemy 2.0 style queries
-- pytest for testing
-
-### TypeScript (Frontend)
-- Strict mode enabled
-- Functional components with hooks
-- Zustand or Redux Toolkit for state
-- React Query for API calls
-- Tailwind CSS for styling
-
-### Git Workflow
-- `main` - production-ready code
-- `develop` - integration branch
-- `feature/*` - new features
-- `fix/*` - bug fixes
-- Conventional commits (feat:, fix:, docs:, etc.)
-
----
-
-## Key Decisions Log
+## Key Technical Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Map Library | Mapbox GL JS | Best balance of features, performance, and React integration |
-| AI Provider | OpenAI | GPT-4 for conversational quality, function calling for actions |
-| Geospatial DB | PostGIS | Industry standard, powerful spatial queries |
-| Auth (future) | Auth0 or Clerk | When multi-user needed, easy integration |
+| Map Library | Google Maps API | User preference, familiar interface |
+| Geocoding | US Census Batch Geocoder | Free, no API key required, good accuracy |
+| Hosting | Railway | Easy deployment, PostgreSQL + PostGIS support |
+| State Management | Zustand | Simple, lightweight, React-friendly |
+| API Client | Axios + React Query | Caching, loading states, error handling |
+| Password Auth | Simple sessionStorage | MVP approach, no user management needed yet |
 
 ---
 
-## Commands Reference
+## Deployment
 
+### Railway Services
+- **backend**: FastAPI app with PostGIS connection
+- **frontend**: React app served via nginx
+- **PostgreSQL**: Railway-managed with PostGIS extension
+
+### Environment Variables (Railway)
+**Backend:**
+- `DATABASE_URL` - Auto-provided by Railway PostgreSQL
+- `CORS_ORIGINS` - Includes production frontend domains
+
+**Frontend:**
+- `VITE_API_URL` - Backend URL
+- `VITE_GOOGLE_MAPS_API_KEY` - Google Maps API key
+
+### Manual Deployment
 ```bash
-# Backend
-cd backend
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend
-cd frontend
-npm install
-npm run dev
-
-# Database
-docker-compose up -d postgres redis
-alembic upgrade head
-
-# Full stack
-docker-compose up --build
+# From project root
+cd backend && railway service backend && railway up
+cd ../frontend && railway service frontend && railway up
 ```
 
 ---
 
 ## Notes for Claude
 
-When working on this project:
+### Important Implementation Details
 
-1. **Geospatial queries** should use PostGIS functions (ST_Distance, ST_DWithin, ST_Contains)
-2. **Map interactions** should debounce API calls to avoid excessive requests
-3. **Scoring algorithm** weights are configurable - store in database for easy tuning
-4. **AI responses** should include actionable map commands (zoom to, highlight, filter)
-5. **Data freshness** - competitor data should be refreshable; design for periodic updates
-6. **Performance** - Consider caching demographic data by zip code
+1. **API URL trailing slashes**: All frontend API calls use trailing slashes (`/locations/`) because FastAPI routes are defined with trailing slashes
 
-### Current Data Files
-- `/data/competitors/csoki_stores.csv` - 860 CSOKi locations (street, city, state, zip)
-- `/data/competitors/russell_cellular_stores.csv` - 686 Russell Cellular locations
+2. **HTTPS Middleware**: Backend uses custom `HTTPSRedirectMiddleware` to handle X-Forwarded-Proto header from Railway proxy
 
-### Pending Data Collection
-- Verizon Corporate stores (scrape from verizon.com/stores)
-- Victra stores (scrape from victra.com/stores)
-- T-Mobile stores (scrape from t-mobile.com/store-locator)
-- US Cellular stores (scrape from uscellular.com/stores)
+3. **CORS Configuration**: Production domains added to `backend/app/core/config.py`:
+   - https://dashboard.fivecodevelopment.com
+   - https://frontend-production-12b6.up.railway.app
+
+4. **Database Auto-Seeding**: On startup, if database is empty, `main.py` automatically imports all CSV files from `/data/competitors/`
+
+5. **Geocoding**: Pre-geocoded CSV files include `latitude` and `longitude` columns. The batch geocoder script is at `/backend/scripts/batch_geocode.py`
+
+6. **Brand Filter**: Uses Array.includes() instead of Set.has() for reliable checking after serialization
+
+### Key Files to Know
+- `backend/app/main.py` - FastAPI app with HTTPS middleware
+- `backend/app/core/config.py` - CORS origins, settings
+- `backend/app/api/routes/locations.py` - All store API endpoints
+- `backend/app/services/data_import.py` - CSV import with geocoding
+- `frontend/src/components/Map/StoreMap.tsx` - Google Maps component
+- `frontend/src/components/Auth/PasswordGate.tsx` - Password protection
+- `frontend/src/services/api.ts` - API client with axios
+- `frontend/src/store/useMapStore.ts` - Zustand state for map
+
+### Data Freshness
+- Competitor CSV data can be refreshed by updating files in `/backend/data/competitors/`
+- Clear database and restart backend to re-import
+- Use `batch_geocode.py` script to geocode new addresses

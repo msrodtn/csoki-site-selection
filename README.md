@@ -2,15 +2,50 @@
 
 An AI-powered site selection dashboard for Cellular Sales to identify optimal locations for new retail stores.
 
+## Live Production
+
+- **Dashboard:** https://dashboard.fivecodevelopment.com
+- **API:** https://backend-production-cf26.up.railway.app
+- **Password:** `!FiveCo`
+
 ## Target Markets
 - **Primary:** Iowa & Nebraska
 - **Secondary:** Nevada & Idaho
 
-## Quick Start
+## Current Features (Phase 1 Complete)
+
+- Interactive Google Maps with 1,688 geocoded store locations
+- 6 competitor brand toggles (CSOKi, Russell Cellular, T-Mobile, US Cellular, Verizon, Victra)
+- Market/state selection (Iowa, Nebraska, Nevada, Idaho)
+- Store info popups on marker click
+- Password-protected access
+- Deployed on Railway with custom domain
+
+## Data Sources
+
+| Brand | Records | Geocoded | Status |
+|-------|---------|----------|--------|
+| CSOKi (Cellular Sales) | 860 | 749 | ✅ Complete |
+| Russell Cellular | 686 | 593 | ✅ Complete |
+| T-Mobile | 210 | 198 | ✅ Complete |
+| US Cellular | 85 | 79 | ✅ Complete |
+| Verizon Corporate | 40 | 38 | ✅ Complete |
+| Victra | 37 | 31 | ✅ Complete |
+| **Total** | **1,918** | **1,688** | **88% geocoded** |
+
+## Tech Stack
+
+- **Backend:** Python 3.11, FastAPI, SQLAlchemy 2.0, PostGIS
+- **Frontend:** React 18, TypeScript, Google Maps API, TailwindCSS, Zustand
+- **Database:** PostgreSQL 15 with PostGIS (Railway)
+- **Hosting:** Railway (backend + frontend + database)
+- **Domain:** GoDaddy DNS → Railway
+
+## Local Development
 
 ### Prerequisites
 - Docker & Docker Compose
-- Mapbox API token (get one at [mapbox.com](https://account.mapbox.com/))
+- Google Maps API key
 
 ### Setup
 
@@ -20,11 +55,10 @@ An AI-powered site selection dashboard for Cellular Sales to identify optimal lo
 
    # Backend environment
    cp backend/.env.example backend/.env
-   # Edit backend/.env and add your API keys
 
    # Frontend environment
    cp frontend/.env.example frontend/.env
-   # Edit frontend/.env and add your Mapbox token
+   # Add your Google Maps API key to VITE_GOOGLE_MAPS_API_KEY
    ```
 
 2. **Start all services:**
@@ -32,51 +66,40 @@ An AI-powered site selection dashboard for Cellular Sales to identify optimal lo
    docker-compose up -d
    ```
 
-3. **Import competitor data:**
-   ```bash
-   docker-compose exec backend python scripts/import_data.py
-   ```
-
-4. **Access the application:**
+3. **Access the application:**
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
    - API Docs: http://localhost:8000/docs
 
-## Development
+### Manual Development
 
-### Backend Only
+**Backend:**
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-### Frontend Only
+**Frontend:**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Data Sources
+## Deployment (Railway)
 
-| Brand | Records | Status |
-|-------|---------|--------|
-| CSOKi (Cellular Sales) | 860 | ✅ Complete |
-| Russell Cellular | 686 | ✅ Complete |
-| Verizon Corporate | 40 | ✅ Complete |
-| Victra | 37 | ✅ Complete |
-| T-Mobile | 210 | ✅ Complete |
-| US Cellular | 85 | ✅ Complete |
+Both services auto-deploy from GitHub pushes. To manually deploy:
 
-## Tech Stack
+```bash
+# Backend
+cd backend && railway service backend && railway up
 
-- **Backend:** Python 3.11, FastAPI, SQLAlchemy 2.0, PostGIS
-- **Frontend:** React 18, TypeScript, Mapbox GL JS, TailwindCSS
-- **Database:** PostgreSQL 15 with PostGIS
-- **Cache:** Redis (for future phases)
+# Frontend
+cd frontend && railway service frontend && railway up
+```
 
 ## Project Structure
 
@@ -85,34 +108,51 @@ csoki-site-selection/
 ├── backend/
 │   ├── app/
 │   │   ├── api/routes/      # API endpoints
-│   │   ├── core/            # Config, database
+│   │   ├── core/            # Config, database, CORS
 │   │   ├── models/          # SQLAlchemy models
-│   │   └── services/        # Business logic
-│   ├── data/competitors/    # Store location CSVs
-│   └── scripts/             # Data import scripts
+│   │   └── services/        # Data import, geocoding
+│   ├── data/competitors/    # Store location CSVs (pre-geocoded)
+│   ├── scripts/             # Batch geocoding script
+│   ├── Dockerfile.prod      # Production Dockerfile
+│   └── railway.toml         # Railway config
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # React components
-│   │   ├── hooks/           # Custom hooks
-│   │   ├── services/        # API client
-│   │   ├── store/           # Zustand state
+│   │   ├── components/      # React components (Map, Sidebar, Auth)
+│   │   ├── hooks/           # React Query hooks
+│   │   ├── services/        # API client (axios)
+│   │   ├── store/           # Zustand state management
 │   │   └── types/           # TypeScript types
-│   └── package.json
+│   ├── Dockerfile.prod      # Production Dockerfile (nginx)
+│   ├── nginx.conf           # Nginx config for SPA
+│   └── railway.toml         # Railway config
 └── docker-compose.yml
 ```
 
 ## API Endpoints
 
-- `GET /api/v1/locations` - List all stores with filtering
-- `GET /api/v1/locations/brands` - Get available brands
-- `GET /api/v1/locations/stats` - Store count by brand
-- `POST /api/v1/locations/within-bounds` - Stores in map bounds
-- `POST /api/v1/locations/within-radius` - Stores within radius
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/locations/` | GET | List stores with filtering (brand, state, city) |
+| `/api/v1/locations/brands/` | GET | Get available brand names |
+| `/api/v1/locations/stats/` | GET | Store count by brand with states |
+| `/api/v1/locations/state/{state}/` | GET | Stores in a specific state |
+| `/api/v1/locations/within-bounds/` | POST | Stores within map viewport |
+| `/api/v1/locations/within-radius/` | POST | Stores within radius of point |
+| `/health` | GET | Health check |
 
 ## Development Phases
 
-- [x] **Phase 1:** Project scaffolding, data import, basic map
-- [ ] **Phase 2:** Demographics integration, advanced filtering
-- [ ] **Phase 3:** Analysis tools, drive-time radius
-- [ ] **Phase 4:** AI assistant integration
-- [ ] **Phase 5:** Reports and export features
+- [x] **Phase 1:** Foundation - Project scaffolding, data import, geocoding, map visualization, deployment
+- [ ] **Phase 2:** Data Enrichment - Census demographics, population overlays, zip code search
+- [ ] **Phase 3:** Analysis Tools - Scoring algorithm, heat maps, drive-time isochrones
+- [ ] **Phase 4:** AI Integration - Natural language queries, AI recommendations
+- [ ] **Phase 5:** Reports - PDF generation, saved analyses, top 5-10 site recommendations
+
+## Key Files Modified (Jan 28, 2026)
+
+- `backend/app/main.py` - Added HTTPS redirect middleware for Railway
+- `backend/app/core/config.py` - Added production CORS origins
+- `frontend/src/services/api.ts` - API client with trailing slash URLs
+- `frontend/src/components/Map/StoreMap.tsx` - Google Maps integration
+- `frontend/src/components/Auth/PasswordGate.tsx` - Password protection
+- `backend/scripts/batch_geocode.py` - US Census Bureau batch geocoder
