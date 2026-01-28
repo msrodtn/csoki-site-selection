@@ -156,3 +156,4 @@ csoki-site-selection/
 - `frontend/src/components/Map/StoreMap.tsx` - Google Maps integration
 - `frontend/src/components/Auth/PasswordGate.tsx` - Password protection
 - `backend/scripts/batch_geocode.py` - US Census Bureau batch geocoder
+
