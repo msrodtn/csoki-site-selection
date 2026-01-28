@@ -64,6 +64,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     description="AI-powered site selection platform for Cellular Sales",
     lifespan=lifespan,
+    redirect_slashes=False,  # Disable trailing slash redirects to avoid HTTPS issues
 )
 
 # Configure CORS

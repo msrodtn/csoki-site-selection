@@ -19,7 +19,7 @@ export const storeApi = {
     limit?: number;
     offset?: number;
   }): Promise<StoreListResponse> => {
-    const { data } = await api.get('/locations/', { params });
+    const { data } = await api.get('/locations', { params });
     return data;
   },
 
@@ -28,7 +28,7 @@ export const storeApi = {
     state: string,
     brand?: string
   ): Promise<StoreListResponse> => {
-    const { data } = await api.get(`/locations/state/${state}/`, {
+    const { data } = await api.get(`/locations/state/${state}`, {
       params: brand ? { brand } : undefined,
     });
     return data;
@@ -42,7 +42,7 @@ export const storeApi = {
     west: number;
     brands?: string[];
   }): Promise<StoreListResponse> => {
-    const { data } = await api.post('/locations/within-bounds/', bounds);
+    const { data } = await api.post('/locations/within-bounds', bounds);
     return data;
   },
 
@@ -53,19 +53,19 @@ export const storeApi = {
     radius_miles: number;
     brands?: string[];
   }): Promise<StoreListResponse> => {
-    const { data } = await api.post('/locations/within-radius/', params);
+    const { data } = await api.post('/locations/within-radius', params);
     return data;
   },
 
   // Get all brand names
   getBrands: async (): Promise<string[]> => {
-    const { data } = await api.get('/locations/brands/');
+    const { data } = await api.get('/locations/brands');
     return data;
   },
 
   // Get statistics
   getStats: async (): Promise<StoreStats[]> => {
-    const { data } = await api.get('/locations/stats/');
+    const { data } = await api.get('/locations/stats');
     return data;
   },
 };

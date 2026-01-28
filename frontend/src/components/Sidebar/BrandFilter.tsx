@@ -8,7 +8,6 @@ export function BrandFilter() {
   const { data: stats, isLoading } = useStoreStats();
 
   const allVisible = visibleBrands.size === 6;
-  const noneVisible = visibleBrands.size === 0;
 
   if (isLoading) {
     return (
@@ -45,13 +44,12 @@ export function BrandFilter() {
             <button
               key={stat.brand}
               onClick={() => toggleBrand(brandKey)}
-              className={`
-                w-full flex items-center justify-between p-2 rounded-lg
-                transition-all duration-150 text-left
-                ${isVisible
+              className={
+                'w-full flex items-center justify-between p-2 rounded-lg transition-all duration-150 text-left ' +
+                (isVisible
                   ? 'bg-gray-50 hover:bg-gray-100'
-                  : 'bg-gray-100 opacity-50 hover:opacity-75'}
-              `}
+                  : 'bg-gray-100 opacity-50 hover:opacity-75')
+              }
             >
               <div className="flex items-center gap-2">
                 <div

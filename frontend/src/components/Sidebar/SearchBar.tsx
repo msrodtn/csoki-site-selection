@@ -26,15 +26,15 @@ export function SearchBar() {
 
       // Add "USA" to the query to focus on US locations
       const query = searchQuery.includes(',')
-        ? `${searchQuery}, USA`
-        : `${searchQuery}, USA`;
+        ? searchQuery + ', USA'
+        : searchQuery + ', USA';
 
       const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
         geocoder.geocode({ address: query }, (results, status) => {
           if (status === 'OK' && results && results.length > 0) {
             resolve(results);
           } else {
-            reject(new Error(`Location not found: ${status}`));
+            reject(new Error('Location not found: ' + status));
           }
         });
       });
@@ -42,11 +42,6 @@ export function SearchBar() {
       const location = result[0].geometry.location;
       const lat = location.lat();
       const lng = location.lng();
-
-      // Extract state from address components
-      const stateComponent = result[0].address_components.find(
-        (comp) => comp.types.includes('administrative_area_level_1')
-      );
 
       // Clear state filter when searching to show all stores in area
       setSelectedState(null);
@@ -89,9 +84,7 @@ export function SearchBar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Enter city or zip code..."
-          className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg
-                     focus:ring-2 focus:ring-red-500 focus:border-red-500
-                     text-sm placeholder-gray-400"
+          className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm placeholder-gray-400"
           disabled={isSearching}
         />
 
@@ -112,9 +105,7 @@ export function SearchBar() {
       <button
         onClick={handleSearch}
         disabled={!searchQuery.trim() || isSearching}
-        className="w-full mt-2 py-2 px-4 bg-red-600 text-white rounded-lg
-                   hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed
-                   text-sm font-medium transition-colors"
+        className="w-full mt-2 py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium transition-colors"
       >
         {isSearching ? 'Searching...' : 'Search'}
       </button>
