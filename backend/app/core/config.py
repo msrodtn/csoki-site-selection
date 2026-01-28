@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     MAPBOX_ACCESS_TOKEN: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     CENSUS_API_KEY: Optional[str] = None
+    GOOGLE_PLACES_API_KEY: Optional[str] = None
 
     # CORS
     CORS_ORIGINS: list[str] = [

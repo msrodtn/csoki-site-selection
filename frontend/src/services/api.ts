@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { StoreListResponse, StoreStats } from '../types/store';
+import type { StoreListResponse, StoreStats, TradeAreaAnalysis, TradeAreaRequest } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -66,6 +66,20 @@ export const storeApi = {
   // Get statistics
   getStats: async (): Promise<StoreStats[]> => {
     const { data } = await api.get('/locations/stats/');
+    return data;
+  },
+};
+
+export const analysisApi = {
+  // Analyze trade area around a location
+  analyzeTradeArea: async (request: TradeAreaRequest): Promise<TradeAreaAnalysis> => {
+    const { data } = await api.post('/analysis/trade-area/', request);
+    return data;
+  },
+
+  // Check if Places API key is configured
+  checkApiKey: async (): Promise<{ configured: boolean; message: string }> => {
+    const { data } = await api.get('/analysis/check-api-key/');
     return data;
   },
 };
