@@ -73,6 +73,9 @@ export function StoreMap() {
   // Track analysis center for re-analysis on radius change
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
 
+  // Lock map position during/after analysis
+  const mapPositionLockRef = useRef<{ center: google.maps.LatLngLiteral; zoom: number } | null>(null);
+
   // Load Google Maps
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
@@ -143,8 +146,10 @@ export function StoreMap() {
   }, []);
 
   // Update map center only when viewport is explicitly changed (search/state filter)
+  // Don't pan during active analysis
   useEffect(() => {
     if (!map) return;
+    if (isAnalyzing) return; // Don't move map during analysis
 
     const last = lastViewportRef.current;
     const hasChanged =
@@ -156,11 +161,32 @@ export function StoreMap() {
       map.panTo({ lat: viewport.latitude, lng: viewport.longitude });
       map.setZoom(viewport.zoom);
       lastViewportRef.current = { latitude: viewport.latitude, longitude: viewport.longitude, zoom: viewport.zoom };
+      // Clear analysis when navigating away
+      if (analysisResult) {
+        analysisCenterRef.current = null;
+        mapPositionLockRef.current = null;
+      }
     }
-  }, [map, viewport.latitude, viewport.longitude, viewport.zoom]);
+  }, [map, viewport.latitude, viewport.longitude, viewport.zoom, isAnalyzing, analysisResult]);
 
   // Analyze trade area around a location
   const runAnalysis = useCallback(async (lat: number, lng: number, radius: number) => {
+    // Lock current map position before analysis
+    if (map) {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      if (center && zoom !== undefined) {
+        mapPositionLockRef.current = {
+          center: { lat: center.lat(), lng: center.lng() },
+          zoom: zoom,
+        };
+      }
+    }
+
+    // Close the InfoWindow to prevent UI jitter
+    setSelectedStore(null);
+    setSelectedPOI(null);
+
     setIsAnalyzing(true);
     setAnalysisError(null);
     setShowAnalysisPanel(true);
@@ -173,13 +199,19 @@ export function StoreMap() {
       });
       setAnalysisResult(result);
       analysisCenterRef.current = { lat, lng };
+
+      // Restore map position after analysis
+      if (map && mapPositionLockRef.current) {
+        map.setCenter(mapPositionLockRef.current.center);
+        map.setZoom(mapPositionLockRef.current.zoom);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to analyze area';
       setAnalysisError(message);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
+  }, [map, setSelectedStore, setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
 
   // Handle analyze button click
   const handleAnalyzeArea = useCallback(() => {
