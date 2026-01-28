@@ -17,7 +17,7 @@ export function SearchBar() {
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { setViewport, setAllStatesVisible } = useMapStore();
+  const { navigateTo, setAllStatesVisible } = useMapStore();
 
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
@@ -128,12 +128,8 @@ export function SearchBar() {
           // Enable all states to show stores in searched area
           setAllStatesVisible(true);
 
-          // Zoom to location
-          setViewport({
-            latitude: lat,
-            longitude: lng,
-            zoom: 12,
-          });
+          // Navigate to location (calls map methods directly)
+          navigateTo(lat, lng, 12);
 
           setSearchQuery('');
           setSuggestions([]);
@@ -142,7 +138,7 @@ export function SearchBar() {
         }
       }
     );
-  }, [setViewport, setAllStatesVisible]);
+  }, [navigateTo, setAllStatesVisible]);
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {

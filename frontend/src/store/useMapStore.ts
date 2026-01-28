@@ -5,13 +5,12 @@ import type { Store, BrandKey, TradeAreaAnalysis, POICategory } from '../types/s
 const TARGET_STATES = ['IA', 'NE', 'NV', 'ID'];
 
 interface MapState {
-  // View state
-  viewport: {
-    latitude: number;
-    longitude: number;
-    zoom: number;
-  };
-  setViewport: (viewport: Partial<MapState['viewport']>) => void;
+  // Google Map instance (for direct navigation)
+  mapInstance: google.maps.Map | null;
+  setMapInstance: (map: google.maps.Map | null) => void;
+
+  // Navigate to a location (calls map methods directly)
+  navigateTo: (lat: number, lng: number, zoom: number) => void;
 
   // Selected store
   selectedStore: Store | null;
@@ -75,17 +74,19 @@ const ALL_POI_CATEGORIES: POICategory[] = [
   'retail',
 ];
 
-export const useMapStore = create<MapState>((set) => ({
-  // Initial viewport - centered on Iowa/Nebraska region
-  viewport: {
-    latitude: 41.5,
-    longitude: -96.0,
-    zoom: 6,
+export const useMapStore = create<MapState>((set, get) => ({
+  // Map instance - stored for direct navigation
+  mapInstance: null,
+  setMapInstance: (map) => set({ mapInstance: map }),
+
+  // Direct navigation - no state sync, just call map methods
+  navigateTo: (lat, lng, zoom) => {
+    const map = get().mapInstance;
+    if (map) {
+      map.panTo({ lat, lng });
+      map.setZoom(zoom);
+    }
   },
-  setViewport: (viewport) =>
-    set((state) => ({
-      viewport: { ...state.viewport, ...viewport },
-    })),
 
   // Selected store
   selectedStore: null,

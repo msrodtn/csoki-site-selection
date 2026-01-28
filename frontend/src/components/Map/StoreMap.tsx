@@ -15,6 +15,10 @@ import type { Store } from '../../types/store';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
+// Initial map position (Iowa/Nebraska region)
+const INITIAL_CENTER = { lat: 41.5, lng: -96.0 };
+const INITIAL_ZOOM = 6;
+
 const mapContainerStyle = {
   width: '100%',
   height: '100%',
@@ -28,8 +32,8 @@ const mapOptions: google.maps.MapOptions = {
   streetViewControl: false,
   rotateControl: false,
   fullscreenControl: true,
-  clickableIcons: false, // Prevent clicking Google's default POIs
-  gestureHandling: 'greedy', // Allow all gestures without requiring ctrl
+  clickableIcons: false,
+  gestureHandling: 'greedy',
   styles: [
     {
       featureType: 'poi',
@@ -44,7 +48,6 @@ const GOOGLE_MAPS_LIBRARIES: ('places')[] = ['places'];
 
 export function StoreMap() {
   const {
-    viewport,
     selectedStore,
     setSelectedStore,
     visibleBrands,
@@ -57,9 +60,9 @@ export function StoreMap() {
     visiblePOICategories,
     setShowAnalysisPanel,
     analysisRadius,
+    setMapInstance,
   } = useMapStore();
 
-  const [map, setMap] = useState<google.maps.Map | null>(null);
   const [selectedPOI, setSelectedPOI] = useState<{
     place_id: string;
     name: string;
@@ -70,14 +73,11 @@ export function StoreMap() {
     rating: number | null;
   } | null>(null);
 
-  // Track the last viewport update to avoid unnecessary panning
-  const lastViewportRef = useRef({ latitude: viewport.latitude, longitude: viewport.longitude, zoom: viewport.zoom });
+  // Local map reference for internal use
+  const mapRef = useRef<google.maps.Map | null>(null);
 
   // Track analysis center for re-analysis on radius change
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
-
-  // Lock map position during/after analysis
-  const mapPositionLockRef = useRef<{ center: google.maps.LatLngLiteral; zoom: number } | null>(null);
 
   // Load Google Maps with Places library for autocomplete
   const { isLoaded, loadError } = useJsApiLoader({
@@ -115,7 +115,6 @@ export function StoreMap() {
     const filtered = analysisResult.pois.filter((poi) =>
       visiblePOICategoriesArray.includes(poi.category)
     );
-    // Limit markers to prevent performance issues
     return filtered.slice(0, 100);
   }, [analysisResult?.pois, visiblePOICategoriesArray]);
 
@@ -130,7 +129,6 @@ export function StoreMap() {
   const handlePOIMarkerClick = useCallback(
     (poi: typeof selectedPOI) => {
       setSelectedPOI(poi);
-      // Don't clear selected store - keep the analysis context
     },
     []
   );
@@ -140,59 +138,24 @@ export function StoreMap() {
     setSelectedPOI(null);
   }, [setSelectedStore]);
 
+  // On map load - store instance in Zustand for navigation from other components
   const onLoad = useCallback((map: google.maps.Map) => {
-    setMap(map);
-    // Set initial position from viewport state
-    map.setCenter({ lat: viewport.latitude, lng: viewport.longitude });
-    map.setZoom(viewport.zoom);
-  }, [viewport.latitude, viewport.longitude, viewport.zoom]);
+    mapRef.current = map;
+    setMapInstance(map);
+    // Set initial position
+    map.setCenter(INITIAL_CENTER);
+    map.setZoom(INITIAL_ZOOM);
+  }, [setMapInstance]);
 
   const onUnmount = useCallback(() => {
-    setMap(null);
-  }, []);
-
-  // Update map center only when viewport is explicitly changed (search/state filter)
-  // Don't pan during active analysis
-  useEffect(() => {
-    if (!map) return;
-    if (isAnalyzing) return; // Don't move map during analysis
-
-    const last = lastViewportRef.current;
-    const hasChanged =
-      last.latitude !== viewport.latitude ||
-      last.longitude !== viewport.longitude ||
-      last.zoom !== viewport.zoom;
-
-    if (hasChanged) {
-      map.panTo({ lat: viewport.latitude, lng: viewport.longitude });
-      map.setZoom(viewport.zoom);
-      lastViewportRef.current = { latitude: viewport.latitude, longitude: viewport.longitude, zoom: viewport.zoom };
-      // Clear analysis when navigating away
-      if (analysisResult) {
-        analysisCenterRef.current = null;
-        mapPositionLockRef.current = null;
-      }
-    }
-  }, [map, viewport.latitude, viewport.longitude, viewport.zoom, isAnalyzing, analysisResult]);
+    mapRef.current = null;
+    setMapInstance(null);
+  }, [setMapInstance]);
 
   // Analyze trade area around a location
   const runAnalysis = useCallback(async (lat: number, lng: number, radius: number) => {
-    // Lock current map position before analysis
-    if (map) {
-      const center = map.getCenter();
-      const zoom = map.getZoom();
-      if (center && zoom !== undefined) {
-        mapPositionLockRef.current = {
-          center: { lat: center.lat(), lng: center.lng() },
-          zoom: zoom,
-        };
-      }
-    }
-
-    // Close the InfoWindow to prevent UI jitter
     setSelectedStore(null);
     setSelectedPOI(null);
-
     setIsAnalyzing(true);
     setAnalysisError(null);
     setShowAnalysisPanel(true);
@@ -205,19 +168,13 @@ export function StoreMap() {
       });
       setAnalysisResult(result);
       analysisCenterRef.current = { lat, lng };
-
-      // Restore map position after analysis
-      if (map && mapPositionLockRef.current) {
-        map.setCenter(mapPositionLockRef.current.center);
-        map.setZoom(mapPositionLockRef.current.zoom);
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to analyze area';
       setAnalysisError(message);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [map, setSelectedStore, setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
+  }, [setSelectedStore, setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
 
   // Handle analyze button click
   const handleAnalyzeArea = useCallback(() => {
@@ -230,7 +187,7 @@ export function StoreMap() {
     if (analysisCenterRef.current && analysisResult) {
       runAnalysis(analysisCenterRef.current.lat, analysisCenterRef.current.lng, analysisRadius);
     }
-  }, [analysisRadius]); // Only trigger on radius change, not on runAnalysis change
+  }, [analysisRadius]); // Only trigger on radius change
 
   // Create SVG marker icon for each brand (larger than POIs to stand out)
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Symbol => {
@@ -297,8 +254,8 @@ export function StoreMap() {
 
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
-        center={{ lat: 41.5, lng: -96.0 }}
-        zoom={6}
+        center={INITIAL_CENTER}
+        zoom={INITIAL_ZOOM}
         onLoad={onLoad}
         onUnmount={onUnmount}
         onClick={handleMapClick}
@@ -340,7 +297,6 @@ export function StoreMap() {
               })
             }
             zIndex={selectedPOI?.place_id === poi.place_id ? 1000 : 100}
-            animation={undefined}
           />
         ))}
 
@@ -352,7 +308,6 @@ export function StoreMap() {
             icon={createMarkerIcon(store.brand, selectedStore?.id === store.id)}
             onClick={() => handleMarkerClick(store)}
             zIndex={selectedStore?.id === store.id ? 2000 : 500}
-            animation={undefined}
           />
         ))}
 

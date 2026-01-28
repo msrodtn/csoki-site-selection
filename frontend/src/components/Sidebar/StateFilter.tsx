@@ -29,7 +29,7 @@ export function StateFilter() {
     setAllStatesVisible,
     stateOrder,
     setStateOrder,
-    setViewport,
+    navigateTo,
   } = useMapStore();
 
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
@@ -75,19 +75,15 @@ export function StateFilter() {
   const allVisible = visibleStatesArray.length === stateOrder.length;
   const noneVisible = visibleStatesArray.length === 0;
 
-  // Navigate to state (zoom)
+  // Navigate to state (zoom) - calls map methods directly
   const handleNavigateToState = useCallback(
     (stateCode: string) => {
       const state = STATE_DATA[stateCode];
       if (state) {
-        setViewport({
-          latitude: state.lat,
-          longitude: state.lng,
-          zoom: 7,
-        });
+        navigateTo(state.lat, state.lng, 7);
       }
     },
-    [setViewport]
+    [navigateTo]
   );
 
   // Toggle breakdown expansion
