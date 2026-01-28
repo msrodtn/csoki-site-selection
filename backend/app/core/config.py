@@ -21,7 +21,12 @@ class Settings(BaseSettings):
     CENSUS_API_KEY: Optional[str] = None
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://dashboard.fivecodevelopment.com",
+        "https://frontend-production-12b6.up.railway.app",
+    ]
 
     # Geocoding
     GEOCODING_USER_AGENT: str = "csoki-site-selection/1.0"
