@@ -39,6 +39,9 @@ const mapOptions: google.maps.MapOptions = {
   ],
 };
 
+// Libraries to load with Google Maps (must be constant to avoid re-renders)
+const GOOGLE_MAPS_LIBRARIES: ('places')[] = ['places'];
+
 export function StoreMap() {
   const {
     viewport,
@@ -76,9 +79,10 @@ export function StoreMap() {
   // Lock map position during/after analysis
   const mapPositionLockRef = useRef<{ center: google.maps.LatLngLiteral; zoom: number } | null>(null);
 
-  // Load Google Maps
+  // Load Google Maps with Places library for autocomplete
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   // Fetch all stores (filtering done client-side for performance)
