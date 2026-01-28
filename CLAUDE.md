@@ -26,6 +26,17 @@ Enable data-driven expansion decisions by visualizing competitor landscapes, dem
 - [x] Password protection (`!FiveCo`)
 - [x] Production deployment on Railway with custom domain
 
+### Phase 2: COMPLETE
+- [x] Trade Area Analysis with Google Places API
+- [x] POI categorization (Anchors, Quick Service, Restaurants, Retail)
+- [x] Adjustable analysis radius (0.25, 0.5, 1, 2, 3 miles)
+- [x] Auto-refresh analysis on radius change
+- [x] PDF export of analysis reports
+- [x] City autocomplete search (Google Places Autocomplete)
+- [x] Target market state toggles with drag-to-reorder
+- [x] Store breakdown by brand per state (expandable)
+- [x] Map stability fixes (direct navigation pattern)
+
 ### Live URLs
 - **Dashboard:** https://dashboard.fivecodevelopment.com
 - **Backend API:** https://backend-production-cf26.up.railway.app
@@ -41,6 +52,7 @@ Enable data-driven expansion decisions by visualizing competitor landscapes, dem
 - **Database:** PostgreSQL 15 with PostGIS (Railway hosted)
 - **Hosting:** Railway (backend + frontend + PostgreSQL)
 - **Domain:** GoDaddy DNS → Railway
+- **External APIs:** Google Maps, Google Places API
 
 ### Stack (Planned for Future Phases)
 - **AI/ML:** OpenAI API for conversational features, scikit-learn for scoring models
@@ -98,37 +110,58 @@ Located in `/backend/data/competitors/`:
 ### 1. Interactive Map Dashboard
 - [x] Google Maps with 1,688 geocoded store locations
 - [x] Multi-layer competitor visualization (toggle by brand)
-- [x] Color-coded markers by brand
-- [x] Store info popups on click (address, brand)
-- [x] Market/state filtering (IA, NE, NV, ID)
+- [x] Color-coded markers by brand (larger than POI markers)
+- [x] Store info popups on click (address, brand, analyze button)
+- [x] Target market state filtering with toggle visibility
+- [x] Drag-to-reorder state priority in sidebar
+- [x] Store breakdown by brand per state (expandable chevron)
 - [ ] Heat maps showing competition density (Phase 3)
 - [ ] Draw custom analysis areas (Phase 3)
 - [ ] Drive-time isochrones (Phase 3)
 
-### 2. Password Protection
+### 2. Trade Area Analysis (NEW)
+- [x] Click any store → "Analyze Trade Area" button
+- [x] Google Places API fetches nearby POIs
+- [x] POI categories: Anchors, Quick Service, Restaurants, Retail
+- [x] Visual radius circle on map
+- [x] POI markers with category colors
+- [x] Adjustable radius (0.25, 0.5, 1, 2, 3 miles)
+- [x] Auto-refresh when radius changes
+- [x] Category visibility toggles
+- [x] PDF export with detailed report
+
+### 3. City Search with Autocomplete (NEW)
+- [x] Google Places Autocomplete as you type
+- [x] Restricted to US cities
+- [x] Dropdown with up to 5 suggestions
+- [x] Click suggestion → map navigates to location
+- [x] Debounced API calls (300ms)
+
+### 4. Password Protection
 - Simple password gate: `!FiveCo`
 - Uses sessionStorage for session persistence
 
-### 3. API Endpoints (Implemented)
+### 5. API Endpoints (Implemented)
 ```
-GET  /api/v1/locations/           # List all stores with filtering
-GET  /api/v1/locations/brands/    # Get available brand names
-GET  /api/v1/locations/stats/     # Store count by brand with states
+# Store Locations
+GET  /api/v1/locations/              # List all stores with filtering
+GET  /api/v1/locations/brands/       # Get available brand names
+GET  /api/v1/locations/stats/        # Store count by brand with states
 GET  /api/v1/locations/state/{state}/  # Stores in specific state
 POST /api/v1/locations/within-bounds/  # Stores in map viewport
 POST /api/v1/locations/within-radius/  # Stores within radius
-GET  /health                      # Health check
+
+# Trade Area Analysis (NEW)
+POST /api/v1/analysis/trade-area/    # Analyze POIs around location
+GET  /api/v1/analysis/check-api-key/ # Verify Google Places API key
+
+# Health
+GET  /health                         # Health check
 ```
 
 ---
 
 ## Remaining Development Phases
-
-### Phase 2: Data Enrichment
-- [ ] Census API integration for demographics (population, income, age)
-- [ ] Demographic overlay layers on map
-- [ ] Zip code / city search functionality
-- [ ] Population density visualization
 
 ### Phase 3: Analysis Tools (Priority)
 - [ ] Location scoring algorithm:
@@ -140,6 +173,7 @@ GET  /health                      # Health check
 - [ ] Draw-to-analyze tool (custom polygons)
 - [ ] Drive-time radius analysis (5/10/15 min isochrones)
 - [ ] Competition density heat maps
+- [ ] Census API integration for demographics
 
 ### Phase 4: AI Integration
 - [ ] Conversational assistant (OpenAI integration)
@@ -150,7 +184,7 @@ GET  /health                      # Health check
 ### Phase 5: Reports & Recommendations
 - [ ] **Top 5-10 site prospect recommendations** (main goal)
 - [ ] Executive dashboard view
-- [ ] PDF report generation
+- [ ] Enhanced PDF report generation
 - [ ] Saved analyses / bookmarks
 
 ---
@@ -165,6 +199,10 @@ GET  /health                      # Health check
 | State Management | Zustand | Simple, lightweight, React-friendly |
 | API Client | Axios + React Query | Caching, loading states, error handling |
 | Password Auth | Simple sessionStorage | MVP approach, no user management needed yet |
+| Map Navigation | Direct (imperative) | Prevents map jumping on re-renders (see below) |
+| POI Data | Google Places API | Real-time, accurate, comprehensive |
+| Search | Google Places Autocomplete | Native integration, US city filtering |
+| PDF Export | jsPDF | Client-side generation, no server load |
 
 ---
 
@@ -179,10 +217,11 @@ GET  /health                      # Health check
 **Backend:**
 - `DATABASE_URL` - Auto-provided by Railway PostgreSQL
 - `CORS_ORIGINS` - Includes production frontend domains
+- `GOOGLE_PLACES_API_KEY` - For trade area analysis
 
 **Frontend:**
 - `VITE_API_URL` - Backend URL
-- `VITE_GOOGLE_MAPS_API_KEY` - Google Maps API key
+- `VITE_GOOGLE_MAPS_API_KEY` - Google Maps API key (also enables Places)
 
 ### Manual Deployment
 ```bash
@@ -211,17 +250,58 @@ cd ../frontend && railway service frontend && railway up
 
 6. **Brand Filter**: Uses Array.includes() instead of Set.has() for reliable checking after serialization
 
+7. **Map Navigation Pattern (IMPORTANT)**:
+   - The map uses **direct/imperative navigation** via `navigateTo()` in Zustand
+   - The `GoogleMap` component is **uncontrolled** (no `center` or `zoom` props)
+   - Initial position is set only in `onLoad` callback
+   - This prevents the map from jumping when clicking markers or during re-renders
+   - Previous attempts using reactive state (`setViewport` + useEffect) caused instability
+
+8. **Google Maps Libraries**: The `places` library is loaded alongside the map for autocomplete functionality. The libraries array must be defined as a constant outside the component to prevent re-render warnings.
+
 ### Key Files to Know
+
+**Backend:**
 - `backend/app/main.py` - FastAPI app with HTTPS middleware
-- `backend/app/core/config.py` - CORS origins, settings
-- `backend/app/api/routes/locations.py` - All store API endpoints
+- `backend/app/core/config.py` - CORS origins, API keys, settings
+- `backend/app/api/routes/locations.py` - Store API endpoints
+- `backend/app/api/routes/analysis.py` - Trade area analysis endpoint
+- `backend/app/services/places.py` - Google Places API integration
 - `backend/app/services/data_import.py` - CSV import with geocoding
-- `frontend/src/components/Map/StoreMap.tsx` - Google Maps component
+
+**Frontend:**
+- `frontend/src/components/Map/StoreMap.tsx` - Google Maps component (uncontrolled)
+- `frontend/src/components/Analysis/AnalysisPanel.tsx` - Trade area panel with PDF export
+- `frontend/src/components/Sidebar/SearchBar.tsx` - City autocomplete search
+- `frontend/src/components/Sidebar/StateFilter.tsx` - State toggles with drag reorder
 - `frontend/src/components/Auth/PasswordGate.tsx` - Password protection
-- `frontend/src/services/api.ts` - API client with axios
-- `frontend/src/store/useMapStore.ts` - Zustand state for map
+- `frontend/src/services/api.ts` - API client with axios (includes analysisApi)
+- `frontend/src/store/useMapStore.ts` - Zustand state (includes mapInstance, navigateTo)
+- `frontend/src/types/store.ts` - TypeScript types including POI categories
 
 ### Data Freshness
 - Competitor CSV data can be refreshed by updating files in `/backend/data/competitors/`
 - Clear database and restart backend to re-import
 - Use `batch_geocode.py` script to geocode new addresses
+
+### Brand Colors
+```typescript
+BRAND_COLORS = {
+  csoki: '#E31837',           // Red (CSOKi brand)
+  russell_cellular: '#00A651', // Green
+  verizon_corporate: '#CD040B', // Verizon Red
+  victra: '#000000',           // Black
+  tmobile: '#E20074',          // Magenta
+  uscellular: '#00529B',       // Blue
+}
+```
+
+### POI Category Colors
+```typescript
+POI_CATEGORY_COLORS = {
+  anchors: '#8B5CF6',      // Purple
+  quick_service: '#F59E0B', // Amber
+  restaurants: '#10B981',   // Emerald
+  retail: '#3B82F6',        // Blue
+}
+```
