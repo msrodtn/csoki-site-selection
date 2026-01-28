@@ -51,6 +51,7 @@ export function StoreMap() {
     setAnalysisError,
     visiblePOICategories,
     setShowAnalysisPanel,
+    analysisRadius,
   } = useMapStore();
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
@@ -148,7 +149,7 @@ export function StoreMap() {
       const result = await analysisApi.analyzeTradeArea({
         latitude: selectedStore.latitude,
         longitude: selectedStore.longitude,
-        radius_miles: 1.0,
+        radius_miles: analysisRadius,
       });
       setAnalysisResult(result);
     } catch (error) {
@@ -157,19 +158,19 @@ export function StoreMap() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedStore, setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
+  }, [selectedStore, analysisRadius, setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
 
-  // Create SVG marker icon for each brand
+  // Create SVG marker icon for each brand (larger than POIs to stand out)
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Symbol => {
     const color = BRAND_COLORS[brand as BrandKey] || '#666';
-    const scale = isSelected ? 10 : 6;
+    const scale = isSelected ? 14 : 10;
 
     return {
       path: google.maps.SymbolPath.CIRCLE,
       fillColor: color,
       fillOpacity: 1,
-      strokeColor: isSelected ? '#ffffff' : color,
-      strokeWeight: isSelected ? 2 : 1,
+      strokeColor: '#ffffff',
+      strokeWeight: isSelected ? 3 : 2,
       scale: scale,
     };
   };

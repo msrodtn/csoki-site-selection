@@ -34,6 +34,8 @@ interface MapState {
   setIsAnalyzing: (analyzing: boolean) => void;
   analysisError: string | null;
   setAnalysisError: (error: string | null) => void;
+  analysisRadius: number;
+  setAnalysisRadius: (radius: number) => void;
 
   // POI visibility by category
   visiblePOICategories: Set<POICategory>;
@@ -111,6 +113,8 @@ export const useMapStore = create<MapState>((set) => ({
   setIsAnalyzing: (analyzing) => set({ isAnalyzing: analyzing }),
   analysisError: null,
   setAnalysisError: (error) => set({ analysisError: error }),
+  analysisRadius: 1.0,
+  setAnalysisRadius: (radius) => set({ analysisRadius: radius }),
 
   // POI visibility - all visible by default
   visiblePOICategories: new Set(ALL_POI_CATEGORIES),

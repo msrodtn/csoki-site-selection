@@ -1,8 +1,16 @@
 import { useMemo } from 'react';
-import { X, Eye, EyeOff, FileDown, MapPin, Store, Utensils, ShoppingBag, Loader2 } from 'lucide-react';
+import { X, Eye, EyeOff, FileDown, MapPin, Store, Utensils, ShoppingBag, Loader2, ChevronDown } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import type { POICategory } from '../../types/store';
 import { POI_CATEGORY_COLORS, POI_CATEGORY_LABELS } from '../../types/store';
+
+const RADIUS_OPTIONS = [
+  { value: 0.25, label: '0.25 mi' },
+  { value: 0.5, label: '0.5 mi' },
+  { value: 1, label: '1 mi' },
+  { value: 2, label: '2 mi' },
+  { value: 3, label: '3 mi' },
+];
 
 const CATEGORY_ICONS: Record<POICategory, React.ReactNode> = {
   anchors: <Store className="w-4 h-4" />,
@@ -21,6 +29,8 @@ export function AnalysisPanel() {
     visiblePOICategories,
     togglePOICategory,
     clearAnalysis,
+    analysisRadius,
+    setAnalysisRadius,
   } = useMapStore();
 
   const visibleCategoriesArray = useMemo(
@@ -163,16 +173,34 @@ export function AnalysisPanel() {
           </div>
         )}
 
+        {/* Radius Selector - always visible */}
+        <div className="mb-4">
+          <label className="text-sm font-semibold text-gray-700 mb-2 block">
+            Analysis Radius
+          </label>
+          <div className="relative">
+            <select
+              value={analysisRadius}
+              onChange={(e) => setAnalysisRadius(Number(e.target.value))}
+              className="w-full appearance-none bg-gray-100 border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              {RADIUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+          </div>
+          {analysisResult && (
+            <p className="text-xs text-gray-500 mt-1">
+              Current analysis: {(analysisResult.radius_meters / 1609.34).toFixed(2)} mi
+            </p>
+          )}
+        </div>
+
         {analysisResult && !isAnalyzing && (
           <>
-            {/* Location Info */}
-            <div className="mb-4 text-sm text-gray-600">
-              <p>
-                <span className="font-medium">Radius:</span>{' '}
-                {(analysisResult.radius_meters / 1609.34).toFixed(1)} miles
-              </p>
-            </div>
-
             {/* POI Category Toggles */}
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">POI Categories</h3>
