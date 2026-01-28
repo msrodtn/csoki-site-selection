@@ -28,6 +28,8 @@ const mapOptions: google.maps.MapOptions = {
   streetViewControl: false,
   rotateControl: false,
   fullscreenControl: true,
+  clickableIcons: false, // Prevent clicking Google's default POIs
+  gestureHandling: 'greedy', // Allow all gestures without requiring ctrl
   styles: [
     {
       featureType: 'poi',
@@ -98,12 +100,14 @@ export function StoreMap() {
     );
   }, [storeData?.stores, visibleBrandsArray]);
 
-  // Filter POIs by visible categories
+  // Filter POIs by visible categories (limit to 100 to prevent map overload)
   const visiblePOIs = useMemo(() => {
     if (!analysisResult?.pois) return [];
-    return analysisResult.pois.filter((poi) =>
+    const filtered = analysisResult.pois.filter((poi) =>
       visiblePOICategoriesArray.includes(poi.category)
     );
+    // Limit markers to prevent performance issues
+    return filtered.slice(0, 100);
   }, [analysisResult?.pois, visiblePOICategoriesArray]);
 
   const handleMarkerClick = useCallback(
@@ -117,9 +121,9 @@ export function StoreMap() {
   const handlePOIMarkerClick = useCallback(
     (poi: typeof selectedPOI) => {
       setSelectedPOI(poi);
-      setSelectedStore(null);
+      // Don't clear selected store - keep the analysis context
     },
-    [setSelectedStore]
+    []
   );
 
   const handleMapClick = useCallback(() => {
@@ -129,7 +133,10 @@ export function StoreMap() {
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
-  }, []);
+    // Set initial position from viewport state
+    map.setCenter({ lat: viewport.latitude, lng: viewport.longitude });
+    map.setZoom(viewport.zoom);
+  }, [viewport.latitude, viewport.longitude, viewport.zoom]);
 
   const onUnmount = useCallback(() => {
     setMap(null);
@@ -252,8 +259,8 @@ export function StoreMap() {
 
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
-        center={{ lat: viewport.latitude, lng: viewport.longitude }}
-        zoom={viewport.zoom}
+        center={{ lat: 41.5, lng: -96.0 }}
+        zoom={6}
         onLoad={onLoad}
         onUnmount={onUnmount}
         onClick={handleMapClick}
@@ -295,6 +302,7 @@ export function StoreMap() {
               })
             }
             zIndex={selectedPOI?.place_id === poi.place_id ? 1000 : 100}
+            animation={undefined}
           />
         ))}
 
@@ -306,6 +314,7 @@ export function StoreMap() {
             icon={createMarkerIcon(store.brand, selectedStore?.id === store.id)}
             onClick={() => handleMarkerClick(store)}
             zIndex={selectedStore?.id === store.id ? 2000 : 500}
+            animation={undefined}
           />
         ))}
 
@@ -314,6 +323,7 @@ export function StoreMap() {
           <InfoWindowF
             position={{ lat: selectedPOI.latitude, lng: selectedPOI.longitude }}
             onCloseClick={() => setSelectedPOI(null)}
+            options={{ disableAutoPan: true }}
           >
             <div className="min-w-[180px] p-1">
               <div
@@ -340,6 +350,7 @@ export function StoreMap() {
           <InfoWindowF
             position={{ lat: selectedStore.latitude, lng: selectedStore.longitude }}
             onCloseClick={() => setSelectedStore(null)}
+            options={{ disableAutoPan: true }}
           >
             <div className="min-w-[200px] p-1">
               <div
