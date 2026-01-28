@@ -12,11 +12,6 @@ const mapContainerStyle = {
   height: '100%',
 };
 
-const defaultCenter = {
-  lat: 41.5,
-  lng: -99.0,
-};
-
 const mapOptions: google.maps.MapOptions = {
   disableDefaultUI: false,
   zoomControl: true,
@@ -37,7 +32,6 @@ const mapOptions: google.maps.MapOptions = {
 export function StoreMap() {
   const {
     viewport,
-    setViewport,
     selectedStore,
     setSelectedStore,
     visibleBrands,
@@ -57,6 +51,9 @@ export function StoreMap() {
     limit: 5000,
   });
 
+  // Convert Set to Array for reliable checking
+  const visibleBrandsArray = useMemo(() => Array.from(visibleBrands), [visibleBrands]);
+
   // Filter stores by visible brands and those with coordinates
   const visibleStores = useMemo(() => {
     if (!storeData?.stores) return [];
@@ -65,9 +62,9 @@ export function StoreMap() {
       (store) =>
         store.latitude != null &&
         store.longitude != null &&
-        visibleBrands.has(store.brand as BrandKey)
+        visibleBrandsArray.includes(store.brand as BrandKey)
     );
-  }, [storeData?.stores, visibleBrands]);
+  }, [storeData?.stores, visibleBrandsArray]);
 
   const handleMarkerClick = useCallback(
     (store: Store) => {
