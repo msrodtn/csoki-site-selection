@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF } from '@react-google-maps/api';
 import { useMapStore } from '../../store/useMapStore';
 import { useStores } from '../../hooks/useStores';
@@ -65,6 +65,12 @@ export function StoreMap() {
     rating: number | null;
   } | null>(null);
 
+  // Track the last viewport update to avoid unnecessary panning
+  const lastViewportRef = useRef({ latitude: viewport.latitude, longitude: viewport.longitude, zoom: viewport.zoom });
+
+  // Track analysis center for re-analysis on radius change
+  const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+
   // Load Google Maps
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
@@ -129,36 +135,57 @@ export function StoreMap() {
     setMap(null);
   }, []);
 
-  // Update map center when viewport changes
-  useMemo(() => {
-    if (map && viewport) {
+  // Update map center only when viewport is explicitly changed (search/state filter)
+  useEffect(() => {
+    if (!map) return;
+
+    const last = lastViewportRef.current;
+    const hasChanged =
+      last.latitude !== viewport.latitude ||
+      last.longitude !== viewport.longitude ||
+      last.zoom !== viewport.zoom;
+
+    if (hasChanged) {
       map.panTo({ lat: viewport.latitude, lng: viewport.longitude });
       map.setZoom(viewport.zoom);
+      lastViewportRef.current = { latitude: viewport.latitude, longitude: viewport.longitude, zoom: viewport.zoom };
     }
-  }, [map, viewport]);
+  }, [map, viewport.latitude, viewport.longitude, viewport.zoom]);
 
-  // Analyze trade area around the selected store
-  const handleAnalyzeArea = useCallback(async () => {
-    if (!selectedStore?.latitude || !selectedStore?.longitude) return;
-
+  // Analyze trade area around a location
+  const runAnalysis = useCallback(async (lat: number, lng: number, radius: number) => {
     setIsAnalyzing(true);
     setAnalysisError(null);
     setShowAnalysisPanel(true);
 
     try {
       const result = await analysisApi.analyzeTradeArea({
-        latitude: selectedStore.latitude,
-        longitude: selectedStore.longitude,
-        radius_miles: analysisRadius,
+        latitude: lat,
+        longitude: lng,
+        radius_miles: radius,
       });
       setAnalysisResult(result);
+      analysisCenterRef.current = { lat, lng };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to analyze area';
       setAnalysisError(message);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedStore, analysisRadius, setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
+  }, [setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel]);
+
+  // Handle analyze button click
+  const handleAnalyzeArea = useCallback(() => {
+    if (!selectedStore?.latitude || !selectedStore?.longitude) return;
+    runAnalysis(selectedStore.latitude, selectedStore.longitude, analysisRadius);
+  }, [selectedStore, analysisRadius, runAnalysis]);
+
+  // Auto-refresh analysis when radius changes
+  useEffect(() => {
+    if (analysisCenterRef.current && analysisResult) {
+      runAnalysis(analysisCenterRef.current.lat, analysisCenterRef.current.lng, analysisRadius);
+    }
+  }, [analysisRadius]); // Only trigger on radius change, not on runAnalysis change
 
   // Create SVG marker icon for each brand (larger than POIs to stand out)
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Symbol => {
