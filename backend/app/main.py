@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
@@ -8,6 +9,17 @@ from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal
 from app.api import api_router
 from app.models.store import Store
+
+
+class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
+    """Middleware to ensure redirects use HTTPS when behind a proxy."""
+    async def dispatch(self, request: Request, call_next):
+        # Check if we're behind a proxy using HTTPS
+        forwarded_proto = request.headers.get("x-forwarded-proto", "http")
+        if forwarded_proto == "https":
+            # Update the scope to use https
+            request.scope["scheme"] = "https"
+        return await call_next(request)
 
 # Configure logging
 logging.basicConfig(
@@ -64,8 +76,10 @@ app = FastAPI(
     version=settings.APP_VERSION,
     description="AI-powered site selection platform for Cellular Sales",
     lifespan=lifespan,
-    redirect_slashes=False,  # Disable trailing slash redirects to avoid HTTPS issues
 )
+
+# Add HTTPS redirect middleware (must be added before CORS)
+app.add_middleware(HTTPSRedirectMiddleware)
 
 # Configure CORS
 app.add_middleware(
