@@ -3,8 +3,25 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 from typing import Optional
 from pydantic import BaseModel, Field
+from math import radians, cos, sin, asin, sqrt
 from app.core.database import get_db
 from app.models.store import Store, Brand
+
+
+def haversine(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    """Calculate the great circle distance in miles between two points on earth."""
+    # Convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+
+    # Radius of earth in miles
+    r = 3956
+    return c * r
 
 router = APIRouter(prefix="/locations", tags=["locations"])
 
@@ -196,13 +213,7 @@ def get_nearest_competitors(
     request: NearestCompetitorRequest,
     db: Session = Depends(get_db),
 ):
-    """Get the nearest store of each brand from a given point."""
-    # Create point for distance calculation
-    point = func.ST_SetSRID(
-        func.ST_MakePoint(request.longitude, request.latitude),
-        4326
-    )
-
+    """Get the nearest store of each brand from a given point (using Haversine formula)."""
     # Get all unique brands
     brands = db.query(Store.brand).distinct().all()
     brands = [b[0] for b in brands]
@@ -210,36 +221,42 @@ def get_nearest_competitors(
     competitors = []
 
     for brand in brands:
-        # Find nearest store of this brand
-        store = db.query(Store).filter(
+        # Get all stores of this brand with coordinates
+        stores = db.query(Store).filter(
             Store.brand == brand,
-            Store.location.isnot(None)
-        ).order_by(
-            func.ST_Distance(Store.location, point)
-        ).first()
+            Store.latitude.isnot(None),
+            Store.longitude.isnot(None)
+        ).all()
 
-        if store:
-            # Calculate distance in miles
-            distance_meters = db.query(
-                func.ST_Distance(Store.location, point)
-            ).filter(Store.id == store.id).scalar()
+        if stores:
+            # Find nearest store using Haversine formula
+            nearest_store = None
+            min_distance = float('inf')
 
-            distance_miles = round(distance_meters / 1609.34, 2) if distance_meters else 0
-
-            competitors.append(NearestCompetitor(
-                brand=brand,
-                distance_miles=distance_miles,
-                store=StoreResponse(
-                    id=store.id,
-                    brand=store.brand,
-                    street=store.street,
-                    city=store.city,
-                    state=store.state,
-                    postal_code=store.postal_code,
-                    latitude=store.latitude,
-                    longitude=store.longitude,
+            for store in stores:
+                distance = haversine(
+                    request.longitude, request.latitude,
+                    store.longitude, store.latitude
                 )
-            ))
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_store = store
+
+            if nearest_store:
+                competitors.append(NearestCompetitor(
+                    brand=brand,
+                    distance_miles=round(min_distance, 2),
+                    store=StoreResponse(
+                        id=nearest_store.id,
+                        brand=nearest_store.brand,
+                        street=nearest_store.street,
+                        city=nearest_store.city,
+                        state=nearest_store.state,
+                        postal_code=nearest_store.postal_code,
+                        latitude=nearest_store.latitude,
+                        longitude=nearest_store.longitude,
+                    )
+                ))
 
     # Sort by distance
     competitors.sort(key=lambda x: x.distance_miles)
