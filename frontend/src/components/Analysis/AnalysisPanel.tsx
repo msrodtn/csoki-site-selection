@@ -23,6 +23,7 @@ import { useMapStore } from '../../store/useMapStore';
 import { analysisApi, storeApi } from '../../services/api';
 import type { POICategory, DemographicMetrics } from '../../types/store';
 import { POI_CATEGORY_COLORS, POI_CATEGORY_LABELS, BRAND_COLORS, BRAND_LABELS, BRAND_LOGOS, type BrandKey } from '../../types/store';
+import { ReportModal } from './ReportModal';
 
 const RADIUS_OPTIONS = [
   { value: 0.25, label: '0.25 mi' },
@@ -97,6 +98,9 @@ export function AnalysisPanel() {
   const [isPOIExpanded, setIsPOIExpanded] = useState(true);
   const [isDemographicsExpanded, setIsDemographicsExpanded] = useState(false);
   const [isCompetitorsExpanded, setIsCompetitorsExpanded] = useState(false);
+
+  // Report modal state
+  const [showReportModal, setShowReportModal] = useState(false);
 
   // Draggable panel state
   const [position, setPosition] = useState({ x: 340, y: 16 }); // Initial position (left-[340px] top-4)
@@ -229,140 +233,9 @@ export function AnalysisPanel() {
     clearAnalysis();
   };
 
-  const handleExportPDF = async () => {
+  const handleExportPDF = () => {
     if (!analysisResult) return;
-
-    // Dynamic import of jsPDF to avoid bundle bloat
-    const { default: jsPDF } = await import('jspdf');
-    const doc = new jsPDF();
-
-    const centerLat = analysisResult.center_latitude.toFixed(4);
-    const centerLng = analysisResult.center_longitude.toFixed(4);
-    const radiusMiles = (analysisResult.radius_meters / 1609.34).toFixed(1);
-
-    // Title
-    doc.setFontSize(20);
-    doc.setTextColor(227, 24, 55); // CSOKi red
-    doc.text('Trade Area Analysis Report', 20, 20);
-
-    // Subtitle with date
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 28);
-
-    // Location info
-    doc.setFontSize(12);
-    doc.setTextColor(0);
-    doc.text(`Location: ${centerLat}, ${centerLng}`, 20, 40);
-    doc.text(`Radius: ${radiusMiles} miles`, 20, 48);
-
-    // POI Summary section
-    doc.setFontSize(14);
-    doc.setTextColor(227, 24, 55);
-    doc.text('POI Summary', 20, 62);
-
-    doc.setFontSize(11);
-    doc.setTextColor(0);
-    let yPos = 72;
-    const categories: POICategory[] = ['anchors', 'quick_service', 'restaurants', 'retail'];
-
-    categories.forEach((category) => {
-      const count = analysisResult.summary[category] || 0;
-      const label = POI_CATEGORY_LABELS[category];
-      doc.text(`${label}: ${count}`, 25, yPos);
-      yPos += 8;
-    });
-
-    const totalPOIs = Object.values(analysisResult.summary).reduce((a, b) => a + b, 0);
-    doc.setFontSize(12);
-    doc.text(`Total POIs: ${totalPOIs}`, 20, yPos + 5);
-    yPos += 15;
-
-    // Demographics section (if available)
-    if (demographicsData) {
-      doc.setFontSize(14);
-      doc.setTextColor(227, 24, 55);
-      doc.text('Demographics (ArcGIS)', 20, yPos);
-      yPos += 10;
-
-      demographicsData.radii.forEach((metrics) => {
-        doc.setFontSize(11);
-        doc.setTextColor(60);
-        doc.text(`${metrics.radius_miles} Mile Radius:`, 20, yPos);
-        yPos += 7;
-
-        doc.setFontSize(9);
-        doc.setTextColor(0);
-        doc.text(`Population: ${formatNumber(metrics.total_population)}`, 25, yPos);
-        yPos += 5;
-        doc.text(`Households: ${formatNumber(metrics.total_households)}`, 25, yPos);
-        yPos += 5;
-        doc.text(`Median HH Income: ${formatCurrency(metrics.median_household_income)}`, 25, yPos);
-        yPos += 5;
-        doc.text(`Businesses: ${formatNumber(metrics.total_businesses)}`, 25, yPos);
-        yPos += 5;
-        doc.text(`Total Retail Spending: ${formatCurrency(metrics.spending_retail_total)}`, 25, yPos);
-        yPos += 10;
-
-        if (yPos > 260) {
-          doc.addPage();
-          yPos = 20;
-        }
-      });
-    }
-
-    // POI Details section
-    if (yPos > 200) {
-      doc.addPage();
-      yPos = 20;
-    }
-
-    doc.setFontSize(14);
-    doc.setTextColor(227, 24, 55);
-    doc.text('POI Details', 20, yPos);
-    yPos += 10;
-
-    doc.setFontSize(9);
-    doc.setTextColor(0);
-
-    // Group POIs by category
-    categories.forEach((category) => {
-      const categoryPOIs = analysisResult.pois.filter((p) => p.category === category);
-      if (categoryPOIs.length === 0) return;
-
-      doc.setFontSize(11);
-      doc.setTextColor(60);
-      doc.text(POI_CATEGORY_LABELS[category], 20, yPos);
-      yPos += 6;
-
-      doc.setFontSize(9);
-      doc.setTextColor(0);
-
-      categoryPOIs.slice(0, 15).forEach((poi) => {
-        if (yPos > 270) {
-          doc.addPage();
-          yPos = 20;
-        }
-        const ratingText = poi.rating ? ` (${poi.rating} stars)` : '';
-        doc.text(`- ${poi.name}${ratingText}`, 25, yPos);
-        yPos += 5;
-      });
-
-      if (categoryPOIs.length > 15) {
-        doc.text(`  ... and ${categoryPOIs.length - 15} more`, 25, yPos);
-        yPos += 5;
-      }
-
-      yPos += 5;
-    });
-
-    // Footer
-    doc.setFontSize(8);
-    doc.setTextColor(150);
-    doc.text('CSOKi Site Selection Platform - Confidential', 20, 285);
-
-    // Save the PDF
-    doc.save(`trade-area-analysis-${Date.now()}.pdf`);
+    setShowReportModal(true);
   };
 
   return (
@@ -815,6 +688,19 @@ export function AnalysisPanel() {
             Export PDF Report
           </button>
         </div>
+      )}
+
+      {/* Report Preview Modal */}
+      {analysisResult && (
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          analysisResult={analysisResult}
+          demographicsData={demographicsData}
+          nearestCompetitors={nearestCompetitors}
+          locationName={analyzedStore?.brand ? `${BRAND_LABELS[analyzedStore.brand as BrandKey] || analyzedStore.brand} - ${analyzedStore.city}, ${analyzedStore.state}` : undefined}
+          locationAddress={analyzedStore?.street || undefined}
+        />
       )}
     </div>
   );
