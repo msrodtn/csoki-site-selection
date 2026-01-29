@@ -127,15 +127,19 @@ async def fetch_demographics(
     results = []
 
     if "results" in data and data["results"]:
-        feature_set = data["results"][0].get("value", {}).get("FeatureSet", [])
+        feature_sets = data["results"][0].get("value", {}).get("FeatureSet", [])
 
-        for i, fs in enumerate(feature_set):
-            if "features" in fs and fs["features"]:
-                attrs = fs["features"][0].get("attributes", {})
+        # All radii come back as features within the first FeatureSet
+        if feature_sets and "features" in feature_sets[0]:
+            for feature in feature_sets[0]["features"]:
+                attrs = feature.get("attributes", {})
+
+                # Get the actual radius from the response
+                radius = safe_float(attrs.get("bufferRadii")) or 1.0
 
                 # Map to our model (ArcGIS returns short names, not full collection.variable names)
                 metrics = DemographicMetrics(
-                    radius_miles=radii_miles[i] if i < len(radii_miles) else radii_miles[-1],
+                    radius_miles=radius,
 
                     # Population (short names from ArcGIS response)
                     total_population=safe_int(attrs.get("TOTPOP")),
