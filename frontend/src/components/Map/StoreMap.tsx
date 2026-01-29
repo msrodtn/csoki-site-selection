@@ -12,6 +12,7 @@ import {
   type POICategory,
 } from '../../types/store';
 import type { Store } from '../../types/store';
+import { FEMALegend } from './FEMALegend';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -372,6 +373,9 @@ export function StoreMap() {
           <span className="ml-2 text-gray-500">| {visiblePOIs.length} POIs</span>
         )}
       </div>
+
+      {/* FEMA Flood Zone Legend */}
+      <FEMALegend isVisible={visibleLayersArray.includes('fema_flood')} />
 
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
