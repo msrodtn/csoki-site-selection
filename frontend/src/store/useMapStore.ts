@@ -45,6 +45,8 @@ interface MapState {
   // Trade Area Analysis
   analysisResult: TradeAreaAnalysis | null;
   setAnalysisResult: (result: TradeAreaAnalysis | null) => void;
+  analyzedStore: Store | null;  // Store info captured when analysis starts (persists even if selectedStore changes)
+  setAnalyzedStore: (store: Store | null) => void;
   isAnalyzing: boolean;
   setIsAnalyzing: (analyzing: boolean) => void;
   analysisError: string | null;
@@ -174,6 +176,8 @@ export const useMapStore = create<MapState>((set, get) => ({
   // Trade Area Analysis
   analysisResult: null,
   setAnalysisResult: (result) => set({ analysisResult: result }),
+  analyzedStore: null,
+  setAnalyzedStore: (store) => set({ analyzedStore: store }),
   isAnalyzing: false,
   setIsAnalyzing: (analyzing) => set({ isAnalyzing: analyzing }),
   analysisError: null,
@@ -261,6 +265,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   clearAnalysis: () =>
     set({
       analysisResult: null,
+      analyzedStore: null,
       analysisError: null,
       showAnalysisPanel: false,
       demographicsData: null,

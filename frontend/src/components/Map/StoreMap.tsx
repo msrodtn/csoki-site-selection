@@ -57,6 +57,7 @@ export function StoreMap() {
     visibleStates,
     analysisResult,
     setAnalysisResult,
+    setAnalyzedStore,
     isAnalyzing,
     setIsAnalyzing,
     setAnalysisError,
@@ -210,8 +211,10 @@ export function StoreMap() {
   // Handle analyze button click
   const handleAnalyzeArea = useCallback(() => {
     if (!selectedStore?.latitude || !selectedStore?.longitude) return;
+    // Capture store info before analysis (since runAnalysis clears selectedStore)
+    setAnalyzedStore(selectedStore);
     runAnalysis(selectedStore.latitude, selectedStore.longitude, analysisRadius);
-  }, [selectedStore, analysisRadius, runAnalysis]);
+  }, [selectedStore, analysisRadius, runAnalysis, setAnalyzedStore]);
 
   // Auto-refresh analysis when radius changes
   useEffect(() => {
