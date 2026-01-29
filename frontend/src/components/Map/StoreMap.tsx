@@ -6,6 +6,7 @@ import { analysisApi } from '../../services/api';
 import {
   BRAND_COLORS,
   BRAND_LABELS,
+  BRAND_LOGOS,
   POI_CATEGORY_COLORS,
   POI_CATEGORY_LABELS,
   type BrandKey,
@@ -362,18 +363,15 @@ export function StoreMap() {
     }
   }, [visibleLayersArray, visibleStores]);
 
-  // Create SVG marker icon for each brand (larger than POIs to stand out)
-  const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Symbol => {
-    const color = BRAND_COLORS[brand as BrandKey] || '#666';
-    const scale = isSelected ? 14 : 10;
+  // Create marker icon for each brand using logo images
+  const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Icon => {
+    const logoUrl = BRAND_LOGOS[brand as BrandKey];
+    const size = isSelected ? 40 : 28;
 
     return {
-      path: google.maps.SymbolPath.CIRCLE,
-      fillColor: color,
-      fillOpacity: 1,
-      strokeColor: '#ffffff',
-      strokeWeight: isSelected ? 3 : 2,
-      scale: scale,
+      url: logoUrl,
+      scaledSize: new google.maps.Size(size, size),
+      anchor: new google.maps.Point(size / 2, size / 2),
     };
   };
 

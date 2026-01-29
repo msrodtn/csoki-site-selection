@@ -46,6 +46,16 @@ export const BRAND_LABELS: Record<BrandKey, string> = {
   uscellular: 'US Cellular',
 };
 
+// Brand logos - paths relative to /public folder
+export const BRAND_LOGOS: Record<BrandKey, string> = {
+  csoki: '/logos/csoki.jpg',
+  russell_cellular: '/logos/russellcellular.jpg',
+  verizon_corporate: '/logos/verizon.png',
+  victra: '/logos/victra.jpeg',
+  tmobile: '/logos/tmobile.png',
+  uscellular: '/logos/uscellular.svg',
+};
+
 // Trade Area Analysis Types
 export type POICategory = 'anchors' | 'quick_service' | 'restaurants' | 'retail';
 

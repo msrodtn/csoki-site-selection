@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { BRAND_COLORS, BRAND_LABELS, type BrandKey } from '../../types/store';
+import { BRAND_COLORS, BRAND_LABELS, BRAND_LOGOS, type BrandKey } from '../../types/store';
 import type { Store } from '../../types/store';
 
 interface QuickStatsBarProps {
@@ -38,6 +38,7 @@ export function QuickStatsBar({ stores }: QuickStatsBarProps) {
         count: brandCounts[brand] || 0,
         color: BRAND_COLORS[brand],
         label: BRAND_LABELS[brand],
+        logo: BRAND_LOGOS[brand],
       }));
   }, [brandCounts]);
 
@@ -52,16 +53,24 @@ export function QuickStatsBar({ stores }: QuickStatsBarProps) {
       </span>
 
       <div className="flex items-center gap-3">
-        {brandStats.map(({ brand, count, color, label }) => (
+        {brandStats.map(({ brand, count, color, label, logo }) => (
           <div
             key={brand}
             className="flex items-center gap-1.5"
             title={label}
           >
-            <div
-              className="w-3 h-3 rounded-full border border-white shadow-sm"
-              style={{ backgroundColor: color }}
-            />
+            {logo ? (
+              <img
+                src={logo}
+                alt={label}
+                className="w-5 h-5 object-contain rounded"
+              />
+            ) : (
+              <div
+                className="w-4 h-4 rounded-full border border-white shadow-sm"
+                style={{ backgroundColor: color }}
+              />
+            )}
             <span className="text-sm font-medium text-gray-700">{count}</span>
           </div>
         ))}

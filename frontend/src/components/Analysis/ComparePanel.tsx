@@ -12,7 +12,7 @@ import {
 import { useMapStore } from '../../store/useMapStore';
 import { analysisApi } from '../../services/api';
 import type { SavedLocation, DemographicsResponse, BrandKey } from '../../types/store';
-import { BRAND_COLORS, BRAND_LABELS } from '../../types/store';
+import { BRAND_COLORS, BRAND_LABELS, BRAND_LOGOS } from '../../types/store';
 
 // Format numbers with commas
 const formatNumber = (num: number | null): string => {
@@ -125,17 +125,27 @@ export function ComparePanel() {
                       const brandKey = loc.brand as BrandKey | undefined;
                       const brandColor = brandKey ? BRAND_COLORS[brandKey] : '#666';
                       const brandLabel = brandKey ? BRAND_LABELS[brandKey] : loc.name;
+                      const brandLogo = brandKey ? BRAND_LOGOS[brandKey] : null;
                       const locationSubtext = loc.city && loc.state ? `${loc.city}, ${loc.state}` : null;
 
                       return (
                         <th key={loc.id} className="text-center py-2 px-2 min-w-[120px]">
                           <div className="flex flex-col items-center gap-1">
-                            {/* Brand color indicator (future: replace with logo) */}
-                            <div
-                              className="w-4 h-4 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: brandColor }}
-                              title={brandLabel}
-                            />
+                            {/* Brand logo */}
+                            {brandLogo ? (
+                              <img
+                                src={brandLogo}
+                                alt={brandLabel}
+                                className="w-8 h-8 object-contain flex-shrink-0 rounded"
+                                title={brandLabel}
+                              />
+                            ) : (
+                              <div
+                                className="w-8 h-8 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: brandColor }}
+                                title={brandLabel}
+                              />
+                            )}
                             {/* Brand name */}
                             <span className="font-semibold text-gray-800 text-xs truncate max-w-[110px]" title={brandLabel}>
                               {brandLabel}

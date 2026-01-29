@@ -1,6 +1,6 @@
 import { useMapStore } from '../../store/useMapStore';
 import { useStoreStats } from '../../hooks/useStores';
-import { BRAND_COLORS, BRAND_LABELS, type BrandKey } from '../../types/store';
+import { BRAND_COLORS, BRAND_LABELS, BRAND_LOGOS, type BrandKey } from '../../types/store';
 import { Eye, EyeOff } from 'lucide-react';
 
 export function BrandFilter() {
@@ -39,6 +39,7 @@ export function BrandFilter() {
           const isVisible = visibleBrands.has(brandKey);
           const color = BRAND_COLORS[brandKey] || '#666';
           const label = BRAND_LABELS[brandKey] || stat.brand;
+          const logo = BRAND_LOGOS[brandKey];
 
           return (
             <button
@@ -52,10 +53,18 @@ export function BrandFilter() {
               }
             >
               <div className="flex items-center gap-2">
-                <div
-                  className="w-4 h-4 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: color }}
-                />
+                {logo ? (
+                  <img
+                    src={logo}
+                    alt={label}
+                    className="w-6 h-6 object-contain flex-shrink-0 rounded"
+                  />
+                ) : (
+                  <div
+                    className="w-6 h-6 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                )}
                 <span className="text-sm font-medium truncate">{label}</span>
               </div>
               <div className="flex items-center gap-2">

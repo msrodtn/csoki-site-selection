@@ -22,7 +22,7 @@ import {
 import { useMapStore } from '../../store/useMapStore';
 import { analysisApi, storeApi } from '../../services/api';
 import type { POICategory, DemographicMetrics } from '../../types/store';
-import { POI_CATEGORY_COLORS, POI_CATEGORY_LABELS, BRAND_COLORS, BRAND_LABELS, type BrandKey } from '../../types/store';
+import { POI_CATEGORY_COLORS, POI_CATEGORY_LABELS, BRAND_COLORS, BRAND_LABELS, BRAND_LOGOS, type BrandKey } from '../../types/store';
 
 const RADIUS_OPTIONS = [
   { value: 0.25, label: '0.25 mi' },
@@ -716,6 +716,7 @@ export function AnalysisPanel() {
                         const brandKey = competitor.brand as BrandKey;
                         const brandColor = BRAND_COLORS[brandKey] || '#666';
                         const brandLabel = BRAND_LABELS[brandKey] || competitor.brand;
+                        const brandLogo = BRAND_LOGOS[brandKey];
 
                         return (
                           <button
@@ -727,10 +728,18 @@ export function AnalysisPanel() {
                             }}
                             className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors text-left"
                           >
-                            <div
-                              className="w-3 h-3 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: brandColor }}
-                            />
+                            {brandLogo ? (
+                              <img
+                                src={brandLogo}
+                                alt={brandLabel}
+                                className="w-6 h-6 object-contain flex-shrink-0 rounded"
+                              />
+                            ) : (
+                              <div
+                                className="w-6 h-6 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: brandColor }}
+                              />
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-gray-800 truncate">
                                 {brandLabel}
