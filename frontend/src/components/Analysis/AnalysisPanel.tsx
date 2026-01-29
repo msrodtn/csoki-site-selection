@@ -13,8 +13,6 @@ import {
   ChevronRight,
   Users,
   DollarSign,
-  Briefcase,
-  ShoppingCart,
   GripHorizontal,
 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
@@ -53,12 +51,6 @@ const formatNumber = (num: number | null): string => {
 const formatCurrency = (num: number | null): string => {
   if (num === null) return 'N/A';
   return '$' + num.toLocaleString();
-};
-
-// Format density
-const formatDensity = (num: number | null): string => {
-  if (num === null) return 'N/A';
-  return num.toLocaleString(undefined, { maximumFractionDigits: 0 }) + '/sq mi';
 };
 
 export function AnalysisPanel() {
@@ -564,18 +556,6 @@ export function AnalysisPanel() {
                                   {formatNumber(currentDemographics.total_households)}
                                 </div>
                               </div>
-                              <div className="bg-gray-50 rounded-lg p-2">
-                                <div className="text-gray-500 text-xs">Density</div>
-                                <div className="font-semibold">
-                                  {formatDensity(currentDemographics.population_density)}
-                                </div>
-                              </div>
-                              <div className="bg-gray-50 rounded-lg p-2">
-                                <div className="text-gray-500 text-xs">Median Age</div>
-                                <div className="font-semibold">
-                                  {currentDemographics.median_age?.toFixed(1) || 'N/A'}
-                                </div>
-                              </div>
                             </div>
                           </div>
 
@@ -604,66 +584,6 @@ export function AnalysisPanel() {
                                 <span className="text-gray-500">Per Capita Income</span>
                                 <span className="font-semibold">
                                   {formatCurrency(currentDemographics.per_capita_income)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Employment */}
-                          <div>
-                            <div className="flex items-center gap-2 mb-2">
-                              <Briefcase className="w-4 h-4 text-orange-600" />
-                              <span className="text-xs font-semibold text-gray-500 uppercase">
-                                Employment
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                              <div className="bg-gray-50 rounded-lg p-2">
-                                <div className="text-gray-500 text-xs">Businesses</div>
-                                <div className="font-semibold">
-                                  {formatNumber(currentDemographics.total_businesses)}
-                                </div>
-                              </div>
-                              <div className="bg-gray-50 rounded-lg p-2">
-                                <div className="text-gray-500 text-xs">Employees</div>
-                                <div className="font-semibold">
-                                  {formatNumber(currentDemographics.total_employees)}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Consumer Spending */}
-                          <div>
-                            <div className="flex items-center gap-2 mb-2">
-                              <ShoppingCart className="w-4 h-4 text-purple-600" />
-                              <span className="text-xs font-semibold text-gray-500 uppercase">
-                                Consumer Spending
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-1 gap-2 text-sm">
-                              <div className="bg-gray-50 rounded-lg p-2 flex justify-between">
-                                <span className="text-gray-500">Retail Total</span>
-                                <span className="font-semibold text-purple-700">
-                                  {formatCurrency(currentDemographics.spending_retail_total)}
-                                </span>
-                              </div>
-                              <div className="bg-gray-50 rounded-lg p-2 flex justify-between">
-                                <span className="text-gray-500">Food Away</span>
-                                <span className="font-semibold">
-                                  {formatCurrency(currentDemographics.spending_food_away)}
-                                </span>
-                              </div>
-                              <div className="bg-gray-50 rounded-lg p-2 flex justify-between">
-                                <span className="text-gray-500">Apparel</span>
-                                <span className="font-semibold">
-                                  {formatCurrency(currentDemographics.spending_apparel)}
-                                </span>
-                              </div>
-                              <div className="bg-gray-50 rounded-lg p-2 flex justify-between">
-                                <span className="text-gray-500">Entertainment</span>
-                                <span className="font-semibold">
-                                  {formatCurrency(currentDemographics.spending_entertainment)}
                                 </span>
                               </div>
                             </div>
