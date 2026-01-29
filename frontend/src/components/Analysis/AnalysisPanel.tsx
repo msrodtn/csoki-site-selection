@@ -102,6 +102,9 @@ export function AnalysisPanel() {
   // Report modal state
   const [showReportModal, setShowReportModal] = useState(false);
 
+  // State to track if we're preparing the report
+  const [isPreparingReport, setIsPreparingReport] = useState(false);
+
   // Draggable panel state
   const [position, setPosition] = useState({ x: 340, y: 16 }); // Initial position (left-[340px] top-4)
   const [isDragging, setIsDragging] = useState(false);
@@ -232,9 +235,6 @@ export function AnalysisPanel() {
     setShowAnalysisPanel(false);
     clearAnalysis();
   };
-
-  // State to track if we're preparing the report
-  const [isPreparingReport, setIsPreparingReport] = useState(false);
 
   const handleExportPDF = async () => {
     if (!analysisResult) return;
