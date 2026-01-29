@@ -321,14 +321,25 @@ async def get_parcel_info(request: ParcelRequest):
             response.raise_for_status()
             data = response.json()
 
-            if not data or len(data) == 0:
+            # ReportAll API returns: { status, count, page, rpp, results: [...], query }
+            # The actual parcel data is in the 'results' array
+            if not data:
                 raise HTTPException(
                     status_code=404,
                     detail="No parcel found at this location"
                 )
 
-            # Get the first (most relevant) parcel
-            parcel = data[0] if isinstance(data, list) else data
+            # Extract results array from wrapper response
+            results = data.get("results", []) if isinstance(data, dict) else data
+
+            if not results or len(results) == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No parcel found at this location"
+                )
+
+            # Get the first (most relevant) parcel from results
+            parcel = results[0] if isinstance(results, list) else results
 
             # Extract and normalize fields
             # ReportAll field names vary by county, so we check multiple possible names
