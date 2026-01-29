@@ -179,6 +179,14 @@ export function StoreMap() {
   const [parcelBoundary, setParcelBoundary] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [parcelClickPosition, setParcelClickPosition] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Map bounds for filtering "In View" stats
+  const [mapBounds, setMapBounds] = useState<{
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  } | null>(null);
+
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
 
@@ -244,6 +252,21 @@ export function StoreMap() {
       styles: showBusinessLabels ? showPOIStyles : hidePOIStyles,
     };
   }, [visibleLayers]);
+
+  // Filter stores by current map viewport for "In View" stats
+  const storesInView = useMemo(() => {
+    if (!mapBounds) return visibleStores;
+
+    return visibleStores.filter((store) => {
+      if (!store.latitude || !store.longitude) return false;
+      return (
+        store.latitude >= mapBounds.south &&
+        store.latitude <= mapBounds.north &&
+        store.longitude >= mapBounds.west &&
+        store.longitude <= mapBounds.east
+      );
+    });
+  }, [visibleStores, mapBounds]);
 
   const handleMarkerClick = useCallback(
     (store: Store) => {
@@ -311,6 +334,24 @@ export function StoreMap() {
     map.setCenter(INITIAL_CENTER);
     map.setZoom(INITIAL_ZOOM);
   }, [setMapInstance]);
+
+  // Update bounds when map moves/zooms (for "In View" stats)
+  const onIdle = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const bounds = map.getBounds();
+    if (bounds) {
+      const ne = bounds.getNorthEast();
+      const sw = bounds.getSouthWest();
+      setMapBounds({
+        north: ne.lat(),
+        south: sw.lat(),
+        east: ne.lng(),
+        west: sw.lng(),
+      });
+    }
+  }, []);
 
   const onUnmount = useCallback(() => {
     // Clean up layers
@@ -647,7 +688,7 @@ export function StoreMap() {
       )}
 
       {/* Quick Stats Bar - shows store counts by brand */}
-      <QuickStatsBar stores={visibleStores} />
+      <QuickStatsBar stores={storesInView} />
 
       {/* FEMA Flood Zone Legend */}
       <FEMALegend isVisible={visibleLayersArray.includes('fema_flood')} />
@@ -669,6 +710,7 @@ export function StoreMap() {
         mapContainerStyle={mapContainerStyle}
         onLoad={onLoad}
         onUnmount={onUnmount}
+        onIdle={onIdle}
         onClick={handleMapClick}
         onMouseMove={handleMouseMove}
         options={mapOptions}
