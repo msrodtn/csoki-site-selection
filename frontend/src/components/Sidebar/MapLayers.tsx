@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Grid3X3, Flame, LandPlot, Building2, MapPinned } from 'lucide-react';
+import { Layers, Droplets, Car, Train, Flame, LandPlot, Building2, MapPinned } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -23,13 +23,6 @@ export const MAP_LAYERS = {
     icon: Train,
     color: '#8B5CF6',
     description: 'Public transit routes',
-  },
-  census_tracts: {
-    id: 'census_tracts',
-    name: 'Census Tracts',
-    icon: Grid3X3,
-    color: '#10B981',
-    description: 'Census boundary lines',
   },
   parcels: {
     id: 'parcels',

@@ -200,7 +200,6 @@ export function StoreMap() {
 
   // Custom tile overlay refs
   const femaFloodOverlayRef = useRef<google.maps.ImageMapType | null>(null);
-  const censusTractsOverlayRef = useRef<google.maps.ImageMapType | null>(null);
   const parcelsOverlayRef = useRef<google.maps.ImageMapType | null>(null);
 
   // Heat map layer ref
@@ -369,7 +368,6 @@ export function StoreMap() {
       heatMapLayerRef.current = null;
     }
     femaFloodOverlayRef.current = null;
-    censusTractsOverlayRef.current = null;
     parcelsOverlayRef.current = null;
 
     mapRef.current = null;
@@ -511,32 +509,6 @@ export function StoreMap() {
         }
       }
       femaFloodOverlayRef.current = null;
-    }
-
-    // Census Tracts Overlay (using ArcGIS export endpoint)
-    const showCensus = visibleLayersArray.includes('census_tracts');
-    if (showCensus && !censusTractsOverlayRef.current) {
-      censusTractsOverlayRef.current = new google.maps.ImageMapType({
-        getTileUrl: (coord, zoom) => {
-          const { x1, y1, x2, y2 } = getTileBbox(coord, zoom);
-          const bbox = `${x1},${y1},${x2},${y2}`;
-          // Census Tracts layer (layer 8 in TIGERweb)
-          return `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Current/MapServer/export?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&layers=show:8&f=image`;
-        },
-        tileSize: new google.maps.Size(256, 256),
-        opacity: 0.5,
-        name: 'Census Tracts',
-      });
-      map.overlayMapTypes.push(censusTractsOverlayRef.current);
-    } else if (!showCensus && censusTractsOverlayRef.current) {
-      const overlays = map.overlayMapTypes;
-      for (let i = 0; i < overlays.getLength(); i++) {
-        if (overlays.getAt(i) === censusTractsOverlayRef.current) {
-          overlays.removeAt(i);
-          break;
-        }
-      }
-      censusTractsOverlayRef.current = null;
     }
 
     // Parcel Boundaries Overlay (Regrid via ArcGIS Living Atlas - free tile layer)
