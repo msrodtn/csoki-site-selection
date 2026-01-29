@@ -6,7 +6,8 @@ Uses Census Bureau APIs to fetch data that ArcGIS doesn't provide:
 - Total Businesses (from County Business Patterns)
 - Total Employees (from County Business Patterns)
 
-The FCC API is used to convert lat/lng coordinates to census geography (FIPS codes).
+The Census Bureau geocoding API converts lat/lng coordinates to census geography (FIPS codes).
+API key is optional - all Census APIs work without it (just rate-limited).
 """
 import httpx
 from typing import Optional
@@ -16,7 +17,7 @@ from app.core.config import settings
 
 
 class CensusGeography(BaseModel):
-    """Census geography identifiers from FCC geocoder."""
+    """Census geography identifiers from Census Bureau geocoder."""
     state_fips: str
     county_fips: str
     tract_fips: str
@@ -39,36 +40,41 @@ class CensusData(BaseModel):
 
 async def get_census_geography(latitude: float, longitude: float) -> Optional[CensusGeography]:
     """
-    Convert lat/lng to Census geography (FIPS codes) using FCC API.
+    Convert lat/lng to Census geography (FIPS codes) using Census Bureau geocoder.
 
-    The FCC Area API is free and doesn't require authentication.
+    The Census Bureau geocoding API is free and doesn't require authentication.
     """
-    url = "https://geo.fcc.gov/api/census/block/find"
+    url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "format": "json",
-        "showall": "false"
+        "x": longitude,
+        "y": latitude,
+        "benchmark": "Public_AR_Current",
+        "vintage": "Current_Current",
+        "layers": "10",  # Census Block Groups layer
+        "format": "json"
     }
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url, params=params, timeout=10)
+            response = await client.get(url, params=params, timeout=15)
             response.raise_for_status()
             data = response.json()
 
-            if data.get("status") == "OK" and data.get("Block"):
-                fips = data["Block"]["FIPS"]
-                # FIPS format: SSCCCTTTTTTBBBB (state, county, tract, block)
+            # Extract geography from block group result
+            geographies = data.get("result", {}).get("geographies", {})
+            block_groups = geographies.get("Census Block Groups", [])
+
+            if block_groups:
+                bg = block_groups[0]
                 return CensusGeography(
-                    state_fips=fips[0:2],
-                    county_fips=fips[2:5],
-                    tract_fips=fips[5:11],
-                    block_fips=fips[11:15] if len(fips) > 11 else None
+                    state_fips=bg.get("STATE"),
+                    county_fips=bg.get("COUNTY"),
+                    tract_fips=bg.get("TRACT"),
+                    block_fips=bg.get("BLKGRP")
                 )
             return None
         except Exception as e:
-            print(f"FCC geocoding error: {e}")
+            print(f"Census geocoding error: {e}")
             return None
 
 
@@ -76,12 +82,13 @@ async def fetch_acs_median_age(
     state_fips: str,
     county_fips: str,
     tract_fips: str,
-    api_key: str
+    api_key: Optional[str] = None
 ) -> Optional[float]:
     """
     Fetch median age from ACS 5-Year Estimates at tract level.
 
     Variable: B01002_001E = Median Age
+    API key is optional - Census APIs work without it (rate-limited).
     """
     # ACS 5-Year Estimates API
     url = "https://api.census.gov/data/2022/acs/acs5"
@@ -89,8 +96,9 @@ async def fetch_acs_median_age(
         "get": "B01002_001E",  # Median Age
         "for": f"tract:{tract_fips}",
         "in": f"state:{state_fips} county:{county_fips}",
-        "key": api_key
     }
+    if api_key:
+        params["key"] = api_key
 
     async with httpx.AsyncClient() as client:
         try:
@@ -110,7 +118,7 @@ async def fetch_acs_median_age(
 async def fetch_cbp_business_data(
     state_fips: str,
     county_fips: str,
-    api_key: str
+    api_key: Optional[str] = None
 ) -> tuple[Optional[int], Optional[int]]:
     """
     Fetch business and employee counts from County Business Patterns.
@@ -119,6 +127,7 @@ async def fetch_cbp_business_data(
     Variables:
     - ESTAB = Number of establishments
     - EMP = Number of employees
+    API key is optional - Census APIs work without it (rate-limited).
     """
     # County Business Patterns API (most recent year)
     url = "https://api.census.gov/data/2021/cbp"
@@ -127,8 +136,9 @@ async def fetch_cbp_business_data(
         "for": f"county:{county_fips}",
         "in": f"state:{state_fips}",
         "NAICS2017": "00",  # All industries
-        "key": api_key
     }
+    if api_key:
+        params["key"] = api_key
 
     async with httpx.AsyncClient() as client:
         try:
@@ -156,14 +166,15 @@ async def fetch_census_data(latitude: float, longitude: float) -> CensusData:
     - Median Age (tract-level from ACS)
     - Total Businesses (county-level from CBP)
     - Total Employees (county-level from CBP)
+
+    API key is optional - Census APIs work without it (rate-limited).
     """
-    api_key = settings.CENSUS_API_KEY
-    if not api_key:
-        return CensusData()
+    api_key = settings.CENSUS_API_KEY  # Optional, will work without it
 
     # Step 1: Get census geography from coordinates
     geography = await get_census_geography(latitude, longitude)
     if not geography:
+        print(f"Could not get census geography for ({latitude}, {longitude})")
         return CensusData()
 
     # Step 2: Fetch data in parallel
