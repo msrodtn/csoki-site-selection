@@ -636,19 +636,34 @@ export function StoreMap() {
           />
         )}
 
-        {/* Parcel boundary highlight polygon */}
+        {/* Parcel boundary highlight polygon - bright yellow/gold for visibility */}
         {parcelBoundary && parcelBoundary.length > 0 && (
-          <PolygonF
-            paths={parcelBoundary}
-            options={{
-              fillColor: '#A16207',
-              fillOpacity: 0.3,
-              strokeColor: '#A16207',
-              strokeOpacity: 1,
-              strokeWeight: 3,
-              zIndex: 50,
-            }}
-          />
+          <>
+            {/* Outer glow effect */}
+            <PolygonF
+              paths={parcelBoundary}
+              options={{
+                fillColor: 'transparent',
+                fillOpacity: 0,
+                strokeColor: '#FBBF24',
+                strokeOpacity: 0.5,
+                strokeWeight: 8,
+                zIndex: 49,
+              }}
+            />
+            {/* Main boundary */}
+            <PolygonF
+              paths={parcelBoundary}
+              options={{
+                fillColor: '#FEF3C7',
+                fillOpacity: 0.4,
+                strokeColor: '#D97706',
+                strokeOpacity: 1,
+                strokeWeight: 4,
+                zIndex: 50,
+              }}
+            />
+          </>
         )}
 
         {/* Hover indicator circle when parcel layer is active */}

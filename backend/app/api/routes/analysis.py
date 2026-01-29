@@ -369,7 +369,7 @@ async def get_parcel_info(request: ParcelRequest):
                 sale_date=get_field("trans_date", "sale_date", "deed_date"),
                 latitude=request.latitude,
                 longitude=request.longitude,
-                geometry=get_field("geometry", "geom", "wkt"),  # WKT geometry for highlighting
+                geometry=get_field("geom", "geometry", "wkt", "the_geom", "ll_geom", "shape", "shape_wkt", "wkt_geom", "polygon"),  # WKT geometry for highlighting
                 raw_data=parcel  # Include full response for debugging
             )
 
