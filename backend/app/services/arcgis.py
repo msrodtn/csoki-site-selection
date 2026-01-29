@@ -133,30 +133,30 @@ async def fetch_demographics(
             if "features" in fs and fs["features"]:
                 attrs = fs["features"][0].get("attributes", {})
 
-                # Map to our model
+                # Map to our model (ArcGIS returns short names, not full collection.variable names)
                 metrics = DemographicMetrics(
                     radius_miles=radii_miles[i] if i < len(radii_miles) else radii_miles[-1],
 
-                    # Population
-                    total_population=safe_int(attrs.get("KeyGlobalFacts.TOTPOP")),
-                    total_households=safe_int(attrs.get("KeyGlobalFacts.TOTHH")),
-                    population_density=safe_float(attrs.get("KeyUSFacts.POPDENS_CY")),
-                    median_age=safe_float(attrs.get("KeyUSFacts.MEDAGE_CY")),
+                    # Population (short names from ArcGIS response)
+                    total_population=safe_int(attrs.get("TOTPOP")),
+                    total_households=safe_int(attrs.get("TOTHH")),
+                    population_density=safe_float(attrs.get("POPDENS_CY")),
+                    median_age=safe_float(attrs.get("MEDAGE_CY")),
 
                     # Income
-                    median_household_income=safe_int(attrs.get("KeyUSFacts.MEDHINC_CY")),
-                    average_household_income=safe_int(attrs.get("KeyUSFacts.AVGHINC_CY")),
-                    per_capita_income=safe_int(attrs.get("KeyUSFacts.PCI_CY")),
+                    median_household_income=safe_int(attrs.get("MEDHINC_CY")),
+                    average_household_income=safe_int(attrs.get("AVGHINC_CY")),
+                    per_capita_income=safe_int(attrs.get("PCI_CY")),
 
                     # Employment
-                    total_businesses=safe_int(attrs.get("KeyUSFacts.TOTBUS_CY")),
-                    total_employees=safe_int(attrs.get("KeyUSFacts.TOTEMP_CY")),
+                    total_businesses=safe_int(attrs.get("TOTBUS_CY")),
+                    total_employees=safe_int(attrs.get("TOTEMP_CY")),
 
                     # Consumer Spending
-                    spending_food_away=safe_int(attrs.get("spending.X1001_X")),
-                    spending_apparel=safe_int(attrs.get("spending.X2001_X")),
-                    spending_entertainment=safe_int(attrs.get("spending.X4001_X")),
-                    spending_retail_total=safe_int(attrs.get("spending.X5001_X")),
+                    spending_food_away=safe_int(attrs.get("X1001_X")),
+                    spending_apparel=safe_int(attrs.get("X2001_X")),
+                    spending_entertainment=safe_int(attrs.get("X4001_X")),
+                    spending_retail_total=safe_int(attrs.get("X5001_X")),
                 )
                 results.append(metrics)
 
