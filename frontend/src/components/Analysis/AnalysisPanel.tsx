@@ -233,9 +233,68 @@ export function AnalysisPanel() {
     clearAnalysis();
   };
 
-  const handleExportPDF = () => {
+  // State to track if we're preparing the report
+  const [isPreparingReport, setIsPreparingReport] = useState(false);
+
+  const handleExportPDF = async () => {
     if (!analysisResult) return;
-    setShowReportModal(true);
+
+    setIsPreparingReport(true);
+
+    try {
+      // Load demographics and competitors in parallel if needed
+      const promises: Promise<void>[] = [];
+
+      if (!demographicsData) {
+        promises.push(
+          (async () => {
+            setIsDemographicsLoading(true);
+            setDemographicsError(null);
+            try {
+              const data = await analysisApi.getDemographics({
+                latitude: analysisResult.center_latitude,
+                longitude: analysisResult.center_longitude,
+              });
+              setDemographicsData(data);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Failed to load demographics';
+              setDemographicsError(message);
+            } finally {
+              setIsDemographicsLoading(false);
+            }
+          })()
+        );
+      }
+
+      if (!nearestCompetitors) {
+        promises.push(
+          (async () => {
+            setIsNearestCompetitorsLoading(true);
+            try {
+              const data = await storeApi.getNearestCompetitors({
+                latitude: analysisResult.center_latitude,
+                longitude: analysisResult.center_longitude,
+              });
+              setNearestCompetitors(data);
+            } catch (error) {
+              console.error('Failed to load nearest competitors:', error);
+            } finally {
+              setIsNearestCompetitorsLoading(false);
+            }
+          })()
+        );
+      }
+
+      // Wait for all data to load
+      await Promise.all(promises);
+
+      // Small delay to ensure state updates are applied
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      setShowReportModal(true);
+    } finally {
+      setIsPreparingReport(false);
+    }
   };
 
   return (
@@ -707,10 +766,20 @@ export function AnalysisPanel() {
           {/* Export button */}
           <button
             onClick={handleExportPDF}
-            className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors"
+            disabled={isPreparingReport}
+            className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white py-2 px-4 rounded-lg transition-colors"
           >
-            <FileDown className="w-4 h-4" />
-            Export PDF Report
+            {isPreparingReport ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Preparing Report...
+              </>
+            ) : (
+              <>
+                <FileDown className="w-4 h-4" />
+                Export PDF Report
+              </>
+            )}
           </button>
         </div>
       )}
