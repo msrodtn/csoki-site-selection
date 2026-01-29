@@ -8,7 +8,7 @@ export const MAP_LAYERS = {
     name: 'FEMA Flood Zones',
     icon: Droplets,
     color: '#3B82F6',
-    description: 'National Flood Hazard Layer',
+    description: 'Requires zoom 12+ to display',
   },
   traffic: {
     id: 'traffic',

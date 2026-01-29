@@ -253,18 +253,22 @@ export function StoreMap() {
     };
 
     // FEMA Flood Zones Overlay (using ArcGIS export endpoint)
+    // IMPORTANT: FEMA flood data only renders at zoom level 12+ (scale ~1:47000 or lower)
     const showFlood = visibleLayersArray.includes('fema_flood');
     if (showFlood && !femaFloodOverlayRef.current) {
       femaFloodOverlayRef.current = new google.maps.ImageMapType({
         getTileUrl: (coord, zoom) => {
+          // FEMA flood zones only available at zoom 12+ per FEMA documentation
+          if (zoom < 12) {
+            return null;
+          }
           const { x1, y1, x2, y2 } = getTileBbox(coord, zoom);
           const bbox = `${x1},${y1},${x2},${y2}`;
-          // Layer 28 is Flood Hazard Zones - the main flood zone layer
-          // Correct FEMA endpoint is /arcgis/ not /gis/nfhl/
-          return `https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/export?bbox=${bbox}&bboxSR=4326&imageSR=102100&size=256,256&format=png32&transparent=true&layers=show:28&dpi=96&f=image`;
+          // Show both layer 27 (Flood Hazard Boundaries) and 28 (Flood Hazard Zones)
+          return `https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/export?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&layers=show:27,28&dpi=96&f=image`;
         },
         tileSize: new google.maps.Size(256, 256),
-        opacity: 0.6,
+        opacity: 0.7,
         name: 'FEMA Flood Zones',
       });
       map.overlayMapTypes.push(femaFloodOverlayRef.current);
