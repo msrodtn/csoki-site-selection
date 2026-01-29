@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Grid3X3, Flame } from 'lucide-react';
+import { Layers, Droplets, Car, Train, Grid3X3, Flame, LandPlot } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -30,6 +30,13 @@ export const MAP_LAYERS = {
     icon: Grid3X3,
     color: '#10B981',
     description: 'Census boundary lines',
+  },
+  parcels: {
+    id: 'parcels',
+    name: 'Parcel Boundaries',
+    icon: LandPlot,
+    color: '#A16207',
+    description: 'Property parcel lines (zoom 14+)',
   },
   competition_heat: {
     id: 'competition_heat',

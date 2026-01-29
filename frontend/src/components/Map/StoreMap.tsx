@@ -15,6 +15,7 @@ import {
 import type { Store } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
+import { ParcelLegend } from './ParcelLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -92,6 +93,7 @@ export function StoreMap() {
   // Custom tile overlay refs
   const femaFloodOverlayRef = useRef<google.maps.ImageMapType | null>(null);
   const censusTractsOverlayRef = useRef<google.maps.ImageMapType | null>(null);
+  const parcelsOverlayRef = useRef<google.maps.ImageMapType | null>(null);
 
   // Heat map layer ref
   const heatMapLayerRef = useRef<google.maps.visualization.HeatmapLayer | null>(null);
@@ -180,6 +182,7 @@ export function StoreMap() {
     }
     femaFloodOverlayRef.current = null;
     censusTractsOverlayRef.current = null;
+    parcelsOverlayRef.current = null;
 
     mapRef.current = null;
     setMapInstance(null);
@@ -322,6 +325,34 @@ export function StoreMap() {
       }
       censusTractsOverlayRef.current = null;
     }
+
+    // Parcel Boundaries Overlay (Regrid via ArcGIS Living Atlas - free tile layer)
+    const showParcels = visibleLayersArray.includes('parcels');
+    if (showParcels && !parcelsOverlayRef.current) {
+      parcelsOverlayRef.current = new google.maps.ImageMapType({
+        getTileUrl: (coord, zoom) => {
+          // Parcel data is most useful at zoom 14+ (street level)
+          if (zoom < 14) {
+            return null;
+          }
+          // Regrid ArcGIS tile service uses standard XYZ tile coordinates
+          return `https://tiles.arcgis.com/tiles/KzeiCaQsMoeCfoCq/arcgis/rest/services/Regrid_Nationwide_Parcel_Boundaries_v1/MapServer/tile/${zoom}/${coord.y}/${coord.x}`;
+        },
+        tileSize: new google.maps.Size(256, 256),
+        opacity: 0.7,
+        name: 'Parcel Boundaries',
+      });
+      map.overlayMapTypes.push(parcelsOverlayRef.current);
+    } else if (!showParcels && parcelsOverlayRef.current) {
+      const overlays = map.overlayMapTypes;
+      for (let i = 0; i < overlays.getLength(); i++) {
+        if (overlays.getAt(i) === parcelsOverlayRef.current) {
+          overlays.removeAt(i);
+          break;
+        }
+      }
+      parcelsOverlayRef.current = null;
+    }
   }, [visibleLayersArray]);
 
   // Manage heat map layer (separate effect since it depends on visibleStores)
@@ -366,7 +397,7 @@ export function StoreMap() {
   // Create marker icon for each brand using logo images
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Icon => {
     const logoUrl = BRAND_LOGOS[brand as BrandKey];
-    const size = isSelected ? 40 : 28;
+    const size = isSelected ? 32 : 22;
 
     return {
       url: logoUrl,
@@ -423,6 +454,9 @@ export function StoreMap() {
 
       {/* Heat Map Legend */}
       <HeatMapLegend isVisible={visibleLayersArray.includes('competition_heat')} />
+
+      {/* Parcel Boundaries Legend */}
+      <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
 
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
