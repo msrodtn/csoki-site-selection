@@ -59,18 +59,20 @@ export function QuickStatsBar({ stores }: QuickStatsBarProps) {
             className="flex items-center gap-1.5"
             title={label}
           >
-            {logo ? (
-              <img
-                src={logo}
-                alt={label}
-                className="w-5 h-5 object-contain rounded"
-              />
-            ) : (
-              <div
-                className="w-4 h-4 rounded-full border border-white shadow-sm"
-                style={{ backgroundColor: color }}
-              />
-            )}
+            <div className="w-6 h-6 rounded-full border border-gray-200 bg-white flex items-center justify-center flex-shrink-0">
+              {logo ? (
+                <img
+                  src={logo}
+                  alt={label}
+                  className="w-4 h-4 object-contain rounded-full"
+                />
+              ) : (
+                <div
+                  className="w-4 h-4 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+              )}
+            </div>
             <span className="text-sm font-medium text-gray-700">{count}</span>
           </div>
         ))}

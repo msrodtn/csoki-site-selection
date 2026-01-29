@@ -132,20 +132,22 @@ export function ComparePanel() {
                         <th key={loc.id} className="text-center py-2 px-2 min-w-[120px]">
                           <div className="flex flex-col items-center gap-1">
                             {/* Brand logo */}
-                            {brandLogo ? (
-                              <img
-                                src={brandLogo}
-                                alt={brandLabel}
-                                className="w-8 h-8 object-contain flex-shrink-0 rounded"
-                                title={brandLabel}
-                              />
-                            ) : (
-                              <div
-                                className="w-8 h-8 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: brandColor }}
-                                title={brandLabel}
-                              />
-                            )}
+                            <div className="w-9 h-9 rounded-full border border-gray-200 bg-white flex items-center justify-center flex-shrink-0">
+                              {brandLogo ? (
+                                <img
+                                  src={brandLogo}
+                                  alt={brandLabel}
+                                  className="w-6 h-6 object-contain rounded-full"
+                                  title={brandLabel}
+                                />
+                              ) : (
+                                <div
+                                  className="w-6 h-6 rounded-full"
+                                  style={{ backgroundColor: brandColor }}
+                                  title={brandLabel}
+                                />
+                              )}
+                            </div>
                             {/* Brand name */}
                             <span className="font-semibold text-gray-800 text-xs truncate max-w-[110px]" title={brandLabel}>
                               {brandLabel}

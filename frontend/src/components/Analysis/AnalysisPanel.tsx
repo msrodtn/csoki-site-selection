@@ -728,18 +728,20 @@ export function AnalysisPanel() {
                             }}
                             className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors text-left"
                           >
-                            {brandLogo ? (
-                              <img
-                                src={brandLogo}
-                                alt={brandLabel}
-                                className="w-6 h-6 object-contain flex-shrink-0 rounded"
-                              />
-                            ) : (
-                              <div
-                                className="w-6 h-6 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: brandColor }}
-                              />
-                            )}
+                            <div className="w-7 h-7 rounded-full border border-gray-200 bg-white flex items-center justify-center flex-shrink-0">
+                              {brandLogo ? (
+                                <img
+                                  src={brandLogo}
+                                  alt={brandLabel}
+                                  className="w-5 h-5 object-contain rounded-full"
+                                />
+                              ) : (
+                                <div
+                                  className="w-5 h-5 rounded-full"
+                                  style={{ backgroundColor: brandColor }}
+                                />
+                              )}
+                            </div>
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-gray-800 truncate">
                                 {brandLabel}

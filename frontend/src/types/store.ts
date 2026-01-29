@@ -53,7 +53,7 @@ export const BRAND_LOGOS: Record<BrandKey, string> = {
   verizon_corporate: '/logos/verizon.png',
   victra: '/logos/victra.jpeg',
   tmobile: '/logos/tmobile.png',
-  uscellular: '/logos/uscellular.svg',
+  uscellular: '/logos/uscellular.jpg',
 };
 
 // Trade Area Analysis Types

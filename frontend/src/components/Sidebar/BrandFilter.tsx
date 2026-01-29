@@ -53,18 +53,20 @@ export function BrandFilter() {
               }
             >
               <div className="flex items-center gap-2">
-                {logo ? (
-                  <img
-                    src={logo}
-                    alt={label}
-                    className="w-6 h-6 object-contain flex-shrink-0 rounded"
-                  />
-                ) : (
-                  <div
-                    className="w-6 h-6 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: color }}
-                  />
-                )}
+                <div className="w-7 h-7 rounded-full border border-gray-200 bg-white flex items-center justify-center flex-shrink-0">
+                  {logo ? (
+                    <img
+                      src={logo}
+                      alt={label}
+                      className="w-5 h-5 object-contain rounded-full"
+                    />
+                  ) : (
+                    <div
+                      className="w-5 h-5 rounded-full"
+                      style={{ backgroundColor: color }}
+                    />
+                  )}
+                </div>
                 <span className="text-sm font-medium truncate">{label}</span>
               </div>
               <div className="flex items-center gap-2">
