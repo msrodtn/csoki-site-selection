@@ -120,6 +120,7 @@ export interface DemographicsResponse {
   longitude: number;
   radii: DemographicMetrics[];
   data_vintage: string;
+  census_supplemented?: boolean;
 }
 
 export interface DemographicsRequest {

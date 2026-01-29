@@ -1,14 +1,16 @@
 """
 ArcGIS GeoEnrichment service for demographic data.
 
-Uses the ArcGIS GeoEnrichment API to fetch population, income, employment,
-and consumer spending data for a given location at multiple radii.
+Uses the ArcGIS GeoEnrichment API to fetch population, income data.
+Census Bureau API supplements with median age and business/employment data.
 """
+import asyncio
 import httpx
 from typing import Optional
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.services.census import fetch_census_data
 
 
 class DemographicMetrics(BaseModel):
@@ -43,6 +45,7 @@ class DemographicsResponse(BaseModel):
     longitude: float
     radii: list[DemographicMetrics]
     data_vintage: str = "2025"  # Esri data vintage
+    census_supplemented: bool = False  # Whether Census data was used to fill gaps
 
 
 # ArcGIS GeoEnrichment analysis variables
@@ -168,10 +171,36 @@ async def fetch_demographics(
     if not results:
         results = [DemographicMetrics(radius_miles=r) for r in radii_miles]
 
+    # Supplement with Census Bureau data for fields ArcGIS doesn't provide
+    census_supplemented = False
+    try:
+        census_data = await fetch_census_data(latitude, longitude)
+
+        # Fill in gaps with Census data for each radius result
+        for metrics in results:
+            # Median Age - use Census if ArcGIS didn't return it
+            if metrics.median_age is None and census_data.median_age is not None:
+                metrics.median_age = census_data.median_age
+                census_supplemented = True
+
+            # Business/Employment - use Census county-level data if ArcGIS didn't return it
+            if metrics.total_businesses is None and census_data.total_businesses is not None:
+                metrics.total_businesses = census_data.total_businesses
+                census_supplemented = True
+
+            if metrics.total_employees is None and census_data.total_employees is not None:
+                metrics.total_employees = census_data.total_employees
+                census_supplemented = True
+
+    except Exception as e:
+        # Census data is supplemental - don't fail if it's unavailable
+        print(f"Census data fetch failed (non-fatal): {e}")
+
     return DemographicsResponse(
         latitude=latitude,
         longitude=longitude,
-        radii=results
+        radii=results,
+        census_supplemented=census_supplemented
     )
 
 

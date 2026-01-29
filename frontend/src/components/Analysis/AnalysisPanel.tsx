@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Users,
   DollarSign,
+  Briefcase,
   GripHorizontal,
 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
@@ -556,6 +557,12 @@ export function AnalysisPanel() {
                                   {formatNumber(currentDemographics.total_households)}
                                 </div>
                               </div>
+                              <div className="bg-gray-50 rounded-lg p-2 col-span-2">
+                                <div className="text-gray-500 text-xs">Median Age</div>
+                                <div className="font-semibold">
+                                  {currentDemographics.median_age?.toFixed(1) || 'N/A'}
+                                </div>
+                              </div>
                             </div>
                           </div>
 
@@ -589,9 +596,37 @@ export function AnalysisPanel() {
                             </div>
                           </div>
 
+                          {/* Employment (from Census Bureau) */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Briefcase className="w-4 h-4 text-orange-600" />
+                              <span className="text-xs font-semibold text-gray-500 uppercase">
+                                Employment
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div className="bg-gray-50 rounded-lg p-2">
+                                <div className="text-gray-500 text-xs">Businesses</div>
+                                <div className="font-semibold">
+                                  {formatNumber(currentDemographics.total_businesses)}
+                                </div>
+                              </div>
+                              <div className="bg-gray-50 rounded-lg p-2">
+                                <div className="text-gray-500 text-xs">Employees</div>
+                                <div className="font-semibold">
+                                  {formatNumber(currentDemographics.total_employees)}
+                                </div>
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              County-level data from Census Bureau
+                            </p>
+                          </div>
+
                           {/* Data vintage note */}
                           <p className="text-xs text-gray-400 text-center">
                             Data: Esri {demographicsData.data_vintage}
+                            {demographicsData.census_supplemented && ' + Census Bureau'}
                           </p>
                         </div>
                       )}
