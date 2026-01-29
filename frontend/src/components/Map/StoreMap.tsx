@@ -259,9 +259,9 @@ export function StoreMap() {
         getTileUrl: (coord, zoom) => {
           const { x1, y1, x2, y2 } = getTileBbox(coord, zoom);
           const bbox = `${x1},${y1},${x2},${y2}`;
-          // Layer 28 is S_FLD_HAZ_AR (Special Flood Hazard Areas) - the main flood zone layer
-          // Include layers parameter and dpi for better rendering
-          return `https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/export?bbox=${bbox}&bboxSR=4326&imageSR=102100&size=256,256&format=png32&transparent=true&layers=show:28&dpi=96&f=image`;
+          // Layer 28 is Flood Hazard Zones - the main flood zone layer
+          // Correct FEMA endpoint is /arcgis/ not /gis/nfhl/
+          return `https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/export?bbox=${bbox}&bboxSR=4326&imageSR=102100&size=256,256&format=png32&transparent=true&layers=show:28&dpi=96&f=image`;
         },
         tileSize: new google.maps.Size(256, 256),
         opacity: 0.6,
