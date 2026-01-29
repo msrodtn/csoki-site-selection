@@ -510,11 +510,40 @@ export function StoreMap() {
           return `https://tiles.arcgis.com/tiles/KzeiCaQsMoeCfoCq/arcgis/rest/services/Regrid_Nationwide_Parcel_Boundaries_v1/MapServer/tile/${zoom}/${coord.y}/${coord.x}`;
         },
         tileSize: new google.maps.Size(256, 256),
-        opacity: 0.7,
+        opacity: 1.0,  // Full opacity for better visibility
         name: 'Parcel Boundaries',
       });
       map.overlayMapTypes.push(parcelsOverlayRef.current);
+
+      // Apply CSS filter to darken the parcel lines using MutationObserver
+      const applyParcelFilter = () => {
+        const tiles = document.querySelectorAll('img[src*="Regrid_Nationwide_Parcel_Boundaries"]');
+        tiles.forEach((tile) => {
+          const el = tile as HTMLElement;
+          if (!el.dataset.filtered) {
+            el.style.filter = 'contrast(2.0) brightness(0.85)';
+            el.dataset.filtered = 'true';
+          }
+        });
+      };
+
+      // Initial application
+      applyParcelFilter();
+
+      // Watch for new tiles loading
+      const observer = new MutationObserver(() => {
+        applyParcelFilter();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      // Store observer for cleanup
+      (parcelsOverlayRef.current as unknown as { _observer?: MutationObserver })._observer = observer;
     } else if (!showParcels && parcelsOverlayRef.current) {
+      // Clean up observer
+      const overlay = parcelsOverlayRef.current as unknown as { _observer?: MutationObserver };
+      if (overlay._observer) {
+        overlay._observer.disconnect();
+      }
       const overlays = map.overlayMapTypes;
       for (let i = 0; i < overlays.getLength(); i++) {
         if (overlays.getAt(i) === parcelsOverlayRef.current) {
