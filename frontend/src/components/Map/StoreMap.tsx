@@ -17,6 +17,7 @@ import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
 import { QuickStatsBar } from './QuickStatsBar';
+import { DraggableParcelInfo } from './DraggableParcelInfo';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -717,138 +718,21 @@ export function StoreMap() {
           </InfoWindowF>
         )}
 
-        {/* Parcel info window */}
-        {(selectedParcel || isLoadingParcel || parcelError) && parcelClickPosition && (
-          <InfoWindowF
-            position={parcelClickPosition}
-            onCloseClick={() => {
-              setSelectedParcel(null);
-              setParcelError(null);
-              setParcelClickPosition(null);
-            }}
-            options={{ disableAutoPan: true, maxWidth: 320 }}
-          >
-            <div className="min-w-[280px] p-1">
-              <div className="text-xs font-semibold px-2 py-1 rounded mb-2 text-white bg-amber-700">
-                Parcel Information
-              </div>
-
-              {isLoadingParcel ? (
-                <div className="text-center py-4 text-gray-500">
-                  <div className="animate-spin inline-block w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full mb-2"></div>
-                  <p className="text-xs">Loading parcel data...</p>
-                </div>
-              ) : parcelError ? (
-                <div className="text-center py-2 text-red-600 text-xs">
-                  {parcelError}
-                </div>
-              ) : selectedParcel ? (
-                <div className="text-sm space-y-2">
-                  {/* Parcel ID */}
-                  {selectedParcel.parcel_id && (
-                    <div>
-                      <span className="text-gray-500 text-xs">Parcel ID:</span>
-                      <p className="font-medium">{selectedParcel.parcel_id}</p>
-                    </div>
-                  )}
-
-                  {/* Address */}
-                  {selectedParcel.address && (
-                    <div>
-                      <span className="text-gray-500 text-xs">Address:</span>
-                      <p className="font-medium">{selectedParcel.address}</p>
-                      {(selectedParcel.city || selectedParcel.state) && (
-                        <p className="text-gray-600 text-xs">
-                          {[selectedParcel.city, selectedParcel.state, selectedParcel.zip_code]
-                            .filter(Boolean)
-                            .join(', ')}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Owner */}
-                  {selectedParcel.owner && (
-                    <div>
-                      <span className="text-gray-500 text-xs">Owner:</span>
-                      <p className="font-medium">{selectedParcel.owner}</p>
-                    </div>
-                  )}
-
-                  {/* Grid of key metrics */}
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-200">
-                    {selectedParcel.acreage && (
-                      <div>
-                        <span className="text-gray-500 text-xs">Acreage:</span>
-                        <p className="font-medium">{selectedParcel.acreage.toFixed(2)} ac</p>
-                      </div>
-                    )}
-                    {selectedParcel.zoning && (
-                      <div>
-                        <span className="text-gray-500 text-xs">Zoning:</span>
-                        <p className="font-medium">{selectedParcel.zoning}</p>
-                      </div>
-                    )}
-                    {selectedParcel.land_use && (
-                      <div>
-                        <span className="text-gray-500 text-xs">Land Use:</span>
-                        <p className="font-medium">{selectedParcel.land_use}</p>
-                      </div>
-                    )}
-                    {selectedParcel.year_built && (
-                      <div>
-                        <span className="text-gray-500 text-xs">Year Built:</span>
-                        <p className="font-medium">{selectedParcel.year_built}</p>
-                      </div>
-                    )}
-                    {selectedParcel.building_sqft && (
-                      <div>
-                        <span className="text-gray-500 text-xs">Building Sqft:</span>
-                        <p className="font-medium">{selectedParcel.building_sqft.toLocaleString()}</p>
-                      </div>
-                    )}
-                    {selectedParcel.total_value && (
-                      <div>
-                        <span className="text-gray-500 text-xs">Total Value:</span>
-                        <p className="font-medium">${selectedParcel.total_value.toLocaleString()}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sale info */}
-                  {(selectedParcel.sale_price || selectedParcel.sale_date) && (
-                    <div className="pt-2 border-t border-gray-200">
-                      <span className="text-gray-500 text-xs">Last Sale:</span>
-                      <p className="font-medium">
-                        {selectedParcel.sale_price && `$${selectedParcel.sale_price.toLocaleString()}`}
-                        {selectedParcel.sale_price && selectedParcel.sale_date && ' on '}
-                        {selectedParcel.sale_date}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Debug: Show raw data keys if no fields populated */}
-                  {selectedParcel.raw_data && (
-                    <div className="pt-2 border-t border-gray-200">
-                      <span className="text-gray-500 text-xs">Raw API Fields:</span>
-                      <div className="text-xs text-gray-600 mt-1 max-h-32 overflow-y-auto">
-                        {Object.entries(selectedParcel.raw_data)
-                          .filter(([_, v]) => v !== null && v !== '')
-                          .slice(0, 15)
-                          .map(([key, value]) => (
-                            <div key={key} className="truncate">
-                              <span className="font-medium">{key}:</span> {String(value).substring(0, 30)}
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          </InfoWindowF>
-        )}
       </GoogleMap>
+
+      {/* Draggable Parcel Info Panel */}
+      {(selectedParcel || isLoadingParcel || parcelError) && parcelClickPosition && (
+        <DraggableParcelInfo
+          parcel={selectedParcel}
+          isLoading={isLoadingParcel}
+          error={parcelError}
+          onClose={() => {
+            setSelectedParcel(null);
+            setParcelError(null);
+            setParcelClickPosition(null);
+          }}
+        />
+      )}
     </div>
   );
 }
