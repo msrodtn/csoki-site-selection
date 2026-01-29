@@ -30,7 +30,8 @@ const mapContainerStyle = {
   height: '100%',
 };
 
-const mapOptions: google.maps.MapOptions = {
+// Base map options (styles will be set dynamically)
+const baseMapOptions: google.maps.MapOptions = {
   disableDefaultUI: false,
   zoomControl: true,
   mapTypeControl: true,
@@ -38,16 +39,52 @@ const mapOptions: google.maps.MapOptions = {
   streetViewControl: true,
   rotateControl: true,
   fullscreenControl: true,
-  clickableIcons: false,
+  clickableIcons: true,
   gestureHandling: 'greedy',
-  styles: [
-    {
-      featureType: 'poi',
-      elementType: 'labels',
-      stylers: [{ visibility: 'off' }],
-    },
-  ],
 };
+
+// Map styles for hiding POI labels (default)
+const hidePOIStyles: google.maps.MapTypeStyle[] = [
+  {
+    featureType: 'poi',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+];
+
+// Map styles for showing POI labels (business labels enabled)
+const showPOIStyles: google.maps.MapTypeStyle[] = [
+  {
+    featureType: 'poi.business',
+    elementType: 'labels',
+    stylers: [{ visibility: 'on' }],
+  },
+  {
+    featureType: 'poi.attraction',
+    elementType: 'labels',
+    stylers: [{ visibility: 'on' }],
+  },
+  {
+    featureType: 'poi.place_of_worship',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.school',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.medical',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.government',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+];
 
 // Libraries to load with Google Maps (must be constant to avoid re-renders)
 const GOOGLE_MAPS_LIBRARIES: ('places' | 'visualization')[] = ['places', 'visualization'];
@@ -172,6 +209,15 @@ export function StoreMap() {
     );
     return filtered.slice(0, 100);
   }, [analysisResult?.pois, visiblePOICategoriesArray]);
+
+  // Dynamic map options based on business labels layer
+  const mapOptions = useMemo((): google.maps.MapOptions => {
+    const showBusinessLabels = visibleLayers.has('business_labels');
+    return {
+      ...baseMapOptions,
+      styles: showBusinessLabels ? showPOIStyles : hidePOIStyles,
+    };
+  }, [visibleLayers]);
 
   const handleMarkerClick = useCallback(
     (store: Store) => {

@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Grid3X3, Flame, LandPlot } from 'lucide-react';
+import { Layers, Droplets, Car, Train, Grid3X3, Flame, LandPlot, Building2 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -44,6 +44,13 @@ export const MAP_LAYERS = {
     icon: Flame,
     color: '#F97316',
     description: 'Store density visualization',
+  },
+  business_labels: {
+    id: 'business_labels',
+    name: 'Business Labels',
+    icon: Building2,
+    color: '#6366F1',
+    description: 'Show business names on map',
   },
 } as const;
 
