@@ -50,6 +50,23 @@ class StoreStats(BaseModel):
     states: list[str]
 
 
+class NearestCompetitorRequest(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+
+
+class NearestCompetitor(BaseModel):
+    brand: str
+    distance_miles: float
+    store: StoreResponse
+
+
+class NearestCompetitorsResponse(BaseModel):
+    latitude: float
+    longitude: float
+    competitors: list[NearestCompetitor]
+
+
 @router.get("/", response_model=StoreListResponse)
 def get_all_locations(
     db: Session = Depends(get_db),
@@ -172,6 +189,66 @@ def get_locations_within_radius(
 
     stores = query.all()
     return StoreListResponse(total=len(stores), stores=stores)
+
+
+@router.post("/nearest-competitors", response_model=NearestCompetitorsResponse)
+def get_nearest_competitors(
+    request: NearestCompetitorRequest,
+    db: Session = Depends(get_db),
+):
+    """Get the nearest store of each brand from a given point."""
+    # Create point for distance calculation
+    point = func.ST_SetSRID(
+        func.ST_MakePoint(request.longitude, request.latitude),
+        4326
+    )
+
+    # Get all unique brands
+    brands = db.query(Store.brand).distinct().all()
+    brands = [b[0] for b in brands]
+
+    competitors = []
+
+    for brand in brands:
+        # Find nearest store of this brand
+        store = db.query(Store).filter(
+            Store.brand == brand,
+            Store.location.isnot(None)
+        ).order_by(
+            func.ST_Distance(Store.location, point)
+        ).first()
+
+        if store:
+            # Calculate distance in miles
+            distance_meters = db.query(
+                func.ST_Distance(Store.location, point)
+            ).filter(Store.id == store.id).scalar()
+
+            distance_miles = round(distance_meters / 1609.34, 2) if distance_meters else 0
+
+            competitors.append(NearestCompetitor(
+                brand=brand,
+                distance_miles=distance_miles,
+                store=StoreResponse(
+                    id=store.id,
+                    brand=store.brand,
+                    street=store.street,
+                    city=store.city,
+                    state=store.state,
+                    postal_code=store.postal_code,
+                    latitude=store.latitude,
+                    longitude=store.longitude,
+                )
+            ))
+
+    # Sort by distance
+    competitors.sort(key=lambda x: x.distance_miles)
+
+    return NearestCompetitorsResponse(
+        latitude=request.latitude,
+        longitude=request.longitude,
+        competitors=competitors
+    )
 
 
 @router.get("/{store_id}", response_model=StoreResponse)

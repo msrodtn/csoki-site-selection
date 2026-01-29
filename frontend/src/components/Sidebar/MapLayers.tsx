@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Grid3X3 } from 'lucide-react';
+import { Layers, Droplets, Car, Train, Grid3X3, Flame } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -30,6 +30,13 @@ export const MAP_LAYERS = {
     icon: Grid3X3,
     color: '#10B981',
     description: 'Census boundary lines',
+  },
+  competition_heat: {
+    id: 'competition_heat',
+    name: 'Competition Heat Map',
+    icon: Flame,
+    color: '#F97316',
+    description: 'Store density visualization',
   },
 } as const;
 

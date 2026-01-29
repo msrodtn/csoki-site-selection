@@ -1,5 +1,13 @@
 import { create } from 'zustand';
-import type { Store, BrandKey, TradeAreaAnalysis, POICategory, DemographicsResponse } from '../types/store';
+import type {
+  Store,
+  BrandKey,
+  TradeAreaAnalysis,
+  POICategory,
+  DemographicsResponse,
+  NearestCompetitorsResponse,
+  SavedLocation,
+} from '../types/store';
 
 // Target market states
 const TARGET_STATES = ['IA', 'NE', 'NV', 'ID'];
@@ -67,6 +75,24 @@ interface MapState {
   visibleLayers: Set<string>;
   toggleLayer: (layer: string) => void;
   setLayerVisible: (layer: string, visible: boolean) => void;
+
+  // Nearest Competitors
+  nearestCompetitors: NearestCompetitorsResponse | null;
+  setNearestCompetitors: (data: NearestCompetitorsResponse | null) => void;
+  isNearestCompetitorsLoading: boolean;
+  setIsNearestCompetitorsLoading: (loading: boolean) => void;
+
+  // Saved Locations (for Compare feature)
+  savedLocations: SavedLocation[];
+  addSavedLocation: (location: SavedLocation) => void;
+  removeSavedLocation: (id: string) => void;
+  clearSavedLocations: () => void;
+
+  // Compare Panel
+  showComparePanel: boolean;
+  setShowComparePanel: (show: boolean) => void;
+  compareLocationIds: string[];
+  setCompareLocationIds: (ids: string[]) => void;
 
   // Clear analysis
   clearAnalysis: () => void;
@@ -207,6 +233,30 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { visibleLayers: newLayers };
     }),
 
+  // Nearest Competitors
+  nearestCompetitors: null,
+  setNearestCompetitors: (data) => set({ nearestCompetitors: data }),
+  isNearestCompetitorsLoading: false,
+  setIsNearestCompetitorsLoading: (loading) => set({ isNearestCompetitorsLoading: loading }),
+
+  // Saved Locations (for Compare feature)
+  savedLocations: [],
+  addSavedLocation: (location) =>
+    set((state) => ({
+      savedLocations: [...state.savedLocations, location],
+    })),
+  removeSavedLocation: (id) =>
+    set((state) => ({
+      savedLocations: state.savedLocations.filter((loc) => loc.id !== id),
+    })),
+  clearSavedLocations: () => set({ savedLocations: [] }),
+
+  // Compare Panel
+  showComparePanel: false,
+  setShowComparePanel: (show) => set({ showComparePanel: show }),
+  compareLocationIds: [],
+  setCompareLocationIds: (ids) => set({ compareLocationIds: ids }),
+
   // Clear all analysis state
   clearAnalysis: () =>
     set({
@@ -215,5 +265,6 @@ export const useMapStore = create<MapState>((set, get) => ({
       showAnalysisPanel: false,
       demographicsData: null,
       demographicsError: null,
+      nearestCompetitors: null,
     }),
 }));

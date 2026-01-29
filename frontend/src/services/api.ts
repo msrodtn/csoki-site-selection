@@ -6,6 +6,8 @@ import type {
   TradeAreaRequest,
   DemographicsResponse,
   DemographicsRequest,
+  NearestCompetitorsResponse,
+  NearestCompetitorsRequest,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -73,6 +75,14 @@ export const storeApi = {
   // Get statistics
   getStats: async (): Promise<StoreStats[]> => {
     const { data } = await api.get('/locations/stats/');
+    return data;
+  },
+
+  // Get nearest competitor of each brand from a point
+  getNearestCompetitors: async (
+    request: NearestCompetitorsRequest
+  ): Promise<NearestCompetitorsResponse> => {
+    const { data } = await api.post('/locations/nearest-competitors/', request);
     return data;
   },
 };

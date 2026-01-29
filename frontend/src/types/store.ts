@@ -127,3 +127,31 @@ export interface DemographicsRequest {
   latitude: number;
   longitude: number;
 }
+
+// Nearest Competitors Types
+export interface NearestCompetitor {
+  brand: string;
+  distance_miles: number;
+  store: Store;
+}
+
+export interface NearestCompetitorsResponse {
+  latitude: number;
+  longitude: number;
+  competitors: NearestCompetitor[];
+}
+
+export interface NearestCompetitorsRequest {
+  latitude: number;
+  longitude: number;
+}
+
+// Saved Location for Compare feature
+export interface SavedLocation {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  savedAt: Date;
+  demographics?: DemographicsResponse;
+}

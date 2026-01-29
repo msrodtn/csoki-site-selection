@@ -15,11 +15,14 @@ import {
   DollarSign,
   Briefcase,
   GripHorizontal,
+  Target,
+  Bookmark,
+  GitCompare,
 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
-import { analysisApi } from '../../services/api';
+import { analysisApi, storeApi } from '../../services/api';
 import type { POICategory, DemographicMetrics } from '../../types/store';
-import { POI_CATEGORY_COLORS, POI_CATEGORY_LABELS } from '../../types/store';
+import { POI_CATEGORY_COLORS, POI_CATEGORY_LABELS, BRAND_COLORS, BRAND_LABELS, type BrandKey } from '../../types/store';
 
 const RADIUS_OPTIONS = [
   { value: 0.25, label: '0.25 mi' },
@@ -75,11 +78,23 @@ export function AnalysisPanel() {
     setDemographicsError,
     selectedDemographicsRadius,
     setSelectedDemographicsRadius,
+    // Nearest Competitors
+    nearestCompetitors,
+    setNearestCompetitors,
+    isNearestCompetitorsLoading,
+    setIsNearestCompetitorsLoading,
+    // Navigation
+    navigateTo,
+    // Saved Locations & Compare
+    savedLocations,
+    addSavedLocation,
+    setShowComparePanel,
   } = useMapStore();
 
   // Collapsible section states
   const [isPOIExpanded, setIsPOIExpanded] = useState(true);
   const [isDemographicsExpanded, setIsDemographicsExpanded] = useState(false);
+  const [isCompetitorsExpanded, setIsCompetitorsExpanded] = useState(false);
 
   // Draggable panel state
   const [position, setPosition] = useState({ x: 340, y: 16 }); // Initial position (left-[340px] top-4)
@@ -172,6 +187,36 @@ export function AnalysisPanel() {
     if (!demographicsData) return null;
     return demographicsData.radii.find((r) => r.radius_miles === selectedDemographicsRadius) || null;
   }, [demographicsData, selectedDemographicsRadius]);
+
+  // Load nearest competitors on-demand when section is expanded
+  const handleCompetitorsExpand = useCallback(async () => {
+    const newExpanded = !isCompetitorsExpanded;
+    setIsCompetitorsExpanded(newExpanded);
+
+    // Load nearest competitors if expanding and no data yet
+    if (newExpanded && !nearestCompetitors && !isNearestCompetitorsLoading && analysisResult) {
+      setIsNearestCompetitorsLoading(true);
+
+      try {
+        const data = await storeApi.getNearestCompetitors({
+          latitude: analysisResult.center_latitude,
+          longitude: analysisResult.center_longitude,
+        });
+        setNearestCompetitors(data);
+      } catch (error) {
+        console.error('Failed to load nearest competitors:', error);
+      } finally {
+        setIsNearestCompetitorsLoading(false);
+      }
+    }
+  }, [
+    isCompetitorsExpanded,
+    nearestCompetitors,
+    isNearestCompetitorsLoading,
+    analysisResult,
+    setIsNearestCompetitorsLoading,
+    setNearestCompetitors,
+  ]);
 
   if (!showAnalysisPanel) {
     return null;
@@ -635,13 +680,116 @@ export function AnalysisPanel() {
                 </div>
               )}
             </div>
+
+            {/* Nearest Competitors Section - Collapsible, loads on-demand */}
+            <div className="mb-4 border rounded-lg overflow-hidden">
+              <button
+                onClick={handleCompetitorsExpand}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  {isCompetitorsExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-500" />
+                  )}
+                  <Target className="w-4 h-4 text-red-600" />
+                  <span className="font-semibold text-gray-700">Nearest Competitors</span>
+                </div>
+                <span className="text-xs text-gray-400">by brand</span>
+              </button>
+
+              {isCompetitorsExpanded && (
+                <div className="p-4 border-t">
+                  {isNearestCompetitorsLoading && (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-5 h-5 text-red-600 animate-spin" />
+                      <span className="ml-2 text-sm text-gray-600">Finding competitors...</span>
+                    </div>
+                  )}
+
+                  {nearestCompetitors && !isNearestCompetitorsLoading && (
+                    <div className="space-y-2">
+                      {nearestCompetitors.competitors.map((competitor) => {
+                        const brandKey = competitor.brand as BrandKey;
+                        const brandColor = BRAND_COLORS[brandKey] || '#666';
+                        const brandLabel = BRAND_LABELS[brandKey] || competitor.brand;
+
+                        return (
+                          <button
+                            key={competitor.brand}
+                            onClick={() => {
+                              if (competitor.store.latitude && competitor.store.longitude) {
+                                navigateTo(competitor.store.latitude, competitor.store.longitude, 15);
+                              }
+                            }}
+                            className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                          >
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: brandColor }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-800 truncate">
+                                {brandLabel}
+                              </div>
+                              <div className="text-xs text-gray-500 truncate">
+                                {competitor.store.city}, {competitor.store.state}
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className="text-sm font-semibold text-gray-700">
+                                {competitor.distance_miles.toFixed(1)} mi
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                      <p className="text-[10px] text-gray-400 mt-2 text-center">
+                        Click to navigate to store
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
 
-      {/* Footer with Export button */}
+      {/* Footer with action buttons */}
       {analysisResult && !isAnalyzing && (
-        <div className="p-4 border-t">
+        <div className="p-4 border-t space-y-2">
+          {/* Save & Compare buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                const id = `loc-${Date.now()}`;
+                const name = `Location ${savedLocations.length + 1}`;
+                addSavedLocation({
+                  id,
+                  name,
+                  latitude: analysisResult.center_latitude,
+                  longitude: analysisResult.center_longitude,
+                  savedAt: new Date(),
+                });
+              }}
+              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded-lg transition-colors text-sm"
+            >
+              <Bookmark className="w-4 h-4" />
+              Save for Compare
+            </button>
+            <button
+              onClick={() => setShowComparePanel(true)}
+              disabled={savedLocations.length === 0}
+              className="flex-1 flex items-center justify-center gap-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white py-2 px-3 rounded-lg transition-colors text-sm"
+            >
+              <GitCompare className="w-4 h-4" />
+              Compare ({savedLocations.length})
+            </button>
+          </div>
+
+          {/* Export button */}
           <button
             onClick={handleExportPDF}
             className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors"

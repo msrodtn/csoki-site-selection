@@ -3,6 +3,7 @@ import { StoreMap } from './components/Map/StoreMap';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { PasswordGate } from './components/Auth/PasswordGate';
 import { AnalysisPanel } from './components/Analysis/AnalysisPanel';
+import { ComparePanel } from './components/Analysis/ComparePanel';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,6 +23,7 @@ function App() {
           <main className="flex-1 relative">
             <StoreMap />
             <AnalysisPanel />
+            <ComparePanel />
           </main>
         </div>
       </PasswordGate>

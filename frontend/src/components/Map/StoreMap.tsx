@@ -13,6 +13,8 @@ import {
 } from '../../types/store';
 import type { Store } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
+import { HeatMapLegend } from './HeatMapLegend';
+import { QuickStatsBar } from './QuickStatsBar';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -45,7 +47,7 @@ const mapOptions: google.maps.MapOptions = {
 };
 
 // Libraries to load with Google Maps (must be constant to avoid re-renders)
-const GOOGLE_MAPS_LIBRARIES: ('places')[] = ['places'];
+const GOOGLE_MAPS_LIBRARIES: ('places' | 'visualization')[] = ['places', 'visualization'];
 
 export function StoreMap() {
   const {
@@ -88,6 +90,9 @@ export function StoreMap() {
   // Custom tile overlay refs
   const femaFloodOverlayRef = useRef<google.maps.ImageMapType | null>(null);
   const censusTractsOverlayRef = useRef<google.maps.ImageMapType | null>(null);
+
+  // Heat map layer ref
+  const heatMapLayerRef = useRef<google.maps.visualization.HeatmapLayer | null>(null);
 
   // Load Google Maps with Places library for autocomplete
   const { isLoaded, loadError } = useJsApiLoader({
@@ -166,6 +171,10 @@ export function StoreMap() {
     if (transitLayerRef.current) {
       transitLayerRef.current.setMap(null);
       transitLayerRef.current = null;
+    }
+    if (heatMapLayerRef.current) {
+      heatMapLayerRef.current.setMap(null);
+      heatMapLayerRef.current = null;
     }
     femaFloodOverlayRef.current = null;
     censusTractsOverlayRef.current = null;
@@ -311,6 +320,45 @@ export function StoreMap() {
     }
   }, [visibleLayersArray]);
 
+  // Manage heat map layer (separate effect since it depends on visibleStores)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const showHeatMap = visibleLayersArray.includes('competition_heat');
+
+    if (showHeatMap && visibleStores.length > 0) {
+      // Create heat map data points
+      const heatMapData = visibleStores
+        .filter((store) => store.latitude && store.longitude)
+        .map((store) => new google.maps.LatLng(store.latitude!, store.longitude!));
+
+      if (heatMapLayerRef.current) {
+        // Update existing heat map data
+        heatMapLayerRef.current.setData(heatMapData);
+      } else {
+        // Create new heat map layer
+        heatMapLayerRef.current = new google.maps.visualization.HeatmapLayer({
+          data: heatMapData,
+          map: map,
+          radius: 30,
+          opacity: 0.6,
+          gradient: [
+            'rgba(0, 255, 0, 0)',
+            'rgba(0, 255, 0, 0.5)',
+            'rgba(255, 255, 0, 0.7)',
+            'rgba(255, 165, 0, 0.8)',
+            'rgba(255, 0, 0, 1)',
+          ],
+        });
+      }
+    } else if (!showHeatMap && heatMapLayerRef.current) {
+      // Remove heat map layer
+      heatMapLayerRef.current.setMap(null);
+      heatMapLayerRef.current = null;
+    }
+  }, [visibleLayersArray, visibleStores]);
+
   // Create SVG marker icon for each brand (larger than POIs to stand out)
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Symbol => {
     const color = BRAND_COLORS[brand as BrandKey] || '#666';
@@ -366,16 +414,14 @@ export function StoreMap() {
         </div>
       )}
 
-      {/* Store count */}
-      <div className="absolute top-4 right-4 z-10 bg-white px-3 py-1 rounded-lg shadow-md text-sm">
-        {visibleStores.length.toLocaleString()} stores visible
-        {visiblePOIs.length > 0 && (
-          <span className="ml-2 text-gray-500">| {visiblePOIs.length} POIs</span>
-        )}
-      </div>
+      {/* Quick Stats Bar - shows store counts by brand */}
+      <QuickStatsBar stores={visibleStores} />
 
       {/* FEMA Flood Zone Legend */}
       <FEMALegend isVisible={visibleLayersArray.includes('fema_flood')} />
+
+      {/* Heat Map Legend */}
+      <HeatMapLegend isVisible={visibleLayersArray.includes('competition_heat')} />
 
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
