@@ -21,9 +21,9 @@ export function Sidebar() {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         <SearchBar />
-        <MapLayers />
         <BrandFilter />
         <StateFilter />
+        <MapLayers />
       </div>
 
       {/* Footer */}

@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import {
   X,
   Eye,
@@ -15,6 +15,7 @@ import {
   DollarSign,
   Briefcase,
   ShoppingCart,
+  GripHorizontal,
 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import { analysisApi } from '../../services/api';
@@ -86,6 +87,54 @@ export function AnalysisPanel() {
   // Collapsible section states
   const [isPOIExpanded, setIsPOIExpanded] = useState(true);
   const [isDemographicsExpanded, setIsDemographicsExpanded] = useState(false);
+
+  // Draggable panel state
+  const [position, setPosition] = useState({ x: 340, y: 16 }); // Initial position (left-[340px] top-4)
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Handle drag events
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - dragStartRef.current.x;
+      const deltaY = e.clientY - dragStartRef.current.y;
+
+      setPosition((prev) => ({
+        x: Math.max(0, prev.x + deltaX),
+        y: Math.max(0, prev.y + deltaY),
+      }));
+
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  // Reset position when panel is shown
+  useEffect(() => {
+    if (showAnalysisPanel) {
+      setPosition({ x: 340, y: 16 });
+    }
+  }, [showAnalysisPanel]);
 
   const visibleCategoriesArray = useMemo(
     () => Array.from(visiblePOICategories),
@@ -277,10 +326,26 @@ export function AnalysisPanel() {
   };
 
   return (
-    <div className="absolute top-4 left-[340px] w-80 bg-white rounded-lg shadow-lg z-20 max-h-[calc(100vh-2rem)] flex flex-col">
-      {/* Header */}
+    <div
+      ref={panelRef}
+      className="absolute w-80 bg-white rounded-lg shadow-lg z-20 max-h-[calc(100vh-2rem)] flex flex-col"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+      }}
+    >
+      {/* Header with drag handle */}
       <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-red-600 to-red-700 rounded-t-lg">
-        <h2 className="text-lg font-semibold text-white">Trade Area Analysis</h2>
+        <div className="flex items-center gap-2">
+          <div
+            onMouseDown={handleDragStart}
+            className="cursor-grab active:cursor-grabbing p-1 -ml-1 hover:bg-white/20 rounded transition-colors"
+            title="Drag to move"
+          >
+            <GripHorizontal className="w-4 h-4 text-white/70" />
+          </div>
+          <h2 className="text-lg font-semibold text-white">Trade Area Analysis</h2>
+        </div>
         <button
           onClick={handleClose}
           className="text-white/80 hover:text-white transition-colors"
