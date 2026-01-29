@@ -238,12 +238,28 @@ export function StoreMap() {
       transitLayerRef.current = null;
     }
 
-    // FEMA Flood Zones Overlay
+    // Helper to calculate bounding box for a tile (for ArcGIS export endpoint)
+    const getTileBbox = (coord: google.maps.Point, zoom: number) => {
+      const scale = 1 << zoom;
+      // Convert tile coords to lat/lng bounds
+      const x1 = (coord.x / scale) * 360 - 180;
+      const x2 = ((coord.x + 1) / scale) * 360 - 180;
+      // Y uses Mercator projection
+      const y1Mercator = Math.PI * (1 - (2 * (coord.y + 1)) / scale);
+      const y2Mercator = Math.PI * (1 - (2 * coord.y) / scale);
+      const y1 = (Math.atan(Math.sinh(y1Mercator)) * 180) / Math.PI;
+      const y2 = (Math.atan(Math.sinh(y2Mercator)) * 180) / Math.PI;
+      return { x1, y1, x2, y2 };
+    };
+
+    // FEMA Flood Zones Overlay (using ArcGIS export endpoint)
     const showFlood = visibleLayersArray.includes('fema_flood');
     if (showFlood && !femaFloodOverlayRef.current) {
       femaFloodOverlayRef.current = new google.maps.ImageMapType({
         getTileUrl: (coord, zoom) => {
-          return `https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/tile/${zoom}/${coord.y}/${coord.x}`;
+          const { x1, y1, x2, y2 } = getTileBbox(coord, zoom);
+          const bbox = `${x1},${y1},${x2},${y2}`;
+          return `https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/export?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&f=image`;
         },
         tileSize: new google.maps.Size(256, 256),
         opacity: 0.6,
@@ -251,7 +267,6 @@ export function StoreMap() {
       });
       map.overlayMapTypes.push(femaFloodOverlayRef.current);
     } else if (!showFlood && femaFloodOverlayRef.current) {
-      // Find and remove the overlay
       const overlays = map.overlayMapTypes;
       for (let i = 0; i < overlays.getLength(); i++) {
         if (overlays.getAt(i) === femaFloodOverlayRef.current) {
@@ -262,13 +277,15 @@ export function StoreMap() {
       femaFloodOverlayRef.current = null;
     }
 
-    // Census Tracts Overlay
+    // Census Tracts Overlay (using ArcGIS export endpoint)
     const showCensus = visibleLayersArray.includes('census_tracts');
     if (showCensus && !censusTractsOverlayRef.current) {
       censusTractsOverlayRef.current = new google.maps.ImageMapType({
         getTileUrl: (coord, zoom) => {
-          // Census TIGERweb WMS - Census Tracts layer
-          return `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Current/MapServer/tile/${zoom}/${coord.y}/${coord.x}`;
+          const { x1, y1, x2, y2 } = getTileBbox(coord, zoom);
+          const bbox = `${x1},${y1},${x2},${y2}`;
+          // Census Tracts layer (layer 8 in TIGERweb)
+          return `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Current/MapServer/export?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&layers=show:8&f=image`;
         },
         tileSize: new google.maps.Size(256, 256),
         opacity: 0.5,
@@ -276,7 +293,6 @@ export function StoreMap() {
       });
       map.overlayMapTypes.push(censusTractsOverlayRef.current);
     } else if (!showCensus && censusTractsOverlayRef.current) {
-      // Find and remove the overlay
       const overlays = map.overlayMapTypes;
       for (let i = 0; i < overlays.getLength(); i++) {
         if (overlays.getAt(i) === censusTractsOverlayRef.current) {
