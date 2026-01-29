@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Store, BrandKey, TradeAreaAnalysis, POICategory } from '../types/store';
+import type { Store, BrandKey, TradeAreaAnalysis, POICategory, DemographicsResponse } from '../types/store';
 
 // Target market states
 const TARGET_STATES = ['IA', 'NE', 'NV', 'ID'];
@@ -52,6 +52,16 @@ interface MapState {
   // Analysis panel visibility
   showAnalysisPanel: boolean;
   setShowAnalysisPanel: (show: boolean) => void;
+
+  // Demographics (ArcGIS)
+  demographicsData: DemographicsResponse | null;
+  setDemographicsData: (data: DemographicsResponse | null) => void;
+  isDemographicsLoading: boolean;
+  setIsDemographicsLoading: (loading: boolean) => void;
+  demographicsError: string | null;
+  setDemographicsError: (error: string | null) => void;
+  selectedDemographicsRadius: number;
+  setSelectedDemographicsRadius: (radius: number) => void;
 
   // Clear analysis
   clearAnalysis: () => void;
@@ -159,11 +169,23 @@ export const useMapStore = create<MapState>((set, get) => ({
   showAnalysisPanel: false,
   setShowAnalysisPanel: (show) => set({ showAnalysisPanel: show }),
 
+  // Demographics (ArcGIS)
+  demographicsData: null,
+  setDemographicsData: (data) => set({ demographicsData: data }),
+  isDemographicsLoading: false,
+  setIsDemographicsLoading: (loading) => set({ isDemographicsLoading: loading }),
+  demographicsError: null,
+  setDemographicsError: (error) => set({ demographicsError: error }),
+  selectedDemographicsRadius: 1,  // Default to 1 mile view
+  setSelectedDemographicsRadius: (radius) => set({ selectedDemographicsRadius: radius }),
+
   // Clear all analysis state
   clearAnalysis: () =>
     set({
       analysisResult: null,
       analysisError: null,
       showAnalysisPanel: false,
+      demographicsData: null,
+      demographicsError: null,
     }),
 }));

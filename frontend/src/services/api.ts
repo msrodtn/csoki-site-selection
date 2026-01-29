@@ -1,5 +1,12 @@
 import axios from 'axios';
-import type { StoreListResponse, StoreStats, TradeAreaAnalysis, TradeAreaRequest } from '../types/store';
+import type {
+  StoreListResponse,
+  StoreStats,
+  TradeAreaAnalysis,
+  TradeAreaRequest,
+  DemographicsResponse,
+  DemographicsRequest,
+} from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -80,6 +87,18 @@ export const analysisApi = {
   // Check if Places API key is configured
   checkApiKey: async (): Promise<{ configured: boolean; message: string }> => {
     const { data } = await api.get('/analysis/check-api-key/');
+    return data;
+  },
+
+  // Get demographics data from ArcGIS
+  getDemographics: async (request: DemographicsRequest): Promise<DemographicsResponse> => {
+    const { data } = await api.post('/analysis/demographics/', request);
+    return data;
+  },
+
+  // Check if ArcGIS API key is configured
+  checkArcGISKey: async (): Promise<{ configured: boolean; message: string }> => {
+    const { data } = await api.get('/analysis/check-arcgis-key/');
     return data;
   },
 };

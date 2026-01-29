@@ -9,6 +9,7 @@ from typing import Optional
 from sqlalchemy import text
 
 from app.services.places import fetch_nearby_pois, TradeAreaAnalysis
+from app.services.arcgis import fetch_demographics, DemographicsResponse
 from app.core.config import settings
 from app.core.database import get_db
 
@@ -78,6 +79,53 @@ async def check_places_api_key():
     return {
         "configured": settings.GOOGLE_PLACES_API_KEY is not None,
         "message": "API key configured" if settings.GOOGLE_PLACES_API_KEY else "API key not set"
+    }
+
+
+class DemographicsRequest(BaseModel):
+    """Request model for demographics analysis."""
+    latitude: float
+    longitude: float
+
+
+@router.post("/demographics/", response_model=DemographicsResponse)
+async def get_demographics(request: DemographicsRequest):
+    """
+    Get demographic data from ArcGIS GeoEnrichment API.
+
+    Returns population, income, employment, and consumer spending data
+    for 1-mile, 3-mile, and 5-mile radii around the specified location.
+
+    - **latitude**: Center point latitude
+    - **longitude**: Center point longitude
+    """
+    if not settings.ARCGIS_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="ArcGIS API key not configured. Please set ARCGIS_API_KEY environment variable."
+        )
+
+    try:
+        result = await fetch_demographics(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            radii_miles=[1, 3, 5]
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching demographics: {str(e)}")
+
+
+@router.get("/check-arcgis-key/")
+async def check_arcgis_api_key():
+    """
+    Check if the ArcGIS API key is configured.
+    """
+    return {
+        "configured": settings.ARCGIS_API_KEY is not None,
+        "message": "ArcGIS API key configured" if settings.ARCGIS_API_KEY else "ArcGIS API key not set"
     }
 
 

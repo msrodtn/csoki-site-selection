@@ -88,3 +88,41 @@ export const POI_CATEGORY_LABELS: Record<POICategory, string> = {
   restaurants: 'Restaurants',
   retail: 'Retail',
 };
+
+// Demographics Types (ArcGIS GeoEnrichment)
+export interface DemographicMetrics {
+  radius_miles: number;
+
+  // Population
+  total_population: number | null;
+  total_households: number | null;
+  population_density: number | null;
+  median_age: number | null;
+
+  // Income
+  median_household_income: number | null;
+  average_household_income: number | null;
+  per_capita_income: number | null;
+
+  // Employment
+  total_businesses: number | null;
+  total_employees: number | null;
+
+  // Consumer Spending
+  spending_food_away: number | null;
+  spending_apparel: number | null;
+  spending_entertainment: number | null;
+  spending_retail_total: number | null;
+}
+
+export interface DemographicsResponse {
+  latitude: number;
+  longitude: number;
+  radii: DemographicMetrics[];
+  data_vintage: string;
+}
+
+export interface DemographicsRequest {
+  latitude: number;
+  longitude: number;
+}
