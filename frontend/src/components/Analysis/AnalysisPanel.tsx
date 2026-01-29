@@ -767,16 +767,14 @@ export function AnalysisPanel() {
             <button
               onClick={() => {
                 const id = `loc-${Date.now()}`;
-                // Use actual address if available from selected store
-                let name = `${analysisResult.center_latitude.toFixed(4)}, ${analysisResult.center_longitude.toFixed(4)}`;
-                if (selectedStore?.city && selectedStore?.state) {
-                  name = `${selectedStore.city}, ${selectedStore.state}`;
-                } else if (selectedStore?.street) {
-                  name = selectedStore.street;
-                }
+                // Use brand name if available, otherwise use coordinates
+                const name = selectedStore?.brand || `${analysisResult.center_latitude.toFixed(4)}, ${analysisResult.center_longitude.toFixed(4)}`;
                 addSavedLocation({
                   id,
                   name,
+                  brand: selectedStore?.brand,
+                  city: selectedStore?.city || undefined,
+                  state: selectedStore?.state || undefined,
                   latitude: analysisResult.center_latitude,
                   longitude: analysisResult.center_longitude,
                   savedAt: new Date(),

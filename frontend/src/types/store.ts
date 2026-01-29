@@ -150,6 +150,9 @@ export interface NearestCompetitorsRequest {
 export interface SavedLocation {
   id: string;
   name: string;
+  brand?: string;  // Brand key (e.g., 'csoki', 'tmobile')
+  city?: string;
+  state?: string;
   latitude: number;
   longitude: number;
   savedAt: Date;

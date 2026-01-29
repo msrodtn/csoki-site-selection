@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import { analysisApi } from '../../services/api';
-import type { SavedLocation, DemographicsResponse } from '../../types/store';
+import type { SavedLocation, DemographicsResponse, BrandKey } from '../../types/store';
+import { BRAND_COLORS, BRAND_LABELS } from '../../types/store';
 
 // Format numbers with commas
 const formatNumber = (num: number | null): string => {
@@ -120,31 +121,51 @@ export function ComparePanel() {
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-2 px-2 font-semibold text-gray-600">Location</th>
-                    {savedLocations.map((loc) => (
-                      <th key={loc.id} className="text-center py-2 px-2 min-w-[100px]">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="font-semibold text-gray-800 truncate max-w-[90px]" title={loc.name}>
-                            {loc.name}
-                          </span>
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => navigateTo(loc.latitude, loc.longitude, 14)}
-                              className="text-blue-500 hover:text-blue-700"
-                              title="Go to location"
-                            >
-                              <MapPin className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => removeSavedLocation(loc.id)}
-                              className="text-red-400 hover:text-red-600"
-                              title="Remove"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                    {savedLocations.map((loc) => {
+                      const brandKey = loc.brand as BrandKey | undefined;
+                      const brandColor = brandKey ? BRAND_COLORS[brandKey] : '#666';
+                      const brandLabel = brandKey ? BRAND_LABELS[brandKey] : loc.name;
+                      const locationSubtext = loc.city && loc.state ? `${loc.city}, ${loc.state}` : null;
+
+                      return (
+                        <th key={loc.id} className="text-center py-2 px-2 min-w-[120px]">
+                          <div className="flex flex-col items-center gap-1">
+                            {/* Brand color indicator (future: replace with logo) */}
+                            <div
+                              className="w-4 h-4 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: brandColor }}
+                              title={brandLabel}
+                            />
+                            {/* Brand name */}
+                            <span className="font-semibold text-gray-800 text-xs truncate max-w-[110px]" title={brandLabel}>
+                              {brandLabel}
+                            </span>
+                            {/* City, State subtext */}
+                            {locationSubtext && (
+                              <span className="text-[10px] text-gray-400 truncate max-w-[110px]" title={locationSubtext}>
+                                {locationSubtext}
+                              </span>
+                            )}
+                            <div className="flex gap-1 mt-1">
+                              <button
+                                onClick={() => navigateTo(loc.latitude, loc.longitude, 14)}
+                                className="text-blue-500 hover:text-blue-700"
+                                title="Go to location"
+                              >
+                                <MapPin className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => removeSavedLocation(loc.id)}
+                                className="text-red-400 hover:text-red-600"
+                                title="Remove"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      </th>
-                    ))}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
