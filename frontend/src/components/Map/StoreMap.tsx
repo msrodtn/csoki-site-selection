@@ -719,14 +719,14 @@ export function StoreMap() {
         onMouseMove={handleMouseMove}
         options={mapOptions}
       >
-        {/* Analysis radius circle */}
+        {/* Analysis radius circle - uses analysisRadius state for immediate reactivity */}
         {analysisResult && (
           <CircleF
             center={{
               lat: analysisResult.center_latitude,
               lng: analysisResult.center_longitude,
             }}
-            radius={analysisResult.radius_meters}
+            radius={analysisRadius * 1609.34}
             options={{
               fillColor: '#E31837',
               fillOpacity: 0.08,
