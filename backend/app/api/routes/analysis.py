@@ -146,11 +146,11 @@ async def run_regeocode_task():
 
             if coords:
                 new_lat, new_lng = coords
+                # Only update latitude/longitude - PostGIS location column may not exist
                 db.execute(text("""
                     UPDATE stores
                     SET latitude = :lat,
-                        longitude = :lng,
-                        location = ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+                        longitude = :lng
                     WHERE id = :id
                 """), {"lat": new_lat, "lng": new_lng, "id": store_id})
                 regeocode_status["updated"] += 1

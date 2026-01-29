@@ -119,12 +119,11 @@ def main():
                     dist = (lat_diff**2 + lng_diff**2) ** 0.5
                     print(f"  Moved: ~{dist:.0f} meters")
 
-                # Update database
+                # Update database (only lat/lng - PostGIS location column may not exist)
                 session.execute(text("""
                     UPDATE stores
                     SET latitude = :lat,
-                        longitude = :lng,
-                        location = ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+                        longitude = :lng
                     WHERE id = :id
                 """), {"lat": new_lat, "lng": new_lng, "id": store_id})
 
