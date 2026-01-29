@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, PolygonF } from '@react-google-maps/api';
 import { useMapStore } from '../../store/useMapStore';
 import { useStores } from '../../hooks/useStores';
 import { analysisApi } from '../../services/api';
@@ -51,6 +51,33 @@ const mapOptions: google.maps.MapOptions = {
 // Libraries to load with Google Maps (must be constant to avoid re-renders)
 const GOOGLE_MAPS_LIBRARIES: ('places' | 'visualization')[] = ['places', 'visualization'];
 
+// Parse WKT geometry to Google Maps LatLng array
+function parseWKTToLatLng(wkt: string): google.maps.LatLngLiteral[] | null {
+  if (!wkt) return null;
+
+  try {
+    // Handle MULTIPOLYGON and POLYGON formats
+    // Example: MULTIPOLYGON(((-93.123 41.456, -93.124 41.457, ...)))
+    // or POLYGON((-93.123 41.456, -93.124 41.457, ...))
+
+    // Extract coordinates from WKT
+    const coordMatch = wkt.match(/\(\(+([^)]+)\)+\)/);
+    if (!coordMatch) return null;
+
+    const coordString = coordMatch[1];
+    const coords = coordString.split(',').map(pair => {
+      const [lng, lat] = pair.trim().split(/\s+/).map(Number);
+      return { lat, lng };
+    });
+
+    // Filter out invalid coordinates
+    return coords.filter(c => !isNaN(c.lat) && !isNaN(c.lng));
+  } catch {
+    console.error('Failed to parse WKT geometry:', wkt);
+    return null;
+  }
+}
+
 export function StoreMap() {
   const {
     selectedStore,
@@ -84,6 +111,8 @@ export function StoreMap() {
   const [selectedParcel, setSelectedParcel] = useState<ParcelInfo | null>(null);
   const [isLoadingParcel, setIsLoadingParcel] = useState(false);
   const [parcelError, setParcelError] = useState<string | null>(null);
+  const [hoverPosition, setHoverPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [parcelBoundary, setParcelBoundary] = useState<google.maps.LatLngLiteral[] | null>(null);
 
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -266,6 +295,31 @@ export function StoreMap() {
       runAnalysis(analysisCenterRef.current.lat, analysisCenterRef.current.lng, analysisRadius);
     }
   }, [analysisRadius]); // Only trigger on radius change
+
+  // Parse parcel geometry when a parcel is selected
+  useEffect(() => {
+    if (selectedParcel?.geometry) {
+      const coords = parseWKTToLatLng(selectedParcel.geometry);
+      setParcelBoundary(coords);
+    } else {
+      setParcelBoundary(null);
+    }
+  }, [selectedParcel]);
+
+  // Handle mouse move for hover effect on parcels
+  const handleMouseMove = useCallback(
+    (e: google.maps.MapMouseEvent) => {
+      const isParcelLayerVisible = visibleLayers.has('parcels');
+      const currentZoom = mapRef.current?.getZoom() || 0;
+
+      if (isParcelLayerVisible && currentZoom >= 14 && e.latLng) {
+        setHoverPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+      } else {
+        setHoverPosition(null);
+      }
+    },
+    [visibleLayers]
+  );
 
   // Convert visibleLayers Set to array for effect dependency
   const visibleLayersArray = useMemo(() => Array.from(visibleLayers), [visibleLayers]);
@@ -498,11 +552,19 @@ export function StoreMap() {
       {/* Parcel Boundaries Legend */}
       <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
 
+      {/* Hover indicator for parcel layer */}
+      {hoverPosition && visibleLayersArray.includes('parcels') && !selectedParcel && !isLoadingParcel && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-amber-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs">
+          Click to view parcel info
+        </div>
+      )}
+
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
         onLoad={onLoad}
         onUnmount={onUnmount}
         onClick={handleMapClick}
+        onMouseMove={handleMouseMove}
         options={mapOptions}
       >
         {/* Analysis radius circle */}
@@ -519,6 +581,21 @@ export function StoreMap() {
               strokeColor: '#E31837',
               strokeOpacity: 0.5,
               strokeWeight: 2,
+            }}
+          />
+        )}
+
+        {/* Parcel boundary highlight polygon */}
+        {parcelBoundary && parcelBoundary.length > 0 && (
+          <PolygonF
+            paths={parcelBoundary}
+            options={{
+              fillColor: '#A16207',
+              fillOpacity: 0.3,
+              strokeColor: '#A16207',
+              strokeOpacity: 1,
+              strokeWeight: 3,
+              zIndex: 50,
             }}
           />
         )}

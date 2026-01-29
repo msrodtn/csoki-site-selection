@@ -189,6 +189,7 @@ export interface ParcelInfo {
   sale_date: string | null;
   latitude: number;
   longitude: number;
+  geometry: string | null;  // WKT geometry for boundary highlighting
   raw_data?: Record<string, unknown>;
 }
 

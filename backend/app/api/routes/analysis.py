@@ -283,6 +283,7 @@ class ParcelInfo(BaseModel):
     sale_date: Optional[str] = None
     latitude: float
     longitude: float
+    geometry: Optional[str] = None  # WKT geometry for boundary highlighting
     raw_data: Optional[dict] = None  # Full response for debugging
 
 
@@ -337,25 +338,27 @@ async def get_parcel_info(request: ParcelRequest):
                         return parcel[key]
                 return default
 
+            # Map ReportAll fields (based on their official API documentation)
             return ParcelInfo(
-                parcel_id=get_field("parcel_id", "apn", "pin", "parcelid"),
-                owner=get_field("owner", "owner_name", "owner1"),
-                address=get_field("address", "situs_address", "site_address", "situs"),
-                city=get_field("city", "situs_city", "site_city"),
-                state=get_field("state", "situs_state", "site_state"),
-                zip_code=get_field("zip", "zip_code", "situs_zip", "site_zip"),
-                acreage=get_field("acres", "acreage", "deeded_acres", "calc_acres"),
-                land_value=get_field("land_value", "land_val", "assessed_land"),
-                building_value=get_field("building_value", "bldg_value", "impr_value", "assessed_impr"),
-                total_value=get_field("total_value", "market_value", "assessed_total", "appraised_value"),
-                land_use=get_field("land_use", "use_code", "property_class", "land_use_code"),
+                parcel_id=get_field("parcel_id", "robust_id", "apn", "pin"),
+                owner=get_field("owner", "owner_surname", "owner_name"),
+                address=get_field("address", "addr_number", "situs_address"),
+                city=get_field("addr_city", "city", "situs_city"),
+                state=get_field("addr_state", "state", "situs_state"),
+                zip_code=get_field("addr_zip", "zip", "situs_zip"),
+                acreage=get_field("acreage_deeded", "acreage_calc", "acres", "acreage"),
+                land_value=get_field("mkt_val_land", "land_value", "assessed_land"),
+                building_value=get_field("mkt_val_bldg", "building_value", "impr_value"),
+                total_value=get_field("mkt_val_tot", "total_value", "market_value", "assessed_total"),
+                land_use=get_field("land_use_class", "land_use_code", "land_use", "use_code"),
                 zoning=get_field("zoning", "zone", "zoning_code"),
-                year_built=get_field("year_built", "yr_built", "yrbuilt"),
-                building_sqft=get_field("building_sqft", "bldg_sqft", "living_area", "sqft"),
-                sale_price=get_field("sale_price", "last_sale_price", "sale_amt"),
-                sale_date=get_field("sale_date", "last_sale_date", "deed_date"),
+                year_built=get_field("year_built", "yr_built"),
+                building_sqft=get_field("bldg_sqft", "building_sqft", "sqft", "living_area"),
+                sale_price=get_field("sale_price", "trans_price", "last_sale_price"),
+                sale_date=get_field("trans_date", "sale_date", "deed_date"),
                 latitude=request.latitude,
                 longitude=request.longitude,
+                geometry=get_field("geometry", "geom", "wkt"),  # WKT geometry for highlighting
                 raw_data=parcel  # Include full response for debugging
             )
 
