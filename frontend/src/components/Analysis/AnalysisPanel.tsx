@@ -89,6 +89,8 @@ export function AnalysisPanel() {
     savedLocations,
     addSavedLocation,
     setShowComparePanel,
+    // Selected store (for address info)
+    selectedStore,
   } = useMapStore();
 
   // Collapsible section states
@@ -765,7 +767,13 @@ export function AnalysisPanel() {
             <button
               onClick={() => {
                 const id = `loc-${Date.now()}`;
-                const name = `Location ${savedLocations.length + 1}`;
+                // Use actual address if available from selected store
+                let name = `${analysisResult.center_latitude.toFixed(4)}, ${analysisResult.center_longitude.toFixed(4)}`;
+                if (selectedStore?.city && selectedStore?.state) {
+                  name = `${selectedStore.city}, ${selectedStore.state}`;
+                } else if (selectedStore?.street) {
+                  name = selectedStore.street;
+                }
                 addSavedLocation({
                   id,
                   name,

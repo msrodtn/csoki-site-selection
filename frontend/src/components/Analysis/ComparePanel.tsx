@@ -29,6 +29,7 @@ export function ComparePanel() {
   const {
     savedLocations,
     removeSavedLocation,
+    clearSavedLocations,
     showComparePanel,
     setShowComparePanel,
     navigateTo,
@@ -36,6 +37,13 @@ export function ComparePanel() {
 
   const [loadingDemographics, setLoadingDemographics] = useState<Record<string, boolean>>({});
   const [demographicsCache, setDemographicsCache] = useState<Record<string, DemographicsResponse>>({});
+
+  // Handle closing the panel - clear cache and saved locations for fresh comparison
+  const handleClose = () => {
+    setShowComparePanel(false);
+    setDemographicsCache({});
+    clearSavedLocations();
+  };
 
   // Load demographics for saved locations that don't have it
   const loadDemographics = useCallback(async (location: SavedLocation) => {
@@ -86,8 +94,9 @@ export function ComparePanel() {
           <span className="text-sm text-white/70">({savedLocations.length} saved)</span>
         </div>
         <button
-          onClick={() => setShowComparePanel(false)}
+          onClick={handleClose}
           className="text-white/80 hover:text-white transition-colors"
+          title="Close and clear comparison"
         >
           <X className="w-5 h-5" />
         </button>
