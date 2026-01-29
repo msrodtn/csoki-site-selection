@@ -113,6 +113,7 @@ export function StoreMap() {
   const [parcelError, setParcelError] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [parcelBoundary, setParcelBoundary] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [parcelClickPosition, setParcelClickPosition] = useState<{ lat: number; lng: number } | null>(null);
 
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -199,6 +200,8 @@ export function StoreMap() {
         const lat = e.latLng.lat();
         const lng = e.latLng.lng();
 
+        // Store click position for InfoWindow placement while loading
+        setParcelClickPosition({ lat, lng });
         setIsLoadingParcel(true);
         setParcelError(null);
         setSelectedParcel(null);
@@ -221,6 +224,7 @@ export function StoreMap() {
         // Clear parcel selection when clicking elsewhere
         setSelectedParcel(null);
         setParcelError(null);
+        setParcelClickPosition(null);
       }
     },
     [setSelectedStore, visibleLayers]
@@ -714,12 +718,13 @@ export function StoreMap() {
         )}
 
         {/* Parcel info window */}
-        {(selectedParcel || isLoadingParcel) && (
+        {(selectedParcel || isLoadingParcel || parcelError) && parcelClickPosition && (
           <InfoWindowF
-            position={{ lat: selectedParcel?.latitude || 0, lng: selectedParcel?.longitude || 0 }}
+            position={parcelClickPosition}
             onCloseClick={() => {
               setSelectedParcel(null);
               setParcelError(null);
+              setParcelClickPosition(null);
             }}
             options={{ disableAutoPan: true, maxWidth: 320 }}
           >
