@@ -8,6 +8,8 @@ import type {
   DemographicsRequest,
   NearestCompetitorsResponse,
   NearestCompetitorsRequest,
+  ParcelInfo,
+  ParcelRequest,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -109,6 +111,18 @@ export const analysisApi = {
   // Check if ArcGIS API key is configured
   checkArcGISKey: async (): Promise<{ configured: boolean; message: string }> => {
     const { data } = await api.get('/analysis/check-arcgis-key/');
+    return data;
+  },
+
+  // Get parcel information from ReportAll
+  getParcelInfo: async (request: ParcelRequest): Promise<ParcelInfo> => {
+    const { data } = await api.post('/analysis/parcel/', request);
+    return data;
+  },
+
+  // Check if ReportAll API key is configured
+  checkReportAllKey: async (): Promise<{ configured: boolean; message: string }> => {
+    const { data } = await api.get('/analysis/check-reportall-key/');
     return data;
   },
 };

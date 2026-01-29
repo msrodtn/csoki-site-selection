@@ -168,3 +168,31 @@ export interface SavedLocation {
   savedAt: Date;
   demographics?: DemographicsResponse;
 }
+
+// Parcel Info Types (ReportAll API)
+export interface ParcelInfo {
+  parcel_id: string | null;
+  owner: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
+  acreage: number | null;
+  land_value: number | null;
+  building_value: number | null;
+  total_value: number | null;
+  land_use: string | null;
+  zoning: string | null;
+  year_built: number | null;
+  building_sqft: number | null;
+  sale_price: number | null;
+  sale_date: string | null;
+  latitude: number;
+  longitude: number;
+  raw_data?: Record<string, unknown>;
+}
+
+export interface ParcelRequest {
+  latitude: number;
+  longitude: number;
+}

@@ -12,7 +12,7 @@ import {
   type BrandKey,
   type POICategory,
 } from '../../types/store';
-import type { Store } from '../../types/store';
+import type { Store, ParcelInfo } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
@@ -79,6 +79,11 @@ export function StoreMap() {
     address: string | null;
     rating: number | null;
   } | null>(null);
+
+  // Parcel info state
+  const [selectedParcel, setSelectedParcel] = useState<ParcelInfo | null>(null);
+  const [isLoadingParcel, setIsLoadingParcel] = useState(false);
+  const [parcelError, setParcelError] = useState<string | null>(null);
 
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -152,10 +157,45 @@ export function StoreMap() {
     []
   );
 
-  const handleMapClick = useCallback(() => {
-    setSelectedStore(null);
-    setSelectedPOI(null);
-  }, [setSelectedStore]);
+  const handleMapClick = useCallback(
+    async (e: google.maps.MapMouseEvent) => {
+      setSelectedStore(null);
+      setSelectedPOI(null);
+
+      // If parcel layer is visible and we clicked on the map (not a marker), query parcel info
+      const isParcelLayerVisible = visibleLayers.has('parcels');
+      const currentZoom = mapRef.current?.getZoom() || 0;
+
+      if (isParcelLayerVisible && currentZoom >= 14 && e.latLng) {
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+
+        setIsLoadingParcel(true);
+        setParcelError(null);
+        setSelectedParcel(null);
+
+        try {
+          const parcelInfo = await analysisApi.getParcelInfo({
+            latitude: lat,
+            longitude: lng,
+          });
+          setSelectedParcel(parcelInfo);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to load parcel info';
+          setParcelError(message);
+          // Clear parcel selection on error
+          setSelectedParcel(null);
+        } finally {
+          setIsLoadingParcel(false);
+        }
+      } else {
+        // Clear parcel selection when clicking elsewhere
+        setSelectedParcel(null);
+        setParcelError(null);
+      }
+    },
+    [setSelectedStore, visibleLayers]
+  );
 
   // On map load - store instance in Zustand for navigation from other components
   const onLoad = useCallback((map: google.maps.Map) => {
@@ -575,6 +615,120 @@ export function StoreMap() {
               >
                 {isAnalyzing ? 'Analyzing...' : 'Analyze Trade Area'}
               </button>
+            </div>
+          </InfoWindowF>
+        )}
+
+        {/* Parcel info window */}
+        {(selectedParcel || isLoadingParcel) && (
+          <InfoWindowF
+            position={{ lat: selectedParcel?.latitude || 0, lng: selectedParcel?.longitude || 0 }}
+            onCloseClick={() => {
+              setSelectedParcel(null);
+              setParcelError(null);
+            }}
+            options={{ disableAutoPan: true, maxWidth: 320 }}
+          >
+            <div className="min-w-[280px] p-1">
+              <div className="text-xs font-semibold px-2 py-1 rounded mb-2 text-white bg-amber-700">
+                Parcel Information
+              </div>
+
+              {isLoadingParcel ? (
+                <div className="text-center py-4 text-gray-500">
+                  <div className="animate-spin inline-block w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full mb-2"></div>
+                  <p className="text-xs">Loading parcel data...</p>
+                </div>
+              ) : parcelError ? (
+                <div className="text-center py-2 text-red-600 text-xs">
+                  {parcelError}
+                </div>
+              ) : selectedParcel ? (
+                <div className="text-sm space-y-2">
+                  {/* Parcel ID */}
+                  {selectedParcel.parcel_id && (
+                    <div>
+                      <span className="text-gray-500 text-xs">Parcel ID:</span>
+                      <p className="font-medium">{selectedParcel.parcel_id}</p>
+                    </div>
+                  )}
+
+                  {/* Address */}
+                  {selectedParcel.address && (
+                    <div>
+                      <span className="text-gray-500 text-xs">Address:</span>
+                      <p className="font-medium">{selectedParcel.address}</p>
+                      {(selectedParcel.city || selectedParcel.state) && (
+                        <p className="text-gray-600 text-xs">
+                          {[selectedParcel.city, selectedParcel.state, selectedParcel.zip_code]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Owner */}
+                  {selectedParcel.owner && (
+                    <div>
+                      <span className="text-gray-500 text-xs">Owner:</span>
+                      <p className="font-medium">{selectedParcel.owner}</p>
+                    </div>
+                  )}
+
+                  {/* Grid of key metrics */}
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-200">
+                    {selectedParcel.acreage && (
+                      <div>
+                        <span className="text-gray-500 text-xs">Acreage:</span>
+                        <p className="font-medium">{selectedParcel.acreage.toFixed(2)} ac</p>
+                      </div>
+                    )}
+                    {selectedParcel.zoning && (
+                      <div>
+                        <span className="text-gray-500 text-xs">Zoning:</span>
+                        <p className="font-medium">{selectedParcel.zoning}</p>
+                      </div>
+                    )}
+                    {selectedParcel.land_use && (
+                      <div>
+                        <span className="text-gray-500 text-xs">Land Use:</span>
+                        <p className="font-medium">{selectedParcel.land_use}</p>
+                      </div>
+                    )}
+                    {selectedParcel.year_built && (
+                      <div>
+                        <span className="text-gray-500 text-xs">Year Built:</span>
+                        <p className="font-medium">{selectedParcel.year_built}</p>
+                      </div>
+                    )}
+                    {selectedParcel.building_sqft && (
+                      <div>
+                        <span className="text-gray-500 text-xs">Building Sqft:</span>
+                        <p className="font-medium">{selectedParcel.building_sqft.toLocaleString()}</p>
+                      </div>
+                    )}
+                    {selectedParcel.total_value && (
+                      <div>
+                        <span className="text-gray-500 text-xs">Total Value:</span>
+                        <p className="font-medium">${selectedParcel.total_value.toLocaleString()}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sale info */}
+                  {(selectedParcel.sale_price || selectedParcel.sale_date) && (
+                    <div className="pt-2 border-t border-gray-200">
+                      <span className="text-gray-500 text-xs">Last Sale:</span>
+                      <p className="font-medium">
+                        {selectedParcel.sale_price && `$${selectedParcel.sale_price.toLocaleString()}`}
+                        {selectedParcel.sale_price && selectedParcel.sale_date && ' on '}
+                        {selectedParcel.sale_date}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           </InfoWindowF>
         )}

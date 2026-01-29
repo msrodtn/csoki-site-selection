@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     CENSUS_API_KEY: Optional[str] = None
     GOOGLE_PLACES_API_KEY: Optional[str] = None
     ARCGIS_API_KEY: Optional[str] = None
+    REPORTALL_API_KEY: Optional[str] = None
 
     # CORS
     CORS_ORIGINS: list[str] = [

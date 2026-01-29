@@ -255,3 +255,133 @@ async def start_regeocode(background_tasks: BackgroundTasks):
 async def get_regeocode_status():
     """Get the current status of the re-geocoding task."""
     return regeocode_status
+
+
+class ParcelRequest(BaseModel):
+    """Request model for parcel lookup."""
+    latitude: float
+    longitude: float
+
+
+class ParcelInfo(BaseModel):
+    """Response model for parcel information."""
+    parcel_id: Optional[str] = None
+    owner: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    acreage: Optional[float] = None
+    land_value: Optional[float] = None
+    building_value: Optional[float] = None
+    total_value: Optional[float] = None
+    land_use: Optional[str] = None
+    zoning: Optional[str] = None
+    year_built: Optional[int] = None
+    building_sqft: Optional[float] = None
+    sale_price: Optional[float] = None
+    sale_date: Optional[str] = None
+    latitude: float
+    longitude: float
+    raw_data: Optional[dict] = None  # Full response for debugging
+
+
+@router.post("/parcel/", response_model=ParcelInfo)
+async def get_parcel_info(request: ParcelRequest):
+    """
+    Get parcel information from ReportAll API.
+
+    Returns property details including owner, acreage, zoning, and values
+    for the parcel at the specified location.
+
+    - **latitude**: Point latitude
+    - **longitude**: Point longitude
+    """
+    if not settings.REPORTALL_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="ReportAll API key not configured. Please set REPORTALL_API_KEY environment variable."
+        )
+
+    # ReportAll uses POINT(lon lat) format (longitude first!)
+    point_wkt = f"POINT({request.longitude} {request.latitude})"
+
+    url = "https://reportallusa.com/api/parcels"
+    params = {
+        "client": settings.REPORTALL_API_KEY,
+        "v": "9",
+        "spatial_intersect": point_wkt,
+        "si_srid": "4326"
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+
+            if not data or len(data) == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No parcel found at this location"
+                )
+
+            # Get the first (most relevant) parcel
+            parcel = data[0] if isinstance(data, list) else data
+
+            # Extract and normalize fields
+            # ReportAll field names vary by county, so we check multiple possible names
+            def get_field(*keys, default=None):
+                for key in keys:
+                    if key in parcel and parcel[key] is not None:
+                        return parcel[key]
+                return default
+
+            return ParcelInfo(
+                parcel_id=get_field("parcel_id", "apn", "pin", "parcelid"),
+                owner=get_field("owner", "owner_name", "owner1"),
+                address=get_field("address", "situs_address", "site_address", "situs"),
+                city=get_field("city", "situs_city", "site_city"),
+                state=get_field("state", "situs_state", "site_state"),
+                zip_code=get_field("zip", "zip_code", "situs_zip", "site_zip"),
+                acreage=get_field("acres", "acreage", "deeded_acres", "calc_acres"),
+                land_value=get_field("land_value", "land_val", "assessed_land"),
+                building_value=get_field("building_value", "bldg_value", "impr_value", "assessed_impr"),
+                total_value=get_field("total_value", "market_value", "assessed_total", "appraised_value"),
+                land_use=get_field("land_use", "use_code", "property_class", "land_use_code"),
+                zoning=get_field("zoning", "zone", "zoning_code"),
+                year_built=get_field("year_built", "yr_built", "yrbuilt"),
+                building_sqft=get_field("building_sqft", "bldg_sqft", "living_area", "sqft"),
+                sale_price=get_field("sale_price", "last_sale_price", "sale_amt"),
+                sale_date=get_field("sale_date", "last_sale_date", "deed_date"),
+                latitude=request.latitude,
+                longitude=request.longitude,
+                raw_data=parcel  # Include full response for debugging
+            )
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Rate limit exceeded. Please try again in a moment."
+                )
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"ReportAll API error: {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to connect to ReportAll API: {str(e)}"
+            )
+
+
+@router.get("/check-reportall-key/")
+async def check_reportall_api_key():
+    """
+    Check if the ReportAll API key is configured.
+    """
+    return {
+        "configured": settings.REPORTALL_API_KEY is not None,
+        "message": "ReportAll API key configured" if settings.REPORTALL_API_KEY else "ReportAll API key not set"
+    }
