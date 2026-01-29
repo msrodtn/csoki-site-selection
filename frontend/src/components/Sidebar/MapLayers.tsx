@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Grid3X3, Flame, LandPlot, Building2 } from 'lucide-react';
+import { Layers, Droplets, Car, Train, Grid3X3, Flame, LandPlot, Building2, MapPinned } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -51,6 +51,13 @@ export const MAP_LAYERS = {
     icon: Building2,
     color: '#6366F1',
     description: 'Show business names on map',
+  },
+  zoning: {
+    id: 'zoning',
+    name: 'Zoning Colors',
+    icon: MapPinned,
+    color: '#059669',
+    description: 'Color-code parcels by zoning type',
   },
 } as const;
 

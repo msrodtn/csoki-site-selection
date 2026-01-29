@@ -16,6 +16,7 @@ import type { Store, ParcelInfo } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
+import { ZoningLegend, ZONING_COLORS, getZoningCategory } from './ZoningLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 import { DraggableParcelInfo } from './DraggableParcelInfo';
 
@@ -699,6 +700,9 @@ export function StoreMap() {
       {/* Parcel Boundaries Legend */}
       <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
 
+      {/* Zoning Colors Legend */}
+      <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
+
       {/* Hover indicator for parcel layer */}
       {hoverPosition && visibleLayersArray.includes('parcels') && !selectedParcel && !isLoadingParcel && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-amber-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs">
@@ -733,35 +737,49 @@ export function StoreMap() {
           />
         )}
 
-        {/* Parcel boundary highlight polygon - bright yellow/gold for visibility */}
-        {parcelBoundary && parcelBoundary.length > 0 && (
-          <>
-            {/* Outer glow effect */}
-            <PolygonF
-              paths={parcelBoundary}
-              options={{
-                fillColor: 'transparent',
-                fillOpacity: 0,
-                strokeColor: '#FBBF24',
-                strokeOpacity: 0.5,
-                strokeWeight: 8,
-                zIndex: 49,
-              }}
-            />
-            {/* Main boundary */}
-            <PolygonF
-              paths={parcelBoundary}
-              options={{
-                fillColor: '#FEF3C7',
-                fillOpacity: 0.4,
-                strokeColor: '#D97706',
-                strokeOpacity: 1,
-                strokeWeight: 4,
-                zIndex: 50,
-              }}
-            />
-          </>
-        )}
+        {/* Parcel boundary highlight polygon - color-coded by zoning when enabled */}
+        {parcelBoundary && parcelBoundary.length > 0 && (() => {
+          // Determine colors based on zoning layer visibility
+          const isZoningEnabled = visibleLayersArray.includes('zoning');
+          const zoningCategory = isZoningEnabled && selectedParcel
+            ? getZoningCategory(selectedParcel.zoning, selectedParcel.land_use)
+            : null;
+          const zoningStyle = zoningCategory ? ZONING_COLORS[zoningCategory] : null;
+
+          // Use zoning colors if enabled, otherwise default yellow/gold
+          const strokeColor = zoningStyle?.color || '#D97706';
+          const fillColor = zoningStyle?.fill || '#FEF3C7';
+          const glowColor = zoningStyle?.color || '#FBBF24';
+
+          return (
+            <>
+              {/* Outer glow effect */}
+              <PolygonF
+                paths={parcelBoundary}
+                options={{
+                  fillColor: 'transparent',
+                  fillOpacity: 0,
+                  strokeColor: glowColor,
+                  strokeOpacity: 0.5,
+                  strokeWeight: 8,
+                  zIndex: 49,
+                }}
+              />
+              {/* Main boundary */}
+              <PolygonF
+                paths={parcelBoundary}
+                options={{
+                  fillColor: fillColor,
+                  fillOpacity: 0.4,
+                  strokeColor: strokeColor,
+                  strokeOpacity: 1,
+                  strokeWeight: 4,
+                  zIndex: 50,
+                }}
+              />
+            </>
+          );
+        })()}
 
         {/* Parcel click location marker - shows exactly where user clicked */}
         {parcelClickPosition && (selectedParcel || isLoadingParcel) && (
