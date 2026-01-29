@@ -248,23 +248,48 @@ export function AnalysisPanel() {
       }}
     >
       {/* Header with drag handle */}
-      <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-red-600 to-red-700 rounded-t-lg">
-        <div className="flex items-center gap-2">
-          <div
-            onMouseDown={handleDragStart}
-            className="cursor-grab active:cursor-grabbing p-1 -ml-1 hover:bg-white/20 rounded transition-colors"
-            title="Drag to move"
-          >
-            <GripHorizontal className="w-4 h-4 text-white/70" />
+      <div className="bg-gradient-to-r from-red-600 to-red-700 rounded-t-lg">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <div
+              onMouseDown={handleDragStart}
+              className="cursor-grab active:cursor-grabbing p-1 -ml-1 hover:bg-white/20 rounded transition-colors"
+              title="Drag to move"
+            >
+              <GripHorizontal className="w-4 h-4 text-white/70" />
+            </div>
+            <h2 className="text-lg font-semibold text-white">Trade Area Analysis</h2>
           </div>
-          <h2 className="text-lg font-semibold text-white">Trade Area Analysis</h2>
+          <button
+            onClick={handleClose}
+            className="text-white/80 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <button
-          onClick={handleClose}
-          className="text-white/80 hover:text-white transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+
+        {/* Store Info */}
+        {analyzedStore && (
+          <div className="px-4 pb-3 flex items-center gap-3 border-t border-white/20 pt-3">
+            {BRAND_LOGOS[analyzedStore.brand as BrandKey] && (
+              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-md">
+                <img
+                  src={BRAND_LOGOS[analyzedStore.brand as BrandKey]}
+                  alt={BRAND_LABELS[analyzedStore.brand as BrandKey] || analyzedStore.brand}
+                  className="w-7 h-7 object-contain rounded-full"
+                />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm truncate">
+                {analyzedStore.street || 'Unknown Address'}
+              </div>
+              <div className="text-white/70 text-xs truncate">
+                {[analyzedStore.city, analyzedStore.state].filter(Boolean).join(', ')}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content */}
