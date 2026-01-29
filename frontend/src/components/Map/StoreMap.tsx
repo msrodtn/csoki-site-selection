@@ -95,23 +95,49 @@ function parseWKTToLatLng(wkt: string): google.maps.LatLngLiteral[] | null {
 
   try {
     // Handle MULTIPOLYGON and POLYGON formats
-    // Example: MULTIPOLYGON(((-93.123 41.456, -93.124 41.457, ...)))
-    // or POLYGON((-93.123 41.456, -93.124 41.457, ...))
+    // MULTIPOLYGON(((-93.123 41.456, -93.124 41.457, ...)))
+    // POLYGON((-93.123 41.456, -93.124 41.457, ...))
 
-    // Extract coordinates from WKT
-    const coordMatch = wkt.match(/\(\(+([^)]+)\)+\)/);
-    if (!coordMatch) return null;
+    // Remove the type prefix and get just the coordinate part
+    let coordString = wkt;
 
-    const coordString = coordMatch[1];
+    // For MULTIPOLYGON, extract the first polygon's outer ring
+    if (wkt.startsWith('MULTIPOLYGON')) {
+      // MULTIPOLYGON(((...))) - we want the innermost coordinates
+      const match = wkt.match(/MULTIPOLYGON\s*\(\(\(([^)]+)\)/i);
+      if (match) {
+        coordString = match[1];
+      }
+    } else if (wkt.startsWith('POLYGON')) {
+      // POLYGON((...)) - get the outer ring
+      const match = wkt.match(/POLYGON\s*\(\(([^)]+)\)/i);
+      if (match) {
+        coordString = match[1];
+      }
+    }
+
+    // Parse coordinate pairs (lng lat, lng lat, ...)
     const coords = coordString.split(',').map(pair => {
-      const [lng, lat] = pair.trim().split(/\s+/).map(Number);
-      return { lat, lng };
+      const parts = pair.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        const lng = parseFloat(parts[0]);
+        const lat = parseFloat(parts[1]);
+        return { lat, lng };
+      }
+      return { lat: NaN, lng: NaN };
     });
 
     // Filter out invalid coordinates
-    return coords.filter(c => !isNaN(c.lat) && !isNaN(c.lng));
-  } catch {
-    console.error('Failed to parse WKT geometry:', wkt);
+    const validCoords = coords.filter(c => !isNaN(c.lat) && !isNaN(c.lng));
+
+    if (validCoords.length < 3) {
+      console.warn('WKT parsed but insufficient valid coordinates:', validCoords.length);
+      return null;
+    }
+
+    return validCoords;
+  } catch (e) {
+    console.error('Failed to parse WKT geometry:', wkt, e);
     return null;
   }
 }
@@ -661,6 +687,40 @@ export function StoreMap() {
                 strokeOpacity: 1,
                 strokeWeight: 4,
                 zIndex: 50,
+              }}
+            />
+          </>
+        )}
+
+        {/* Parcel click location marker - shows exactly where user clicked */}
+        {parcelClickPosition && (selectedParcel || isLoadingParcel) && (
+          <>
+            {/* Outer pulse ring */}
+            <CircleF
+              center={parcelClickPosition}
+              radius={25}
+              options={{
+                fillColor: '#D97706',
+                fillOpacity: 0.2,
+                strokeColor: '#D97706',
+                strokeOpacity: 0.6,
+                strokeWeight: 2,
+                zIndex: 51,
+                clickable: false,
+              }}
+            />
+            {/* Inner solid marker */}
+            <CircleF
+              center={parcelClickPosition}
+              radius={8}
+              options={{
+                fillColor: '#D97706',
+                fillOpacity: 1,
+                strokeColor: '#FFFFFF',
+                strokeOpacity: 1,
+                strokeWeight: 3,
+                zIndex: 52,
+                clickable: false,
               }}
             />
           </>
