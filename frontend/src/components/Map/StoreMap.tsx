@@ -600,6 +600,23 @@ export function StoreMap() {
           />
         )}
 
+        {/* Hover indicator circle when parcel layer is active */}
+        {hoverPosition && visibleLayersArray.includes('parcels') && !selectedParcel && !isLoadingParcel && (
+          <CircleF
+            center={hoverPosition}
+            radius={15}
+            options={{
+              fillColor: '#A16207',
+              fillOpacity: 0.5,
+              strokeColor: '#A16207',
+              strokeOpacity: 1,
+              strokeWeight: 2,
+              zIndex: 100,
+              clickable: false,
+            }}
+          />
+        )}
+
         {/* POI markers */}
         {visiblePOIs.map((poi) => (
           <MarkerF
@@ -802,6 +819,23 @@ export function StoreMap() {
                         {selectedParcel.sale_price && selectedParcel.sale_date && ' on '}
                         {selectedParcel.sale_date}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Debug: Show raw data keys if no fields populated */}
+                  {selectedParcel.raw_data && (
+                    <div className="pt-2 border-t border-gray-200">
+                      <span className="text-gray-500 text-xs">Raw API Fields:</span>
+                      <div className="text-xs text-gray-600 mt-1 max-h-32 overflow-y-auto">
+                        {Object.entries(selectedParcel.raw_data)
+                          .filter(([_, v]) => v !== null && v !== '')
+                          .slice(0, 15)
+                          .map(([key, value]) => (
+                            <div key={key} className="truncate">
+                              <span className="font-medium">{key}:</span> {String(value).substring(0, 30)}
+                            </div>
+                          ))}
+                      </div>
                     </div>
                   )}
                 </div>
