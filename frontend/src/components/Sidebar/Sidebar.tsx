@@ -1,6 +1,7 @@
 import { BrandFilter } from './BrandFilter';
 import { StateFilter } from './StateFilter';
 import { SearchBar } from './SearchBar';
+import { MapLayers } from './MapLayers';
 import { MapPin } from 'lucide-react';
 
 export function Sidebar() {
@@ -20,6 +21,7 @@ export function Sidebar() {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         <SearchBar />
+        <MapLayers />
         <BrandFilter />
         <StateFilter />
       </div>

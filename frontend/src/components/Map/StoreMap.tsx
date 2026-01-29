@@ -61,6 +61,7 @@ export function StoreMap() {
     setShowAnalysisPanel,
     analysisRadius,
     setMapInstance,
+    visibleLayers,
   } = useMapStore();
 
   const [selectedPOI, setSelectedPOI] = useState<{
@@ -78,6 +79,14 @@ export function StoreMap() {
 
   // Track analysis center for re-analysis on radius change
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Layer refs for Google Maps built-in layers
+  const trafficLayerRef = useRef<google.maps.TrafficLayer | null>(null);
+  const transitLayerRef = useRef<google.maps.TransitLayer | null>(null);
+
+  // Custom tile overlay refs
+  const femaFloodOverlayRef = useRef<google.maps.ImageMapType | null>(null);
+  const censusTractsOverlayRef = useRef<google.maps.ImageMapType | null>(null);
 
   // Load Google Maps with Places library for autocomplete
   const { isLoaded, loadError } = useJsApiLoader({
@@ -148,6 +157,18 @@ export function StoreMap() {
   }, [setMapInstance]);
 
   const onUnmount = useCallback(() => {
+    // Clean up layers
+    if (trafficLayerRef.current) {
+      trafficLayerRef.current.setMap(null);
+      trafficLayerRef.current = null;
+    }
+    if (transitLayerRef.current) {
+      transitLayerRef.current.setMap(null);
+      transitLayerRef.current = null;
+    }
+    femaFloodOverlayRef.current = null;
+    censusTractsOverlayRef.current = null;
+
     mapRef.current = null;
     setMapInstance(null);
   }, [setMapInstance]);
@@ -188,6 +209,84 @@ export function StoreMap() {
       runAnalysis(analysisCenterRef.current.lat, analysisCenterRef.current.lng, analysisRadius);
     }
   }, [analysisRadius]); // Only trigger on radius change
+
+  // Convert visibleLayers Set to array for effect dependency
+  const visibleLayersArray = useMemo(() => Array.from(visibleLayers), [visibleLayers]);
+
+  // Manage map layer visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Traffic Layer
+    const showTraffic = visibleLayersArray.includes('traffic');
+    if (showTraffic && !trafficLayerRef.current) {
+      trafficLayerRef.current = new google.maps.TrafficLayer();
+      trafficLayerRef.current.setMap(map);
+    } else if (!showTraffic && trafficLayerRef.current) {
+      trafficLayerRef.current.setMap(null);
+      trafficLayerRef.current = null;
+    }
+
+    // Transit Layer
+    const showTransit = visibleLayersArray.includes('transit');
+    if (showTransit && !transitLayerRef.current) {
+      transitLayerRef.current = new google.maps.TransitLayer();
+      transitLayerRef.current.setMap(map);
+    } else if (!showTransit && transitLayerRef.current) {
+      transitLayerRef.current.setMap(null);
+      transitLayerRef.current = null;
+    }
+
+    // FEMA Flood Zones Overlay
+    const showFlood = visibleLayersArray.includes('fema_flood');
+    if (showFlood && !femaFloodOverlayRef.current) {
+      femaFloodOverlayRef.current = new google.maps.ImageMapType({
+        getTileUrl: (coord, zoom) => {
+          return `https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/tile/${zoom}/${coord.y}/${coord.x}`;
+        },
+        tileSize: new google.maps.Size(256, 256),
+        opacity: 0.6,
+        name: 'FEMA Flood Zones',
+      });
+      map.overlayMapTypes.push(femaFloodOverlayRef.current);
+    } else if (!showFlood && femaFloodOverlayRef.current) {
+      // Find and remove the overlay
+      const overlays = map.overlayMapTypes;
+      for (let i = 0; i < overlays.getLength(); i++) {
+        if (overlays.getAt(i) === femaFloodOverlayRef.current) {
+          overlays.removeAt(i);
+          break;
+        }
+      }
+      femaFloodOverlayRef.current = null;
+    }
+
+    // Census Tracts Overlay
+    const showCensus = visibleLayersArray.includes('census_tracts');
+    if (showCensus && !censusTractsOverlayRef.current) {
+      censusTractsOverlayRef.current = new google.maps.ImageMapType({
+        getTileUrl: (coord, zoom) => {
+          // Census TIGERweb WMS - Census Tracts layer
+          return `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Current/MapServer/tile/${zoom}/${coord.y}/${coord.x}`;
+        },
+        tileSize: new google.maps.Size(256, 256),
+        opacity: 0.5,
+        name: 'Census Tracts',
+      });
+      map.overlayMapTypes.push(censusTractsOverlayRef.current);
+    } else if (!showCensus && censusTractsOverlayRef.current) {
+      // Find and remove the overlay
+      const overlays = map.overlayMapTypes;
+      for (let i = 0; i < overlays.getLength(); i++) {
+        if (overlays.getAt(i) === censusTractsOverlayRef.current) {
+          overlays.removeAt(i);
+          break;
+        }
+      }
+      censusTractsOverlayRef.current = null;
+    }
+  }, [visibleLayersArray]);
 
   // Create SVG marker icon for each brand (larger than POIs to stand out)
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Symbol => {

@@ -63,6 +63,11 @@ interface MapState {
   selectedDemographicsRadius: number;
   setSelectedDemographicsRadius: (radius: number) => void;
 
+  // Map Layers
+  visibleLayers: Set<string>;
+  toggleLayer: (layer: string) => void;
+  setLayerVisible: (layer: string, visible: boolean) => void;
+
   // Clear analysis
   clearAnalysis: () => void;
 }
@@ -178,6 +183,29 @@ export const useMapStore = create<MapState>((set, get) => ({
   setDemographicsError: (error) => set({ demographicsError: error }),
   selectedDemographicsRadius: 1,  // Default to 1 mile view
   setSelectedDemographicsRadius: (radius) => set({ selectedDemographicsRadius: radius }),
+
+  // Map Layers - none visible by default
+  visibleLayers: new Set<string>(),
+  toggleLayer: (layer) =>
+    set((state) => {
+      const newLayers = new Set(state.visibleLayers);
+      if (newLayers.has(layer)) {
+        newLayers.delete(layer);
+      } else {
+        newLayers.add(layer);
+      }
+      return { visibleLayers: newLayers };
+    }),
+  setLayerVisible: (layer, visible) =>
+    set((state) => {
+      const newLayers = new Set(state.visibleLayers);
+      if (visible) {
+        newLayers.add(layer);
+      } else {
+        newLayers.delete(layer);
+      }
+      return { visibleLayers: newLayers };
+    }),
 
   // Clear all analysis state
   clearAnalysis: () =>
