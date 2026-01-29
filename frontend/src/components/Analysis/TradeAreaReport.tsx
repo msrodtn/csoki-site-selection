@@ -95,6 +95,7 @@ export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
       radius: `${r.radius_miles} mi`,
       retail: r.spending_retail_total,
       food: r.spending_food_away,
+      apparel: r.spending_apparel,
       entertainment: r.spending_entertainment,
     })) || [];
 
@@ -389,7 +390,8 @@ export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
                       contentStyle={{ fontSize: 12 }}
                     />
                     <Bar dataKey="retail" fill="#8B5CF6" name="Retail" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="food" fill="#C4B5FD" name="Food" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="food" fill="#A78BFA" name="Food" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="apparel" fill="#C4B5FD" name="Apparel" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -409,8 +411,14 @@ export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Population Section */}
+                  <tr className="bg-blue-50">
+                    <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-blue-700 uppercase">
+                      Population (ArcGIS)
+                    </td>
+                  </tr>
                   <tr className="border-b">
-                    <td className="py-2 text-gray-700">Population</td>
+                    <td className="py-2 text-gray-700">Total Population</td>
                     {demographicsData.radii.map((r) => (
                       <td key={r.radius_miles} className="text-right py-2 font-medium">
                         {formatNumber(r.total_population)}
@@ -426,6 +434,14 @@ export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
                     ))}
                   </tr>
                   <tr className="border-b">
+                    <td className="py-2 text-gray-700">Population Density (per sq mi)</td>
+                    {demographicsData.radii.map((r) => (
+                      <td key={r.radius_miles} className="text-right py-2 font-medium">
+                        {formatNumber(r.population_density)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
                     <td className="py-2 text-gray-700">Median Age</td>
                     {demographicsData.radii.map((r) => (
                       <td key={r.radius_miles} className="text-right py-2 font-medium">
@@ -433,11 +449,26 @@ export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
                       </td>
                     ))}
                   </tr>
+
+                  {/* Income Section */}
+                  <tr className="bg-emerald-50">
+                    <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-emerald-700 uppercase">
+                      Income (ArcGIS)
+                    </td>
+                  </tr>
                   <tr className="border-b">
                     <td className="py-2 text-gray-700">Median HH Income</td>
                     {demographicsData.radii.map((r) => (
                       <td key={r.radius_miles} className="text-right py-2 font-medium">
                         {formatCurrency(r.median_household_income)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-2 text-gray-700">Average HH Income</td>
+                    {demographicsData.radii.map((r) => (
+                      <td key={r.radius_miles} className="text-right py-2 font-medium">
+                        {formatCurrency(r.average_household_income)}
                       </td>
                     ))}
                   </tr>
@@ -449,6 +480,13 @@ export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
                       </td>
                     ))}
                   </tr>
+
+                  {/* Employment Section */}
+                  <tr className="bg-orange-50">
+                    <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-orange-700 uppercase">
+                      Employment (Census Bureau)
+                    </td>
+                  </tr>
                   <tr className="border-b">
                     <td className="py-2 text-gray-700">Total Businesses</td>
                     {demographicsData.radii.map((r) => (
@@ -457,11 +495,50 @@ export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
                       </td>
                     ))}
                   </tr>
-                  <tr>
+                  <tr className="border-b">
                     <td className="py-2 text-gray-700">Total Employees</td>
                     {demographicsData.radii.map((r) => (
                       <td key={r.radius_miles} className="text-right py-2 font-medium">
                         {formatNumber(r.total_employees)}
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* Consumer Spending Section */}
+                  <tr className="bg-purple-50">
+                    <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-purple-700 uppercase">
+                      Consumer Spending (ArcGIS)
+                    </td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-2 text-gray-700">Total Retail</td>
+                    {demographicsData.radii.map((r) => (
+                      <td key={r.radius_miles} className="text-right py-2 font-medium">
+                        {formatCurrency(r.spending_retail_total)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-2 text-gray-700">Food Away from Home</td>
+                    {demographicsData.radii.map((r) => (
+                      <td key={r.radius_miles} className="text-right py-2 font-medium">
+                        {formatCurrency(r.spending_food_away)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-2 text-gray-700">Apparel & Services</td>
+                    {demographicsData.radii.map((r) => (
+                      <td key={r.radius_miles} className="text-right py-2 font-medium">
+                        {formatCurrency(r.spending_apparel)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-2 text-gray-700">Entertainment</td>
+                    {demographicsData.radii.map((r) => (
+                      <td key={r.radius_miles} className="text-right py-2 font-medium">
+                        {formatCurrency(r.spending_entertainment)}
                       </td>
                     ))}
                   </tr>
