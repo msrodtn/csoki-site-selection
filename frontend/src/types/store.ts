@@ -197,3 +197,66 @@ export interface ParcelRequest {
   latitude: number;
   longitude: number;
 }
+
+// Property Search Types (AI-powered CRE listings)
+export type PropertyType = 'retail' | 'land' | 'office' | 'industrial' | 'mixed_use';
+
+export interface PropertyListing {
+  id: string;
+  address: string;
+  city: string;
+  state: string;
+  price: string | null;
+  price_numeric: number | null;
+  sqft: string | null;
+  sqft_numeric: number | null;
+  property_type: PropertyType;
+  source: string;  // crexi, loopnet, zillow, etc.
+  url: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  description: string | null;
+  listing_date: string | null;
+}
+
+export interface PropertySearchResult {
+  center_latitude: number;
+  center_longitude: number;
+  radius_miles: number;
+  search_query: string;
+  listings: PropertyListing[];
+  sources_searched: string[];
+  total_found: number;
+}
+
+export interface PropertySearchRequest {
+  latitude: number;
+  longitude: number;
+  radius_miles?: number;
+  property_types?: PropertyType[];
+}
+
+// Property type colors for map markers
+export const PROPERTY_TYPE_COLORS: Record<PropertyType, string> = {
+  retail: '#22C55E',      // Green
+  land: '#A16207',        // Amber/Brown
+  office: '#3B82F6',      // Blue
+  industrial: '#6B7280',  // Gray
+  mixed_use: '#8B5CF6',   // Purple
+};
+
+export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
+  retail: 'Retail',
+  land: 'Land',
+  office: 'Office',
+  industrial: 'Industrial',
+  mixed_use: 'Mixed Use',
+};
+
+// Source icons/colors for property listings
+export const PROPERTY_SOURCE_COLORS: Record<string, string> = {
+  crexi: '#1E3A8A',       // Dark Blue
+  loopnet: '#DC2626',     // Red
+  zillow: '#006AFF',      // Zillow Blue
+  default: '#6B7280',     // Gray
+};

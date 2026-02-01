@@ -10,6 +10,8 @@ import type {
   NearestCompetitorsRequest,
   ParcelInfo,
   ParcelRequest,
+  PropertySearchResult,
+  PropertySearchRequest,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -123,6 +125,24 @@ export const analysisApi = {
   // Check if ReportAll API key is configured
   checkReportAllKey: async (): Promise<{ configured: boolean; message: string }> => {
     const { data } = await api.get('/analysis/check-reportall-key/');
+    return data;
+  },
+
+  // Search for commercial properties for sale
+  searchProperties: async (request: PropertySearchRequest): Promise<PropertySearchResult> => {
+    const { data } = await api.post('/analysis/property-search/', request);
+    return data;
+  },
+
+  // Check if property search API keys are configured
+  checkPropertySearchKeys: async (): Promise<{
+    tavily_configured: boolean;
+    openai_configured: boolean;
+    google_configured: boolean;
+    crexi_configured: boolean;
+    all_required_configured: boolean;
+  }> => {
+    const { data } = await api.get('/analysis/check-property-search-keys/');
     return data;
   },
 };

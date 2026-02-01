@@ -22,8 +22,9 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 
-# AI integration (for later phases)
+# AI integration
 openai==1.10.0
+tavily-python==0.3.9
 
 # Utilities
 python-jose[cryptography]==3.3.0

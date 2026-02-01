@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     GOOGLE_PLACES_API_KEY: Optional[str] = None
     ARCGIS_API_KEY: Optional[str] = None
     REPORTALL_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: Optional[str] = None
+    CREXI_API_KEY: Optional[str] = None
 
     # CORS
     CORS_ORIGINS: list[str] = [

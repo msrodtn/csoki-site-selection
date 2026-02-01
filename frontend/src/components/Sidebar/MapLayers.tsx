@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Flame, LandPlot, Building2, MapPinned } from 'lucide-react';
+import { Layers, Droplets, Car, Train, Flame, LandPlot, Building2, MapPinned, DollarSign } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -51,6 +51,13 @@ export const MAP_LAYERS = {
     icon: MapPinned,
     color: '#059669',
     description: 'Color-code parcels by zoning type',
+  },
+  properties_for_sale: {
+    id: 'properties_for_sale',
+    name: 'Properties For Sale',
+    icon: DollarSign,
+    color: '#22C55E',
+    description: 'Commercial listings (AI-powered)',
   },
 } as const;
 

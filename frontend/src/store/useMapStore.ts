@@ -7,6 +7,8 @@ import type {
   DemographicsResponse,
   NearestCompetitorsResponse,
   SavedLocation,
+  PropertySearchResult,
+  PropertyType,
 } from '../types/store';
 
 // Target market states
@@ -96,6 +98,18 @@ interface MapState {
   compareLocationIds: string[];
   setCompareLocationIds: (ids: string[]) => void;
 
+  // Property Search (CRE Listings)
+  propertySearchResult: PropertySearchResult | null;
+  setPropertySearchResult: (result: PropertySearchResult | null) => void;
+  isPropertySearching: boolean;
+  setIsPropertySearching: (searching: boolean) => void;
+  propertySearchError: string | null;
+  setPropertySearchError: (error: string | null) => void;
+  visiblePropertyTypes: Set<PropertyType>;
+  togglePropertyType: (type: PropertyType) => void;
+  setAllPropertyTypesVisible: (visible: boolean) => void;
+  clearPropertySearch: () => void;
+
   // Clear analysis
   clearAnalysis: () => void;
 }
@@ -115,6 +129,14 @@ const ALL_POI_CATEGORIES: POICategory[] = [
   'quick_service',
   'restaurants',
   'retail',
+];
+
+const ALL_PROPERTY_TYPES: PropertyType[] = [
+  'retail',
+  'land',
+  'office',
+  'industrial',
+  'mixed_use',
 ];
 
 export const useMapStore = create<MapState>((set, get) => ({
@@ -260,6 +282,32 @@ export const useMapStore = create<MapState>((set, get) => ({
   setShowComparePanel: (show) => set({ showComparePanel: show }),
   compareLocationIds: [],
   setCompareLocationIds: (ids) => set({ compareLocationIds: ids }),
+
+  // Property Search (CRE Listings)
+  propertySearchResult: null,
+  setPropertySearchResult: (result) => set({ propertySearchResult: result }),
+  isPropertySearching: false,
+  setIsPropertySearching: (searching) => set({ isPropertySearching: searching }),
+  propertySearchError: null,
+  setPropertySearchError: (error) => set({ propertySearchError: error }),
+  visiblePropertyTypes: new Set(ALL_PROPERTY_TYPES),
+  togglePropertyType: (type) =>
+    set((state) => {
+      const newTypes = new Set(state.visiblePropertyTypes);
+      if (newTypes.has(type)) {
+        newTypes.delete(type);
+      } else {
+        newTypes.add(type);
+      }
+      return { visiblePropertyTypes: newTypes };
+    }),
+  setAllPropertyTypesVisible: (visible) =>
+    set({ visiblePropertyTypes: visible ? new Set(ALL_PROPERTY_TYPES) : new Set() }),
+  clearPropertySearch: () =>
+    set({
+      propertySearchResult: null,
+      propertySearchError: null,
+    }),
 
   // Clear all analysis state
   clearAnalysis: () =>

@@ -9,14 +9,19 @@ import {
   BRAND_LOGOS,
   POI_CATEGORY_COLORS,
   POI_CATEGORY_LABELS,
+  PROPERTY_TYPE_COLORS,
+  PROPERTY_TYPE_LABELS,
   type BrandKey,
   type POICategory,
+  type PropertyListing,
+  type PropertyType,
 } from '../../types/store';
 import type { Store, ParcelInfo } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
 import { ZoningLegend, ZONING_COLORS, getZoningCategory } from './ZoningLegend';
+import { PropertyLegend } from './PropertyLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 import { DraggableParcelInfo } from './DraggableParcelInfo';
 
@@ -160,6 +165,13 @@ export function StoreMap() {
     analysisRadius,
     setMapInstance,
     visibleLayers,
+    // Property search
+    propertySearchResult,
+    setPropertySearchResult,
+    isPropertySearching,
+    setIsPropertySearching,
+    setPropertySearchError,
+    visiblePropertyTypes,
   } = useMapStore();
 
   const [selectedPOI, setSelectedPOI] = useState<{
@@ -171,6 +183,9 @@ export function StoreMap() {
     address: string | null;
     rating: number | null;
   } | null>(null);
+
+  // Selected property listing state
+  const [selectedProperty, setSelectedProperty] = useState<PropertyListing | null>(null);
 
   // Parcel info state
   const [selectedParcel, setSelectedParcel] = useState<ParcelInfo | null>(null);
@@ -243,6 +258,18 @@ export function StoreMap() {
     );
     return filtered.slice(0, 100);
   }, [analysisResult?.pois, visiblePOICategoriesArray]);
+
+  // Filter property listings by visible property types
+  const visiblePropertyTypesArray = useMemo(() => Array.from(visiblePropertyTypes), [visiblePropertyTypes]);
+  const visibleProperties = useMemo(() => {
+    if (!propertySearchResult?.listings) return [];
+    return propertySearchResult.listings.filter(
+      (listing) =>
+        listing.latitude &&
+        listing.longitude &&
+        visiblePropertyTypesArray.includes(listing.property_type)
+    );
+  }, [propertySearchResult?.listings, visiblePropertyTypesArray]);
 
   // Dynamic map options based on business labels layer
   const mapOptions = useMemo((): google.maps.MapOptions => {
@@ -608,6 +635,47 @@ export function StoreMap() {
     }
   }, [visibleLayersArray, visibleStores]);
 
+  // Property search when layer is enabled
+  useEffect(() => {
+    const showProperties = visibleLayersArray.includes('properties_for_sale');
+    const map = mapRef.current;
+
+    if (showProperties && map && !propertySearchResult && !isPropertySearching) {
+      // Get current map center for the search
+      const center = map.getCenter();
+      if (!center) return;
+
+      const lat = center.lat();
+      const lng = center.lng();
+
+      // Trigger property search
+      setIsPropertySearching(true);
+      setPropertySearchError(null);
+
+      analysisApi
+        .searchProperties({
+          latitude: lat,
+          longitude: lng,
+          radius_miles: 10, // Search within 10 miles of map center
+        })
+        .then((result) => {
+          setPropertySearchResult(result);
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : 'Failed to search properties';
+          setPropertySearchError(message);
+          console.error('Property search error:', error);
+        })
+        .finally(() => {
+          setIsPropertySearching(false);
+        });
+    } else if (!showProperties && propertySearchResult) {
+      // Clear results when layer is disabled
+      setPropertySearchResult(null);
+      setSelectedProperty(null);
+    }
+  }, [visibleLayersArray, propertySearchResult, isPropertySearching, setPropertySearchResult, setIsPropertySearching, setPropertySearchError]);
+
   // Create marker icon for each brand using logo images
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Icon => {
     const logoUrl = BRAND_LOGOS[brand as BrandKey];
@@ -632,6 +700,22 @@ export function StoreMap() {
       strokeColor: isSelected ? '#ffffff' : color,
       strokeWeight: isSelected ? 2 : 1,
       scale: scale,
+    };
+  };
+
+  // Create Property marker icon (dollar sign shape)
+  const createPropertyMarkerIcon = (propertyType: PropertyType, isSelected: boolean): google.maps.Symbol => {
+    const color = PROPERTY_TYPE_COLORS[propertyType] || '#22C55E';
+    const scale = isSelected ? 10 : 7;
+
+    return {
+      path: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-4.18-1.62-4.18-3.67 0-1.72 1.39-2.84 3.11-3.21V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.3c-.05-1.11-.64-1.87-2.22-1.87-1.5 0-2.4.68-2.4 1.64 0 .84.65 1.39 2.67 1.91s4.18 1.39 4.18 3.91c-.01 1.83-1.38 2.83-3.12 3.16z',
+      fillColor: color,
+      fillOpacity: 1,
+      strokeColor: isSelected ? '#ffffff' : '#000000',
+      strokeWeight: isSelected ? 2 : 0.5,
+      scale: scale / 12,
+      anchor: new google.maps.Point(12, 12),
     };
   };
 
@@ -660,6 +744,17 @@ export function StoreMap() {
         </div>
       )}
 
+      {/* Property search loading indicator */}
+      {isPropertySearching && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-green-600 text-white px-4 py-2 rounded-lg shadow-md flex items-center gap-2">
+          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Searching for properties...
+        </div>
+      )}
+
       {/* Quick Stats Bar - shows store counts by brand */}
       <QuickStatsBar stores={storesInView} />
 
@@ -674,6 +769,9 @@ export function StoreMap() {
 
       {/* Zoning Colors Legend */}
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
+
+      {/* Properties For Sale Legend */}
+      <PropertyLegend isVisible={visibleLayersArray.includes('properties_for_sale')} />
 
       {/* Hover indicator for parcel layer */}
       {hoverPosition && visibleLayersArray.includes('parcels') && !selectedParcel && !isLoadingParcel && (
@@ -836,6 +934,21 @@ export function StoreMap() {
           />
         ))}
 
+        {/* Property listing markers */}
+        {visibleProperties.map((property) => (
+          <MarkerF
+            key={property.id}
+            position={{ lat: property.latitude!, lng: property.longitude! }}
+            icon={createPropertyMarkerIcon(property.property_type, selectedProperty?.id === property.id)}
+            onClick={() => {
+              setSelectedProperty(property);
+              setSelectedStore(null);
+              setSelectedPOI(null);
+            }}
+            zIndex={selectedProperty?.id === property.id ? 1500 : 300}
+          />
+        ))}
+
         {/* Info window for selected POI */}
         {selectedPOI && (
           <InfoWindowF
@@ -896,6 +1009,52 @@ export function StoreMap() {
               >
                 {isAnalyzing ? 'Analyzing...' : 'Analyze Trade Area'}
               </button>
+            </div>
+          </InfoWindowF>
+        )}
+
+        {/* Info window for selected property listing */}
+        {selectedProperty && selectedProperty.latitude && selectedProperty.longitude && (
+          <InfoWindowF
+            position={{ lat: selectedProperty.latitude, lng: selectedProperty.longitude }}
+            onCloseClick={() => setSelectedProperty(null)}
+            options={{ disableAutoPan: true }}
+          >
+            <div className="min-w-[220px] p-1">
+              <div
+                className="text-xs font-semibold px-2 py-1 rounded mb-2 text-white flex items-center justify-between"
+                style={{
+                  backgroundColor: PROPERTY_TYPE_COLORS[selectedProperty.property_type] || '#22C55E',
+                }}
+              >
+                <span>{PROPERTY_TYPE_LABELS[selectedProperty.property_type]}</span>
+                <span className="opacity-75 text-[10px] uppercase">{selectedProperty.source}</span>
+              </div>
+              <div className="text-sm">
+                <p className="font-medium">{selectedProperty.address}</p>
+                <p className="text-gray-600">
+                  {selectedProperty.city}, {selectedProperty.state}
+                </p>
+                {selectedProperty.price && (
+                  <p className="font-bold text-green-600 mt-1">{selectedProperty.price}</p>
+                )}
+                {selectedProperty.sqft && (
+                  <p className="text-gray-500 text-xs">{selectedProperty.sqft}</p>
+                )}
+                {selectedProperty.description && (
+                  <p className="text-gray-500 text-xs mt-1 line-clamp-2">{selectedProperty.description}</p>
+                )}
+              </div>
+              {selectedProperty.url && (
+                <a
+                  href={selectedProperty.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 block w-full text-center bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+                >
+                  View Listing
+                </a>
+              )}
             </div>
           </InfoWindowF>
         )}

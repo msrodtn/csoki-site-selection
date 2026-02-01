@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from app.services.places import fetch_nearby_pois, TradeAreaAnalysis
 from app.services.arcgis import fetch_demographics, DemographicsResponse
+from app.services.property_search import search_properties, PropertySearchResult, check_api_keys as check_property_api_keys
 from app.core.config import settings
 from app.core.database import get_db
 
@@ -399,3 +400,65 @@ async def check_reportall_api_key():
         "configured": settings.REPORTALL_API_KEY is not None,
         "message": "ReportAll API key configured" if settings.REPORTALL_API_KEY else "ReportAll API key not set"
     }
+
+
+# ============================================
+# Property Search (AI-powered CRE listings)
+# ============================================
+
+class PropertySearchRequest(BaseModel):
+    """Request model for property search."""
+    latitude: float
+    longitude: float
+    radius_miles: float = 5.0
+    property_types: Optional[list[str]] = None  # retail, land, office, industrial, mixed_use
+
+
+@router.post("/property-search/", response_model=PropertySearchResult)
+async def search_properties_endpoint(request: PropertySearchRequest):
+    """
+    Search for commercial properties for sale near a location.
+
+    Uses AI-powered web search to find listings from multiple sources
+    (Crexi, LoopNet, Zillow Commercial, etc.) and returns structured data.
+
+    - **latitude**: Center point latitude
+    - **longitude**: Center point longitude
+    - **radius_miles**: Search radius in miles (default: 5.0)
+    - **property_types**: Filter by type (retail, land, office, industrial, mixed_use)
+
+    Note: Requires TAVILY_API_KEY and OPENAI_API_KEY to be configured.
+    """
+    # Check required API keys
+    if not settings.TAVILY_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Tavily API key not configured. Please set TAVILY_API_KEY environment variable."
+        )
+
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
+        )
+
+    try:
+        result = await search_properties(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            radius_miles=request.radius_miles,
+            property_types=request.property_types,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching properties: {str(e)}")
+
+
+@router.get("/check-property-search-keys/")
+async def check_property_search_api_keys():
+    """
+    Check which API keys are configured for property search.
+    """
+    return await check_property_api_keys()
