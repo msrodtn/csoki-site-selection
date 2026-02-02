@@ -496,16 +496,19 @@ async def extract_listings_with_ai(
         print(f"[{source}] No Anthropic API key, using regex extraction")
         return extract_listings_with_regex(search_results, source, location)
 
-    # Prepare content for AI extraction
+    # Prepare content for AI extraction - include more raw content
     content_text = ""
     for i, result in enumerate(search_results):
         content_text += f"\n--- Result {i+1} ---\n"
         content_text += f"Title: {result.get('title', '')}\n"
         content_text += f"URL: {result.get('url', '')}\n"
-        content_text += f"Content: {result.get('content', '')[:2000]}\n"
+        content = result.get('content', '')
         raw = result.get('raw_content', '')
-        if raw:
-            content_text += f"Raw: {raw[:2000]}\n"
+        # Use raw content if available (usually contains more listing data)
+        if raw and len(raw) > len(content):
+            content_text += f"Content: {raw[:8000]}\n"
+        else:
+            content_text += f"Content: {content[:4000]}\n"
 
     prompt = f"""Extract commercial property listings from these search results for {location}.
 
@@ -614,54 +617,107 @@ def extract_listings_with_regex(
         content += (result.get('content') or '') + "\n"
         content += (result.get('raw_content') or '') + "\n"
 
-    # Pattern: Address with city and state
-    address_pattern = re.compile(
-        r'(\d{1,5}\s+(?:[NSEW]\.?\s+)?[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)'
-        r'\s*[,•\-]\s*'
-        r'(Davenport|Bettendorf|Moline|Rock Island|Clinton|Muscatine|Iowa City|Cedar Rapids|Des Moines|Omaha|Lincoln|Las Vegas|Henderson|Reno|Boise|Nampa)'
-        r'(?:\s*,\s*|\s+)'
-        r'(IA|NE|NV|ID|IL)',
-        re.IGNORECASE
-    )
+    # More flexible address pattern - matches common CRE listing formats
+    # Pattern 1: Full address with city/state
+    address_patterns = [
+        # Standard format: 123 Main Street, Davenport, IA
+        re.compile(
+            r'(\d{1,5}\s+(?:[NSEW]\.?\s+)?[A-Za-z][A-Za-z\s]*(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct|Highway|Hwy|Pike|Circle|Cir)\.?)'
+            r'[,\s]+([A-Za-z][A-Za-z\s]{2,20})'
+            r'[,\s]+(IA|NE|NV|ID|IL)',
+            re.IGNORECASE
+        ),
+        # Price followed by address format: $500,000 123 Main St
+        re.compile(
+            r'\$[\d,]+\s+(\d{1,5}\s+(?:[NSEW]\.?\s+)?[A-Za-z][A-Za-z\s]*(?:St|Rd|Ave|Blvd|Dr|Ln|Way|Pl|Ct|Hwy)\.?)'
+            r'[,\s]+([A-Za-z][A-Za-z\s]{2,20})',
+            re.IGNORECASE
+        ),
+    ]
 
     price_pattern = re.compile(r'\$\s*([\d,]+(?:\.\d{2})?)', re.IGNORECASE)
+    sqft_pattern = re.compile(r'([\d,]+)\s*(?:sq\.?\s*ft|SF|square\s*feet)', re.IGNORECASE)
 
-    for match in address_pattern.finditer(content):
-        street = match.group(1).strip()
-        city = match.group(2).strip().title()
-        state = match.group(3).upper()
+    for pattern in address_patterns:
+        for match in pattern.finditer(content):
+            street = match.group(1).strip()
+            city = match.group(2).strip().title()
 
-        key = f"{street.lower()}_{city.lower()}"
-        if key in seen:
-            continue
-        seen.add(key)
-
-        # Find nearby price
-        price = None
-        price_numeric = None
-        context = content[max(0, match.start()-100):match.end()+200]
-        price_match = price_pattern.search(context)
-        if price_match:
+            # Get state if captured, otherwise try to determine from context
             try:
-                price_str = price_match.group(1).replace(',', '')
-                price_numeric = float(price_str)
-                price = f"${price_numeric:,.0f}"
+                state = match.group(3).upper() if match.lastindex >= 3 else ""
             except:
-                pass
+                state = ""
 
-        property_type = determine_property_type(context)
+            # Skip if street is too short or looks like garbage
+            if len(street) < 5 or not re.match(r'\d+\s+[A-Za-z]', street):
+                continue
 
-        listings.append(PropertyListing(
-            id=f"{source.lower()}_regex_{len(listings)}",
-            address=street,
-            city=city,
-            state=state,
-            price=price,
-            price_numeric=price_numeric,
-            property_type=property_type,
-            source=source.lower(),
-            url=construct_search_url(street, city, state),
-        ))
+            key = f"{street.lower()}_{city.lower()}"
+            if key in seen:
+                continue
+            seen.add(key)
+
+            # Find nearby price and sqft
+            price = None
+            price_numeric = None
+            sqft = None
+            sqft_numeric = None
+
+            context = content[max(0, match.start()-150):match.end()+300]
+
+            price_match = price_pattern.search(context)
+            if price_match:
+                try:
+                    price_str = price_match.group(1).replace(',', '')
+                    price_numeric = float(price_str)
+                    # Skip obviously wrong prices (too low for commercial)
+                    if price_numeric >= 10000:
+                        price = f"${price_numeric:,.0f}"
+                except:
+                    pass
+
+            sqft_match = sqft_pattern.search(context)
+            if sqft_match:
+                try:
+                    sqft_str = sqft_match.group(1).replace(',', '')
+                    sqft_numeric = float(sqft_str)
+                    sqft = f"{sqft_numeric:,.0f} SF"
+                except:
+                    pass
+
+            property_type = determine_property_type(context)
+
+            # Determine state from city if not captured
+            if not state:
+                city_lower = city.lower()
+                if city_lower in ['davenport', 'bettendorf', 'clinton', 'muscatine', 'iowa city', 'cedar rapids', 'des moines']:
+                    state = 'IA'
+                elif city_lower in ['omaha', 'lincoln']:
+                    state = 'NE'
+                elif city_lower in ['las vegas', 'henderson', 'reno']:
+                    state = 'NV'
+                elif city_lower in ['boise', 'nampa']:
+                    state = 'ID'
+                elif city_lower in ['moline', 'rock island', 'east moline']:
+                    state = 'IL'
+
+            if not state:
+                continue  # Skip if we can't determine state
+
+            listings.append(PropertyListing(
+                id=f"{source.lower()}_regex_{len(listings)}",
+                address=street,
+                city=city,
+                state=state,
+                price=price,
+                price_numeric=price_numeric,
+                sqft=sqft,
+                sqft_numeric=sqft_numeric,
+                property_type=property_type,
+                source=source.lower(),
+                url=construct_search_url(street, city, state),
+            ))
 
     print(f"[{source}] Regex extracted {len(listings)} listings")
     return listings
