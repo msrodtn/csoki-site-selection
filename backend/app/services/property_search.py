@@ -134,6 +134,10 @@ async def search_properties(
     # Deduplicate by address
     unique_listings = deduplicate_listings(filtered_listings)
 
+    # Find actual listing URLs for properties that only have fallback URLs
+    print(f"[PropertySearch] Finding actual listing URLs for {len(unique_listings)} properties...")
+    unique_listings = await find_listing_urls(unique_listings)
+
     return PropertySearchResult(
         center_latitude=latitude,
         center_longitude=longitude,
@@ -261,6 +265,127 @@ def construct_property_search_url(address: str, city: str, state: str, source: s
     else:
         # Default to Google search for the specific property listing
         return f"https://www.google.com/search?q={encoded_address}+commercial+property+for+sale"
+
+
+def is_fallback_url(url: str) -> bool:
+    """Check if URL is a fallback (search page) rather than a specific listing."""
+    if not url:
+        return True
+    url_lower = url.lower()
+    # These indicate fallback/search URLs, not actual listings
+    return any(indicator in url_lower for indicator in [
+        'google.com/search',
+        'crexi.com/search',
+        'loopnet.com/search',
+        '/property-search',
+        '/results',
+        '/browse',
+    ])
+
+
+async def find_listing_url_for_property(listing: PropertyListing) -> Optional[str]:
+    """
+    Do a targeted search for a specific property to find its actual listing URL.
+    Returns the listing URL if found, None otherwise.
+    """
+    if not settings.TAVILY_API_KEY:
+        return None
+
+    # Build a very specific search query for this property
+    full_address = f"{listing.address}, {listing.city}, {listing.state}"
+
+    # Search specifically on CRE listing sites
+    query = f'"{full_address}" commercial property (site:crexi.com OR site:loopnet.com OR site:commercialcafe.com OR site:cityfeet.com)'
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": settings.TAVILY_API_KEY,
+                    "query": query,
+                    "search_depth": "basic",  # Faster search
+                    "max_results": 5,
+                },
+            )
+
+            if response.status_code != 200:
+                return None
+
+            data = response.json()
+            results = data.get("results", [])
+
+            # Look for actual listing URLs in results
+            for result in results:
+                url = result.get("url", "")
+                url_lower = url.lower()
+
+                # Check if this looks like an actual listing page
+                if any(pattern in url_lower for pattern in [
+                    'crexi.com/properties/',
+                    'loopnet.com/listing/',
+                    'commercialcafe.com/listing/',
+                    'cityfeet.com/commercial/',
+                ]):
+                    # Skip search/category pages
+                    if not any(skip in url_lower for skip in ['/search', '/results', '/browse']):
+                        print(f"[PropertySearch] Found listing URL for {listing.address}: {url}")
+                        return url
+
+            return None
+
+    except Exception as e:
+        print(f"[PropertySearch] Error finding listing URL for {listing.address}: {e}")
+        return None
+
+
+async def find_listing_urls(listings: list[PropertyListing]) -> list[PropertyListing]:
+    """
+    Find actual listing URLs for properties that only have fallback URLs.
+    Limits to first 10 listings to control API costs.
+    """
+    import asyncio
+
+    MAX_LOOKUPS = 10  # Limit API calls
+
+    # Find listings that need URL lookup
+    listings_needing_urls = [
+        (i, listing) for i, listing in enumerate(listings)
+        if is_fallback_url(listing.url)
+    ][:MAX_LOOKUPS]
+
+    if not listings_needing_urls:
+        print("[PropertySearch] All listings already have specific URLs")
+        return listings
+
+    print(f"[PropertySearch] Looking up URLs for {len(listings_needing_urls)} listings...")
+
+    # Do lookups concurrently (but with some rate limiting)
+    async def lookup_with_delay(idx: int, listing: PropertyListing, delay: float):
+        await asyncio.sleep(delay)  # Stagger requests
+        url = await find_listing_url_for_property(listing)
+        return idx, url
+
+    tasks = [
+        lookup_with_delay(idx, listing, i * 0.3)  # 300ms delay between requests
+        for i, (idx, listing) in enumerate(listings_needing_urls)
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Update listings with found URLs
+    found_count = 0
+    for result in results:
+        if isinstance(result, Exception):
+            continue
+        idx, url = result
+        if url:
+            listings[idx].url = url
+            found_count += 1
+
+    print(f"[PropertySearch] Found {found_count}/{len(listings_needing_urls)} actual listing URLs")
+
+    return listings
 
 
 async def extract_listings_with_ai(
