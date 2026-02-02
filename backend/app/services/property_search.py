@@ -394,11 +394,22 @@ def extract_listings_with_regex(
     seen_addresses = set()
 
     # Alternative pattern: "$price Street Number Street Name • City, ST"
+    # Handle case where price and street number run together: "$820,0003709 N Harrison"
+    # In this case "820,000" is price and "3709" is street number
     price_address_pattern = re.compile(
-        r'\$\s*([\d,]+(?:\.\d{2})?)\s*'
+        r'\$\s*([\d,]+(?:\.\d{2})?)\s+'  # Price followed by whitespace
         r'(\d{1,5}\s+(?:[NSEW]\.?\s+)?[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)'
         r'\s*[,•\-]\s*'
         r'(Davenport|Bettendorf|Moline|Rock Island|Clinton|Muscatine|Iowa City|Cedar Rapids|Des Moines|Omaha|Lincoln|Las Vegas|Henderson|Reno|Boise|Nampa)',
+        re.IGNORECASE
+    )
+
+    # Pattern for parsing concatenated price+street (common in listing scraped text)
+    # e.g., "$820,0003709 N Harrison Street" -> price=$820,000, street=3709 N Harrison Street
+    concat_pattern = re.compile(
+        r'\$\s*([\d,]+,\d{3})(\d{2,5})\s+(?:([NSEW]\.?\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)'
+        r'\s*[,•\-]?\s*'
+        r'(Davenport|Bettendorf|Moline|Rock Island|Clinton|Muscatine|Iowa City|Cedar Rapids|Des Moines|Omaha|Lincoln)',
         re.IGNORECASE
     )
 
@@ -406,7 +417,83 @@ def extract_listings_with_regex(
         content = (result.get('content') or '') + ' ' + (result.get('raw_content') or '')
         url = result.get('url') or ''
 
-        # First try the price+address pattern
+        # First try to parse concatenated price+street patterns
+        for match in concat_pattern.finditer(content):
+            price_str = match.group(1)  # e.g., "820,000"
+            street_num = match.group(2)  # e.g., "3709"
+            direction = match.group(3) or ''
+            street_name = match.group(4)
+            city = match.group(5).strip().title()
+
+            # Reconstruct the full street address
+            street = f"{street_num} {direction}{street_name}"
+            street = re.sub(r'\s+', ' ', street).strip()
+
+            # Determine state from city
+            state = 'IA'
+            if city.lower() in ['omaha', 'lincoln']:
+                state = 'NE'
+            elif city.lower() in ['moline', 'rock island']:
+                state = 'IL'
+
+            addr_key = f"{street.lower()}_{city.lower()}"
+            if addr_key in seen_addresses:
+                continue
+            seen_addresses.add(addr_key)
+
+            price = f"${price_str}"
+            try:
+                price_numeric = float(price_str.replace(',', ''))
+            except:
+                price_numeric = None
+
+            # Look for sqft nearby
+            sqft = None
+            sqft_numeric = None
+            match_pos = match.start()
+            context = content[max(0, match_pos-50):match_pos+250]
+            sqft_match = sqft_pattern.search(context)
+            if sqft_match:
+                sqft_str = sqft_match.group(1)
+                sqft = f"{sqft_str} SF"
+                try:
+                    sqft_numeric = float(sqft_str.replace(',', ''))
+                except:
+                    pass
+
+            if not sqft:
+                acres_match = acres_pattern.search(context)
+                if acres_match:
+                    sqft = f"{acres_match.group(1)} acres"
+
+            # Determine property type
+            property_type = "retail"
+            context_lower = context.lower()
+            if any(word in context_lower for word in ['land', 'lot', 'acres', 'vacant']):
+                property_type = "land"
+            elif 'office' in context_lower:
+                property_type = "office"
+            elif any(word in context_lower for word in ['warehouse', 'industrial']):
+                property_type = "industrial"
+
+            listing = PropertyListing(
+                id=f"{source.lower()}_regex_{listing_id}",
+                address=street,
+                city=city,
+                state=state,
+                price=price,
+                price_numeric=price_numeric,
+                sqft=sqft,
+                sqft_numeric=sqft_numeric,
+                property_type=property_type,
+                source=source.lower(),
+                url=url,
+                description=f"{street}, {city} - {price}"[:100],
+            )
+            listings.append(listing)
+            listing_id += 1
+
+        # Then try the price+address pattern (space-separated)
         for match in price_address_pattern.finditer(content):
             price_str = match.group(1)
             street = match.group(2).strip()
