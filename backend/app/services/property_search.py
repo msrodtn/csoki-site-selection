@@ -271,10 +271,9 @@ def construct_property_search_url(address: str, city: str, state: str, source: s
         location_slug = f"{city}-{state}".lower().replace(' ', '-')
         return f"https://www.loopnet.com/search/commercial-real-estate/{location_slug}/for-sale/?sk={encoded_address}"
     else:
-        # Default to LoopNet search (better UX than Google search)
-        # This ensures users land on a CRE platform ready to search
-        location_slug = f"{city}-{state}".lower().replace(' ', '-')
-        return f"https://www.loopnet.com/search/commercial-real-estate/{location_slug}/for-sale/?sk={encoded_address}"
+        # Default to Google search for General source - finds listings on ANY platform
+        # including local brokers, Zillow, and other CRE sites
+        return f"https://www.google.com/search?q={encoded_address}+commercial+property+for+sale"
 
 
 def is_fallback_url(url: str) -> bool:
