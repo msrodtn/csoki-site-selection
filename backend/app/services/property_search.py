@@ -11,6 +11,7 @@ Playwright-based scraping approach:
 
 import asyncio
 import json
+import os
 import re
 import urllib.parse
 from typing import Optional
@@ -21,10 +22,16 @@ import httpx
 
 from ..core.config import settings
 
+# Set Playwright browser path BEFORE importing playwright
+# This ensures it looks in /opt/playwright (set in Dockerfile) instead of user home
+if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/playwright"
+
 # Playwright import with fallback
 try:
     from playwright.async_api import async_playwright, Browser, Page
     PLAYWRIGHT_AVAILABLE = True
+    print(f"[PropertySearch] Playwright available, browsers path: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH')}")
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     print("[PropertySearch] Playwright not available, will use httpx fallback")
