@@ -134,9 +134,12 @@ async def search_properties(
     # Deduplicate by address
     unique_listings = deduplicate_listings(filtered_listings)
 
-    # Find actual listing URLs for properties that only have fallback URLs
-    print(f"[PropertySearch] Finding actual listing URLs for {len(unique_listings)} properties...")
-    unique_listings = await find_listing_urls(unique_listings)
+    # Note: Secondary URL lookup (find_listing_urls) removed - it rarely found actual
+    # listing URLs and added significant latency. Instead, we now construct
+    # LoopNet/Crexi search URLs directly with the address pre-filled.
+    # This provides a better UX (users land on CRE platform ready to search).
+
+    print(f"[PropertySearch] Returning {len(unique_listings)} listings with platform search URLs")
 
     return PropertySearchResult(
         center_latitude=latitude,
@@ -250,21 +253,28 @@ async def search_source(
 
 
 def construct_property_search_url(address: str, city: str, state: str, source: str) -> str:
-    """Construct a search URL for major CRE platforms based on address."""
+    """Construct platform-specific search URL with address pre-filled.
+
+    Users land on Crexi/LoopNet search page ready to find the specific listing.
+    This is more reliable than trying to find exact listing URLs via web search.
+    """
     full_address = f"{address}, {city}, {state}"
     encoded_address = urllib.parse.quote(full_address)
 
     # Create platform-specific search URLs
     source_lower = source.lower()
     if 'crexi' in source_lower:
+        # Crexi search with address pre-filled
         return f"https://www.crexi.com/search?q={encoded_address}"
     elif 'loopnet' in source_lower:
-        # LoopNet search URL format
+        # LoopNet search with address in search box
         location_slug = f"{city}-{state}".lower().replace(' ', '-')
         return f"https://www.loopnet.com/search/commercial-real-estate/{location_slug}/for-sale/?sk={encoded_address}"
     else:
-        # Default to Google search for the specific property listing
-        return f"https://www.google.com/search?q={encoded_address}+commercial+property+for+sale"
+        # Default to LoopNet search (better UX than Google search)
+        # This ensures users land on a CRE platform ready to search
+        location_slug = f"{city}-{state}".lower().replace(' ', '-')
+        return f"https://www.loopnet.com/search/commercial-real-estate/{location_slug}/for-sale/?sk={encoded_address}"
 
 
 def is_fallback_url(url: str) -> bool:
