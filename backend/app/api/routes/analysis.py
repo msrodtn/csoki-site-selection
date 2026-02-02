@@ -501,12 +501,16 @@ async def debug_property_search(location: str = "Davenport, IA", extract: bool =
             # Return simplified results for debugging
             debug_results = []
             for r in results:
+                title = r.get("title") or ""
+                url = r.get("url") or ""
+                content = r.get("content") or ""
+                raw_content = r.get("raw_content") or ""
                 debug_results.append({
-                    "title": r.get("title", "")[:100],
-                    "url": r.get("url", ""),
-                    "content_preview": r.get("content", "")[:500],
-                    "has_raw_content": bool(r.get("raw_content")),
-                    "raw_content_length": len(r.get("raw_content", "")),
+                    "title": title[:100],
+                    "url": url,
+                    "content_preview": content[:500],
+                    "has_raw_content": bool(raw_content),
+                    "raw_content_length": len(raw_content),
                 })
 
             response_data = {
@@ -523,12 +527,16 @@ async def debug_property_search(location: str = "Davenport, IA", extract: bool =
                     # Build content text like the main function does
                     content_text = ""
                     for i, result in enumerate(results):
+                        r_title = result.get('title') or ''
+                        r_url = result.get('url') or ''
+                        r_content = result.get('content') or ''
+                        r_raw = result.get('raw_content') or ''
                         content_text += f"\n--- Result {i+1} ---\n"
-                        content_text += f"Title: {result.get('title', '')}\n"
-                        content_text += f"URL: {result.get('url', '')}\n"
-                        content_text += f"Content: {result.get('content', '')[:1500]}\n"
-                        if result.get('raw_content'):
-                            content_text += f"Raw Content: {result.get('raw_content', '')[:2000]}\n"
+                        content_text += f"Title: {r_title}\n"
+                        content_text += f"URL: {r_url}\n"
+                        content_text += f"Content: {r_content[:1500]}\n"
+                        if r_raw:
+                            content_text += f"Raw Content: {r_raw[:2000]}\n"
 
                     prompt = f"""Extract commercial property listings from these search results for {location}.
 

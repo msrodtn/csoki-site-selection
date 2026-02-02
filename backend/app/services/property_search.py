@@ -256,12 +256,16 @@ async def extract_listings_with_ai(
     # Prepare content for AI extraction
     content_text = ""
     for i, result in enumerate(search_results):
+        r_title = result.get('title') or ''
+        r_url = result.get('url') or ''
+        r_content = result.get('content') or ''
+        r_raw = result.get('raw_content') or ''
         content_text += f"\n--- Result {i+1} ---\n"
-        content_text += f"Title: {result.get('title', '')}\n"
-        content_text += f"URL: {result.get('url', '')}\n"
-        content_text += f"Content: {result.get('content', '')[:1500]}\n"
-        if result.get('raw_content'):
-            content_text += f"Raw Content: {result.get('raw_content', '')[:2000]}\n"
+        content_text += f"Title: {r_title}\n"
+        content_text += f"URL: {r_url}\n"
+        content_text += f"Content: {r_content[:1500]}\n"
+        if r_raw:
+            content_text += f"Raw Content: {r_raw[:2000]}\n"
 
     prompt = f"""Extract commercial property listings from these search results for {location}.
 
