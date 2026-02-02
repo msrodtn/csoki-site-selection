@@ -1,11 +1,12 @@
 """
 Property Search Service
 
-Direct scraping approach:
-1. Construct Crexi/LoopNet search URLs for the target location
-2. Scrape their search result pages directly
-3. Use AI to extract listing data from HTML
-4. Geocode and filter results
+Playwright-based scraping approach:
+1. Use headless browser with stealth mode to bypass bot protection
+2. Construct Crexi/LoopNet search URLs for the target location
+3. Scrape their search result pages with full JS rendering
+4. Use AI to extract listing data from HTML
+5. Geocode and filter results
 """
 
 import asyncio
@@ -20,21 +21,13 @@ import httpx
 
 from ..core.config import settings
 
-
-# Browser-like headers to avoid blocks
-SCRAPE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Cache-Control": "max-age=0",
-}
+# Playwright import with fallback
+try:
+    from playwright.async_api import async_playwright, Browser, Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    print("[PropertySearch] Playwright not available, will use httpx fallback")
 
 
 # Property types for filtering
@@ -189,50 +182,142 @@ def parse_location_parts(location_name: str) -> tuple[str, str]:
     return location_name.strip(), ""
 
 
+async def scrape_with_playwright(
+    url: str,
+    source: str,
+    city: str,
+    state: str,
+    property_types: Optional[list[str]] = None,
+) -> list[PropertyListing]:
+    """
+    Scrape a CRE search page using Playwright with stealth mode.
+
+    Uses headless Chromium with stealth techniques to bypass bot detection.
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        print(f"[{source}] Playwright not available, skipping")
+        return []
+
+    print(f"[{source}] Launching Playwright browser for: {url}")
+
+    try:
+        async with async_playwright() as p:
+            # Launch browser with stealth settings
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu',
+                ]
+            )
+
+            # Create context with realistic browser fingerprint
+            context = await browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                locale='en-US',
+                timezone_id='America/Chicago',
+                geolocation={'latitude': 41.5868, 'longitude': -93.6250},  # Des Moines, IA
+                permissions=['geolocation'],
+            )
+
+            # Add stealth scripts to hide automation markers
+            await context.add_init_script("""
+                // Override navigator.webdriver
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
+
+                // Override chrome.runtime
+                window.chrome = {
+                    runtime: {},
+                };
+
+                // Override permissions
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
+
+                // Override plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+
+                // Override languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                });
+            """)
+
+            page = await context.new_page()
+
+            # Navigate to the page
+            print(f"[{source}] Navigating to {url}")
+            response = await page.goto(url, wait_until='networkidle', timeout=30000)
+
+            if not response:
+                print(f"[{source}] No response received")
+                await browser.close()
+                return []
+
+            status = response.status
+            print(f"[{source}] Page loaded with status {status}")
+
+            if status == 403:
+                print(f"[{source}] Still blocked with 403")
+                await browser.close()
+                return []
+
+            # Wait for content to load (some sites load listings via JS)
+            await page.wait_for_timeout(3000)
+
+            # Get the rendered HTML
+            html = await page.content()
+            print(f"[{source}] Got {len(html)} bytes of rendered HTML")
+
+            await browser.close()
+
+            # Check if blocked
+            html_lower = html.lower()
+            if "access denied" in html_lower or "captcha" in html_lower:
+                print(f"[{source}] Access blocked (captcha or denied)")
+                return []
+
+            # Extract listings using AI
+            listings = await extract_listings_from_html_with_ai(
+                html, source, city, state, url, property_types
+            )
+
+            return listings
+
+    except Exception as e:
+        print(f"[{source}] Playwright error: {e}")
+        return []
+
+
 async def scrape_crexi_search(
     city: str,
     state: str,
     property_types: Optional[list[str]] = None,
 ) -> list[PropertyListing]:
     """
-    Directly scrape Crexi's search results page.
+    Scrape Crexi's search results page using Playwright.
 
     Crexi URL format: https://www.crexi.com/properties?locations={city}-{state}
     """
-    # Format city for URL (lowercase, hyphens for spaces)
     city_slug = city.lower().replace(" ", "-")
     state_lower = state.lower()
-
     search_url = f"https://www.crexi.com/properties?locations={city_slug}-{state_lower}"
 
-    print(f"[Crexi] Scraping search page: {search_url}")
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(search_url, headers=SCRAPE_HEADERS)
-
-            if response.status_code != 200:
-                print(f"[Crexi] Search page returned {response.status_code}")
-                return []
-
-            html = response.text
-            print(f"[Crexi] Got {len(html)} bytes of HTML")
-
-            # Check if blocked
-            if "access denied" in html.lower() or "captcha" in html.lower():
-                print("[Crexi] Access blocked (captcha or denied)")
-                return []
-
-            # Extract listings using AI
-            listings = await extract_listings_from_html_with_ai(
-                html, "Crexi", city, state, search_url, property_types
-            )
-
-            return listings
-
-    except Exception as e:
-        print(f"[Crexi] Scrape error: {e}")
-        return []
+    return await scrape_with_playwright(search_url, "Crexi", city, state, property_types)
 
 
 async def scrape_loopnet_search(
@@ -241,44 +326,15 @@ async def scrape_loopnet_search(
     property_types: Optional[list[str]] = None,
 ) -> list[PropertyListing]:
     """
-    Directly scrape LoopNet's search results page.
+    Scrape LoopNet's search results page using Playwright.
 
     LoopNet URL format: https://www.loopnet.com/search/commercial-real-estate/{city}-{state}/for-sale/
     """
-    # Format city for URL (lowercase, hyphens for spaces)
     city_slug = city.lower().replace(" ", "-")
     state_lower = state.lower()
-
     search_url = f"https://www.loopnet.com/search/commercial-real-estate/{city_slug}-{state_lower}/for-sale/"
 
-    print(f"[LoopNet] Scraping search page: {search_url}")
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(search_url, headers=SCRAPE_HEADERS)
-
-            if response.status_code != 200:
-                print(f"[LoopNet] Search page returned {response.status_code}")
-                return []
-
-            html = response.text
-            print(f"[LoopNet] Got {len(html)} bytes of HTML")
-
-            # Check if blocked
-            if "access denied" in html.lower() or "captcha" in html.lower() or "cloudflare" in html.lower():
-                print("[LoopNet] Access blocked")
-                return []
-
-            # Extract listings using AI
-            listings = await extract_listings_from_html_with_ai(
-                html, "LoopNet", city, state, search_url, property_types
-            )
-
-            return listings
-
-    except Exception as e:
-        print(f"[LoopNet] Scrape error: {e}")
-        return []
+    return await scrape_with_playwright(search_url, "LoopNet", city, state, property_types)
 
 
 async def extract_listings_from_html_with_ai(

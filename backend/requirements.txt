@@ -30,6 +30,7 @@ tavily-python==0.3.9
 # Web scraping
 beautifulsoup4==4.12.3
 lxml==5.1.0
+playwright==1.41.0
 
 # Utilities
 python-jose[cryptography]==3.3.0
