@@ -462,3 +462,51 @@ async def check_property_search_api_keys():
     Check which API keys are configured for property search.
     """
     return await check_property_api_keys()
+
+
+@router.get("/debug-property-search/")
+async def debug_property_search(location: str = "Davenport, IA"):
+    """
+    Debug endpoint to see raw Tavily search results for a location.
+    """
+    import httpx
+
+    if not settings.TAVILY_API_KEY:
+        return {"error": "TAVILY_API_KEY not configured"}
+
+    query = f'"{location}" commercial property for sale listing price address'
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": settings.TAVILY_API_KEY,
+                "query": query,
+                "search_depth": "advanced",
+                "include_raw_content": True,
+                "max_results": 5,
+            },
+        )
+
+        if response.status_code != 200:
+            return {"error": f"Tavily failed: {response.status_code}", "details": response.text}
+
+        data = response.json()
+        results = data.get("results", [])
+
+        # Return simplified results for debugging
+        debug_results = []
+        for r in results:
+            debug_results.append({
+                "title": r.get("title", "")[:100],
+                "url": r.get("url", ""),
+                "content_preview": r.get("content", "")[:500],
+                "has_raw_content": bool(r.get("raw_content")),
+                "raw_content_length": len(r.get("raw_content", "")),
+            })
+
+        return {
+            "query": query,
+            "result_count": len(results),
+            "results": debug_results,
+        }

@@ -114,13 +114,21 @@ async def search_properties(
     # Geocode listings that don't have coordinates
     all_listings = await geocode_listings(all_listings)
 
-    # Filter to listings within radius
+    print(f"[PropertySearch] Total listings after geocoding: {len(all_listings)}")
+    for listing in all_listings[:5]:
+        print(f"  - {listing.address}, {listing.city}, {listing.state} | lat={listing.latitude}, lng={listing.longitude}")
+
+    # Filter to listings within radius (use larger radius to avoid filtering too aggressively)
+    # Use 50 miles as minimum to ensure we capture listings
+    effective_radius = max(radius_miles, 50)
     filtered_listings = filter_by_radius(
         listings=all_listings,
         center_lat=latitude,
         center_lng=longitude,
-        radius_miles=radius_miles,
+        radius_miles=effective_radius,
     )
+
+    print(f"[PropertySearch] Listings within {effective_radius} miles: {len(filtered_listings)}")
 
     # Deduplicate by address
     unique_listings = deduplicate_listings(filtered_listings)
