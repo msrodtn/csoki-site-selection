@@ -1,16 +1,19 @@
 """
 Property Search Service
 
-Uses AI-powered web search to find commercial real estate listings
-from multiple sources (Crexi, LoopNet, Zillow Commercial, etc.)
+Direct page scraping approach:
+1. Use Tavily to find listing URLs from CRE platforms
+2. Fetch those pages directly
+3. Extract structured data (JSON-LD, Schema.org markup, HTML parsing)
 """
 
+import asyncio
 import json
 import re
 import urllib.parse
 from typing import Optional
 from pydantic import BaseModel
-import anthropic
+from bs4 import BeautifulSoup
 import httpx
 
 from ..core.config import settings
@@ -18,11 +21,11 @@ from ..core.config import settings
 
 # Property types for filtering
 PROPERTY_TYPES = {
-    "retail": ["retail", "storefront", "shopping center", "strip mall"],
-    "land": ["land", "lot", "vacant land", "development site"],
-    "office": ["office", "office building", "office space"],
-    "industrial": ["industrial", "warehouse", "distribution"],
-    "mixed_use": ["mixed use", "mixed-use"],
+    "retail": ["retail", "storefront", "shopping center", "strip mall", "restaurant"],
+    "land": ["land", "lot", "vacant land", "development site", "acreage"],
+    "office": ["office", "office building", "office space", "professional"],
+    "industrial": ["industrial", "warehouse", "distribution", "flex space", "manufacturing"],
+    "mixed_use": ["mixed use", "mixed-use", "live/work"],
 }
 
 
@@ -62,7 +65,7 @@ class PropertySearchResult(BaseModel):
     listings: list[PropertyListing]
     sources_searched: list[str]
     total_found: int
-    bounds: Optional[MapBounds] = None  # Bounds used for filtering (if provided)
+    bounds: Optional[MapBounds] = None
 
 
 async def search_properties(
@@ -75,90 +78,63 @@ async def search_properties(
     """
     Search for commercial properties for sale near a location.
 
-    Uses web search to find listings from multiple CRE platforms,
-    then uses AI to extract structured property data.
-
-    Args:
-        latitude: Center point latitude
-        longitude: Center point longitude
-        radius_miles: Search radius in miles
-        property_types: Filter by type (retail, land, office, industrial, mixed_use)
-
-    Returns:
-        PropertySearchResult with found listings
+    Uses direct page scraping approach:
+    1. Find listing URLs via Tavily site-specific searches
+    2. Fetch those pages directly
+    3. Extract structured data from pages
     """
     if not settings.TAVILY_API_KEY:
         raise ValueError("TAVILY_API_KEY not configured")
 
-    if not settings.OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY not configured")
-
     # Get location name for search query
     location_name = await reverse_geocode_to_city(latitude, longitude)
 
-    # Build search queries for each source
-    type_filter = ""
-    if property_types:
-        type_filter = " OR ".join(property_types)
+    print(f"[PropertySearch] Starting direct scraping search for {location_name}")
 
-    sources_to_search = ["Crexi", "LoopNet", "General"]
     all_listings: list[PropertyListing] = []
+    sources_searched: list[str] = []
 
-    print(f"[PropertySearch] Starting search for {location_name} (radius: {radius_miles} mi)")
+    # Search each CRE platform directly
+    search_tasks = [
+        search_crexi_listings(location_name, property_types),
+        search_loopnet_listings(location_name, property_types),
+        search_commercialcafe_listings(location_name, property_types),
+        search_general_listings(location_name, property_types),
+    ]
 
-    # Search each source
-    for source in sources_to_search:
-        try:
-            listings = await search_source(
-                source=source,
-                location=location_name,
-                radius_miles=radius_miles,
-                property_types=property_types,
-            )
-            all_listings.extend(listings)
-        except Exception as e:
-            print(f"[PropertySearch] Error searching {source}: {e}")
+    results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+    for i, result in enumerate(results):
+        source_names = ["Crexi", "LoopNet", "CommercialCafe", "General"]
+        if isinstance(result, Exception):
+            print(f"[PropertySearch] Error searching {source_names[i]}: {result}")
             continue
+        if result:
+            all_listings.extend(result)
+            sources_searched.append(source_names[i])
+            print(f"[PropertySearch] {source_names[i]}: Found {len(result)} listings")
 
     print(f"[PropertySearch] Total listings before geocoding: {len(all_listings)}")
 
-    # Geocode listings that don't have coordinates
+    # Geocode listings without coordinates
     all_listings = await geocode_listings(all_listings)
 
-    print(f"[PropertySearch] Total listings after geocoding: {len(all_listings)}")
-    for listing in all_listings[:5]:
-        print(f"  - {listing.address}, {listing.city}, {listing.state} | lat={listing.latitude}, lng={listing.longitude}")
-
-    # Filter to listings within bounds or radius
+    # Filter by bounds or radius
     if bounds:
-        # Use bounds-based filtering when viewport bounds are provided
         filtered_listings = filter_by_bounds(
-            listings=all_listings,
-            min_lat=bounds.min_lat,
-            max_lat=bounds.max_lat,
-            min_lng=bounds.min_lng,
-            max_lng=bounds.max_lng,
+            all_listings, bounds.min_lat, bounds.max_lat, bounds.min_lng, bounds.max_lng
         )
         print(f"[PropertySearch] Listings within bounds: {len(filtered_listings)}")
     else:
-        # Fall back to radius-based filtering
         filtered_listings = filter_by_radius(
-            listings=all_listings,
-            center_lat=latitude,
-            center_lng=longitude,
-            radius_miles=radius_miles,
+            all_listings, latitude, longitude, radius_miles
         )
         print(f"[PropertySearch] Listings within {radius_miles} miles: {len(filtered_listings)}")
 
-    # Deduplicate by address
+    # Deduplicate
     unique_listings = deduplicate_listings(filtered_listings)
 
-    # Note: Secondary URL lookup (find_listing_urls) removed - it rarely found actual
-    # listing URLs and added significant latency. Instead, we now construct
-    # LoopNet/Crexi search URLs directly with the address pre-filled.
-    # This provides a better UX (users land on CRE platform ready to search).
-
-    print(f"[PropertySearch] Returning {len(unique_listings)} listings with platform search URLs")
+    print(f"[PropertySearch] Returning {len(unique_listings)} unique listings")
 
     return PropertySearchResult(
         center_latitude=latitude,
@@ -166,750 +142,662 @@ async def search_properties(
         radius_miles=radius_miles,
         search_query=f"Commercial property for sale near {location_name}",
         listings=unique_listings,
-        sources_searched=sources_to_search,
+        sources_searched=sources_searched,
         total_found=len(unique_listings),
         bounds=bounds,
     )
 
 
-async def reverse_geocode_to_city(lat: float, lng: float) -> str:
-    """Get city/area name from coordinates using Google Geocoding API."""
-    if not settings.GOOGLE_PLACES_API_KEY:
-        # Fallback to coordinates-based search
-        return f"{lat:.4f}, {lng:.4f}"
+async def search_crexi_listings(location: str, property_types: Optional[list[str]] = None) -> list[PropertyListing]:
+    """Search Crexi for listings using site-specific Tavily search, then scrape pages."""
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            "https://maps.googleapis.com/maps/api/geocode/json",
-            params={
-                "latlng": f"{lat},{lng}",
-                "key": settings.GOOGLE_PLACES_API_KEY,
-                "result_type": "locality|administrative_area_level_2",
-            },
-        )
+    query = f'site:crexi.com/properties "{location}" commercial property for sale'
 
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("results"):
-                result = data["results"][0]
-                # Extract city and state
-                city = ""
-                state = ""
-                for component in result.get("address_components", []):
-                    if "locality" in component["types"]:
-                        city = component["long_name"]
-                    if "administrative_area_level_1" in component["types"]:
-                        state = component["short_name"]
+    listing_urls = await find_listing_urls_via_tavily(query, "crexi.com/properties")
 
-                if city and state:
-                    return f"{city}, {state}"
-                elif city:
-                    return city
+    if not listing_urls:
+        print(f"[Crexi] No listing URLs found for {location}")
+        return []
 
-    return f"{lat:.4f}, {lng:.4f}"
+    print(f"[Crexi] Found {len(listing_urls)} listing URLs to scrape")
+
+    # Scrape each listing page
+    listings = await scrape_listing_pages(listing_urls, "crexi", property_types)
+
+    return listings
 
 
-async def search_source(
-    source: str,
-    location: str,
-    radius_miles: float,
-    property_types: Optional[list[str]] = None,
-) -> list[PropertyListing]:
-    """Search a specific source for property listings using Tavily."""
+async def search_loopnet_listings(location: str, property_types: Optional[list[str]] = None) -> list[PropertyListing]:
+    """Search LoopNet for listings using site-specific search."""
 
-    # Build more specific search queries that find actual listings
-    type_terms = "retail OR office OR land OR industrial" if not property_types else " OR ".join(property_types)
+    query = f'site:loopnet.com/Listing "{location}" commercial property for sale'
 
-    # Different query strategies for different sources
-    if source.lower() == "crexi":
-        query = f'"{location}" commercial property for sale price sqft crexi.com'
-    elif source.lower() == "loopnet":
-        query = f'"{location}" commercial real estate for sale loopnet.com listing'
-    elif source.lower() == "general":
-        # Broader search across all commercial real estate sites
-        query = f'"{location}" commercial property for sale listing price address'
-    else:
-        query = f'"{location}" commercial property for sale {type_terms}'
+    listing_urls = await find_listing_urls_via_tavily(query, "loopnet.com/Listing")
 
-    print(f"[PropertySearch] Searching {source} with query: {query}")
+    if not listing_urls:
+        print(f"[LoopNet] No listing URLs found for {location}")
+        return []
 
-    # Use Tavily for web search
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            "https://api.tavily.com/search",
-            json={
-                "api_key": settings.TAVILY_API_KEY,
-                "query": query,
-                "search_depth": "advanced",
-                "include_raw_content": True,
-                "max_results": 10,
-            },
-        )
+    print(f"[LoopNet] Found {len(listing_urls)} listing URLs to scrape")
 
-        if response.status_code != 200:
-            print(f"[PropertySearch] Tavily search failed for {source}: {response.status_code} - {response.text}")
-            return []
+    listings = await scrape_listing_pages(listing_urls, "loopnet", property_types)
 
-        data = response.json()
-        results = data.get("results", [])
-
-        print(f"[PropertySearch] {source} returned {len(results)} results")
-        for i, r in enumerate(results[:3]):
-            print(f"  [{i}] {r.get('title', 'No title')[:60]}...")
-
-        if not results:
-            return []
-
-        # Use AI to extract structured property data
-        listings = await extract_listings_with_ai(
-            search_results=results,
-            source=source,
-            location=location,
-        )
-
-        print(f"[PropertySearch] Extracted {len(listings)} listings from {source}")
-
-        return listings
+    return listings
 
 
-def construct_property_search_url(address: str, city: str, state: str, source: str) -> str:
-    """Construct platform-specific search URL with address pre-filled.
+async def search_commercialcafe_listings(location: str, property_types: Optional[list[str]] = None) -> list[PropertyListing]:
+    """Search CommercialCafe for listings."""
 
-    Users land on Crexi/LoopNet search page ready to find the specific listing.
-    This is more reliable than trying to find exact listing URLs via web search.
-    """
-    full_address = f"{address}, {city}, {state}"
-    encoded_address = urllib.parse.quote(full_address)
+    query = f'site:commercialcafe.com "{location}" commercial property for sale listing'
 
-    # Create platform-specific search URLs
-    source_lower = source.lower()
-    if 'crexi' in source_lower:
-        # Crexi search with address pre-filled
-        return f"https://www.crexi.com/search?q={encoded_address}"
-    elif 'loopnet' in source_lower:
-        # LoopNet search with address in search box
-        location_slug = f"{city}-{state}".lower().replace(' ', '-')
-        return f"https://www.loopnet.com/search/commercial-real-estate/{location_slug}/for-sale/?sk={encoded_address}"
-    else:
-        # Default to Google search for General source - finds listings on ANY platform
-        # including local brokers, Zillow, and other CRE sites
-        return f"https://www.google.com/search?q={encoded_address}+commercial+property+for+sale"
+    listing_urls = await find_listing_urls_via_tavily(query, "commercialcafe.com")
+
+    if not listing_urls:
+        return []
+
+    print(f"[CommercialCafe] Found {len(listing_urls)} listing URLs")
+
+    listings = await scrape_listing_pages(listing_urls, "commercialcafe", property_types)
+
+    return listings
 
 
-def is_fallback_url(url: str) -> bool:
-    """Check if URL is a fallback (search page) rather than a specific listing."""
-    if not url:
-        return True
-    url_lower = url.lower()
-    # These indicate fallback/search URLs, not actual listings
-    return any(indicator in url_lower for indicator in [
-        'google.com/search',
-        'crexi.com/search',
-        'loopnet.com/search',
-        '/property-search',
-        '/results',
-        '/browse',
-    ])
+async def search_general_listings(location: str, property_types: Optional[list[str]] = None) -> list[PropertyListing]:
+    """Search general CRE sources for listings."""
 
+    # Search for listings across multiple CRE sites
+    query = f'"{location}" commercial property for sale listing address price (crexi OR loopnet OR commercialcafe OR cityfeet)'
 
-async def find_listing_url_for_property(listing: PropertyListing) -> Optional[str]:
-    """
-    Do a targeted search for a specific property to find its actual listing URL.
-    Returns the listing URL if found, None otherwise.
-    """
     if not settings.TAVILY_API_KEY:
-        return None
-
-    # Build a very specific search query for this property
-    full_address = f"{listing.address}, {listing.city}, {listing.state}"
-
-    # Search specifically on CRE listing sites
-    query = f'"{full_address}" commercial property (site:crexi.com OR site:loopnet.com OR site:commercialcafe.com OR site:cityfeet.com)'
+        return []
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 "https://api.tavily.com/search",
                 json={
                     "api_key": settings.TAVILY_API_KEY,
                     "query": query,
-                    "search_depth": "basic",  # Faster search
-                    "max_results": 5,
+                    "search_depth": "advanced",
+                    "include_raw_content": True,
+                    "max_results": 15,
                 },
             )
 
             if response.status_code != 200:
-                return None
+                return []
 
             data = response.json()
             results = data.get("results", [])
 
-            # Look for actual listing URLs in results
+            # Find listing URLs in results
+            listing_urls = []
             for result in results:
                 url = result.get("url", "")
-                url_lower = url.lower()
+                if is_likely_listing_url(url):
+                    listing_urls.append(url)
 
-                # Check if this looks like an actual listing page
-                if any(pattern in url_lower for pattern in [
-                    'crexi.com/properties/',
-                    'loopnet.com/listing/',
-                    'commercialcafe.com/listing/',
-                    'cityfeet.com/commercial/',
-                ]):
-                    # Skip search/category pages
-                    if not any(skip in url_lower for skip in ['/search', '/results', '/browse']):
-                        print(f"[PropertySearch] Found listing URL for {listing.address}: {url}")
-                        return url
+            if listing_urls:
+                return await scrape_listing_pages(listing_urls[:10], "general", property_types)
 
-            return None
+            # If no direct listing URLs, try to extract from content
+            return await extract_from_search_content(results, location, property_types)
 
     except Exception as e:
-        print(f"[PropertySearch] Error finding listing URL for {listing.address}: {e}")
-        return None
+        print(f"[General] Search error: {e}")
+        return []
 
 
-async def find_listing_urls(listings: list[PropertyListing]) -> list[PropertyListing]:
-    """
-    Find actual listing URLs for properties that only have fallback URLs.
-    Limits to first 10 listings to control API costs.
-    """
-    import asyncio
+async def find_listing_urls_via_tavily(query: str, url_pattern: str) -> list[str]:
+    """Use Tavily to find listing URLs matching a pattern."""
 
-    MAX_LOOKUPS = 10  # Limit API calls
+    if not settings.TAVILY_API_KEY:
+        return []
 
-    # Find listings that need URL lookup
-    listings_needing_urls = [
-        (i, listing) for i, listing in enumerate(listings)
-        if is_fallback_url(listing.url)
-    ][:MAX_LOOKUPS]
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": settings.TAVILY_API_KEY,
+                    "query": query,
+                    "search_depth": "advanced",
+                    "max_results": 15,
+                },
+            )
 
-    if not listings_needing_urls:
-        print("[PropertySearch] All listings already have specific URLs")
-        return listings
+            if response.status_code != 200:
+                print(f"[Tavily] Search failed: {response.status_code}")
+                return []
 
-    print(f"[PropertySearch] Looking up URLs for {len(listings_needing_urls)} listings...")
+            data = response.json()
+            results = data.get("results", [])
 
-    # Do lookups concurrently (but with some rate limiting)
-    async def lookup_with_delay(idx: int, listing: PropertyListing, delay: float):
+            # Extract URLs that match the pattern
+            urls = []
+            for result in results:
+                url = result.get("url", "")
+                if url_pattern in url.lower() and is_likely_listing_url(url):
+                    urls.append(url)
+
+            return urls[:10]  # Limit to 10 URLs to scrape
+
+    except Exception as e:
+        print(f"[Tavily] Error: {e}")
+        return []
+
+
+def is_likely_listing_url(url: str) -> bool:
+    """Check if URL appears to be an actual listing page, not a search/category page."""
+    if not url:
+        return False
+
+    url_lower = url.lower()
+
+    # Skip search/category/browse pages
+    skip_patterns = [
+        '/search', '/results', '/browse', '/category', '/list/',
+        '/properties-for-sale', '/commercial-real-estate/', '/all-properties',
+        'page=', 'offset=', 'filter=', 'sort='
+    ]
+    if any(p in url_lower for p in skip_patterns):
+        return False
+
+    # Look for listing indicators
+    listing_patterns = [
+        '/properties/',  # Crexi
+        '/listing/',     # LoopNet
+        '/property/',    # Generic
+        r'\d{6,}',       # Numeric listing ID
+    ]
+
+    # Check for listing patterns
+    for pattern in listing_patterns:
+        if pattern.startswith(r'\\'):
+            if re.search(pattern, url):
+                return True
+        elif pattern in url_lower:
+            return True
+
+    return False
+
+
+async def scrape_listing_pages(urls: list[str], source: str, property_types: Optional[list[str]] = None) -> list[PropertyListing]:
+    """Scrape listing pages and extract property data."""
+
+    listings = []
+
+    # Create tasks for concurrent fetching (with rate limiting)
+    async def fetch_and_parse(url: str, delay: float) -> Optional[PropertyListing]:
         await asyncio.sleep(delay)  # Stagger requests
-        url = await find_listing_url_for_property(listing)
-        return idx, url
+        return await fetch_and_parse_listing(url, source)
 
     tasks = [
-        lookup_with_delay(idx, listing, i * 0.3)  # 300ms delay between requests
-        for i, (idx, listing) in enumerate(listings_needing_urls)
+        fetch_and_parse(url, i * 0.5)  # 500ms delay between requests
+        for i, url in enumerate(urls)
     ]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Update listings with found URLs
-    found_count = 0
     for result in results:
         if isinstance(result, Exception):
+            print(f"[{source}] Scraping error: {result}")
             continue
-        idx, url = result
-        if url:
-            listings[idx].url = url
-            found_count += 1
-
-    print(f"[PropertySearch] Found {found_count}/{len(listings_needing_urls)} actual listing URLs")
+        if result:
+            # Filter by property type if specified
+            if property_types and result.property_type not in property_types:
+                continue
+            listings.append(result)
 
     return listings
 
 
-async def extract_listings_with_ai(
-    search_results: list[dict],
-    source: str,
-    location: str,
-) -> list[PropertyListing]:
-    """Use Claude to extract structured property data from search results."""
-
-    # Check for Anthropic API key first, fall back to OpenAI
-    if not settings.ANTHROPIC_API_KEY:
-        print(f"[PropertySearch] No Anthropic API key, falling back to regex for {source}")
-        return extract_listings_with_regex(search_results, source, location)
-
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-    # Prepare content for AI extraction
-    content_text = ""
-    for i, result in enumerate(search_results):
-        r_title = result.get('title') or ''
-        r_url = result.get('url') or ''
-        r_content = result.get('content') or ''
-        r_raw = result.get('raw_content') or ''
-        content_text += f"\n--- Result {i+1} ---\n"
-        content_text += f"Title: {r_title}\n"
-        content_text += f"URL: {r_url}\n"
-        content_text += f"Content: {r_content[:1500]}\n"
-        if r_raw:
-            content_text += f"Raw Content: {r_raw[:2000]}\n"
-
-    prompt = f"""Extract commercial property listings from these search results for {location}.
-
-Look for ANY property that appears to be for sale, including:
-- Retail spaces, storefronts, shopping centers
-- Office buildings, office space
-- Land, lots, development sites
-- Industrial, warehouse, distribution centers
-- Mixed-use properties
-
-For each property found, extract what you can find:
-- address: street address (required - skip if not found)
-- city: city name
-- state: 2-letter state code
-- price: price as shown (e.g., "$500,000", "$15/sqft", "Contact for pricing")
-- price_numeric: just the number, null if unavailable
-- sqft: square footage as shown
-- sqft_numeric: just the number, null if unavailable
-- property_type: one of: retail, land, office, industrial, mixed_use
-- url: Look for specific listing URLs in the content. Valid URLs include patterns like:
-  * crexi.com/properties/[id-or-slug]
-  * loopnet.com/Listing/[id]/[address-slug]
-  * Any URL with /property/, /listing/, /properties/ that includes a property ID or MLS number
-  If you find such a URL, use it. If you can only find general search/category pages, set url to null (we'll construct a search URL later).
-- description: brief description (max 100 chars)
-
-Be generous in extraction - if you see something that looks like a property listing with an address and price, include it.
-
-Return ONLY valid JSON in this exact format: {{"listings": [...]}}
-If no listings found, return: {{"listings": []}}
-
-Search Results:
-{content_text}
-"""
+async def fetch_and_parse_listing(url: str, source: str) -> Optional[PropertyListing]:
+    """Fetch a listing page and extract structured data."""
 
     try:
-        response = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=4096,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            system="You are a data extraction assistant. Extract structured property listing data from web search results. Return only valid JSON, no other text.",
-        )
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
 
-        content = response.content[0].text
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            response = await client.get(url, headers=headers)
 
-        # Extract JSON from response (Claude might include markdown code blocks)
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        data = json.loads(content)
+            if response.status_code != 200:
+                print(f"[{source}] Failed to fetch {url}: {response.status_code}")
+                return None
 
-        # Handle both {"listings": [...]} and direct array formats
-        listings_data = data.get("listings", data) if isinstance(data, dict) else data
+            html = response.text
 
-        if not isinstance(listings_data, list):
-            return []
+            # Try to extract structured data first (JSON-LD)
+            listing = extract_json_ld_listing(html, url, source)
+            if listing:
+                return listing
 
-        listings = []
-        for i, item in enumerate(listings_data):
-            if not item.get("address"):
-                continue
-
-            # Get extracted URL, or construct a search URL if none found
-            extracted_url = item.get("url")
-            if not extracted_url:
-                # Construct a useful search URL for this specific property
-                extracted_url = construct_property_search_url(
-                    address=item.get("address", ""),
-                    city=item.get("city", ""),
-                    state=item.get("state", ""),
-                    source=source,
-                )
-
-            listing = PropertyListing(
-                id=f"{source.lower()}_{i}_{hash(item.get('address', '')) % 10000}",
-                address=item.get("address", ""),
-                city=item.get("city", ""),
-                state=item.get("state", ""),
-                price=item.get("price"),
-                price_numeric=item.get("price_numeric"),
-                sqft=item.get("sqft"),
-                sqft_numeric=item.get("sqft_numeric"),
-                property_type=item.get("property_type", "retail"),
-                source=source.lower(),
-                url=extracted_url,
-                description=item.get("description"),
-            )
-            listings.append(listing)
-
-        return listings
+            # Fall back to HTML parsing
+            listing = extract_html_listing(html, url, source)
+            return listing
 
     except Exception as e:
-        print(f"AI extraction error: {e}")
-        # Fall back to regex extraction
-        print(f"[PropertySearch] Falling back to regex extraction for {source}")
-        return extract_listings_with_regex(search_results, source, location)
+        print(f"[{source}] Error fetching {url}: {e}")
+        return None
 
 
-def extract_listings_with_regex(
-    search_results: list[dict],
-    source: str,
-    location: str,
-) -> list[PropertyListing]:
-    """
-    Fallback regex-based extraction when AI is unavailable.
-    Looks for common patterns in commercial real estate listings.
-    """
-    listings = []
-    listing_id = 0
+def extract_json_ld_listing(html: str, url: str, source: str) -> Optional[PropertyListing]:
+    """Extract listing data from JSON-LD structured data."""
 
-    # Common address patterns - more specific to avoid capturing partial matches
-    # Pattern: "123 Street Name, City, ST" or "123 Street Name • City, ST"
-    address_pattern = re.compile(
-        r'(\d{1,5}\s+(?:[NSEW]\.?\s+)?[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)'
-        r'\s*[,•\-]\s*'
-        r'(Davenport|Bettendorf|Moline|Rock Island|East Moline|Clinton|Muscatine|Iowa City|Cedar Rapids|Des Moines|Omaha|Lincoln|Las Vegas|Henderson|Reno|Boise|Nampa)'
-        r'(?:\s*,\s*|\s+)'
-        r'(IA|Iowa|NE|Nebraska|NV|Nevada|ID|Idaho|IL|Illinois)',
-        re.IGNORECASE
-    )
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
 
-    # Price patterns - match standalone prices, not prices merged with other numbers
-    price_pattern = re.compile(
-        r'\$\s*([\d,]+(?:\.\d{2})?)\s*(?:/(?:SqFt|SF|sq\s*ft))?(?!\d)',
-        re.IGNORECASE
-    )
+        # Find JSON-LD scripts
+        scripts = soup.find_all('script', type='application/ld+json')
 
-    # Square footage patterns
-    sqft_pattern = re.compile(
-        r'([\d,]+)\s*(?:sq\s*ft|SF|square\s*feet)',
-        re.IGNORECASE
-    )
-
-    # Acreage patterns
-    acres_pattern = re.compile(
-        r'([\d.]+)\s*acres?',
-        re.IGNORECASE
-    )
-
-    seen_addresses = set()
-
-    # Expanded pattern to find specific listing URLs (matches slugs, not just numeric IDs)
-    listing_url_patterns = [
-        # Crexi - matches /properties/ followed by ID and optional slug
-        re.compile(r'https?://(?:www\.)?crexi\.com/properties/[\w-]+', re.IGNORECASE),
-        # LoopNet - matches /Listing/ with ID and optional address slug
-        re.compile(r'https?://(?:www\.)?loopnet\.com/Listing/[\w/-]+', re.IGNORECASE),
-        # CommercialCafe
-        re.compile(r'https?://(?:www\.)?commercialcafe\.com/[\w/-]*listing[\w/-]+', re.IGNORECASE),
-        # CityFeet
-        re.compile(r'https?://(?:www\.)?cityfeet\.com/[\w/-]*(?:listing|commercial)[\w/-]+', re.IGNORECASE),
-        # Zillow Commercial
-        re.compile(r'https?://(?:www\.)?zillow\.com/commercial/[\w/-]+', re.IGNORECASE),
-        # CoStar/Ten-X
-        re.compile(r'https?://(?:www\.)?ten-x\.com/[\w/-]*property[\w/-]+', re.IGNORECASE),
-        # Generic pattern for URLs with property identifiers
-        re.compile(r'https?://[\w.-]+/(?:property|listing|commercial|properties|listings)/[\w-]+\d+[\w-]*', re.IGNORECASE),
-    ]
-
-    def construct_search_url(address: str, city: str, state: str, source: str) -> str:
-        """Construct a search URL for major CRE platforms based on address."""
-        # Use the module-level function
-        return construct_property_search_url(address, city, state, source)
-
-    def find_specific_listing_url(content: str, address: str, city: str, state: str, source: str, fallback_url: str) -> str:
-        """Try to find a specific listing URL in the content for this property."""
-        # First look for URLs matching known CRE listing patterns
-        for pattern in listing_url_patterns:
-            matches = pattern.findall(content)
-            if matches:
-                # Return the first match that looks like a real listing
-                for match in matches:
-                    # Skip URLs that are just category pages
-                    if not any(skip in match.lower() for skip in ['/search', '/results', '/browse', '/category']):
-                        return match
-
-        # Look for any URL in content that might be a listing
-        all_urls = re.findall(r'https?://[^\s<>"\')\]]+', content)
-        for url in all_urls:
-            url_lower = url.lower()
-            # Check for listing indicators
-            if any(x in url_lower for x in ['/property/', '/listing/', '/properties/', '/listings/', 'mls=', 'propertyid=', 'pid=']):
-                # Skip search/category pages
-                if not any(skip in url_lower for skip in ['/search', '/results', '/browse', '/category', 'property-search']):
-                    return url.rstrip('.,;:')
-
-        # If no specific listing URL found, construct a search URL for this exact property
-        # This is better than linking to a general category page
-        return construct_search_url(address, city, state, source)
-
-    def normalize_address(addr: str, city: str) -> str:
-        """Normalize address for deduplication."""
-        # Remove leading zeros from street numbers
-        addr = re.sub(r'^0+(\d)', r'\1', addr)
-        # Remove street suffix variations
-        addr = re.sub(r'\s+(Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?$', '', addr, flags=re.IGNORECASE)
-        # Normalize whitespace
-        addr = re.sub(r'\s+', ' ', addr).strip().lower()
-        return f"{addr}_{city.lower()}"
-
-    # Alternative pattern: "$price Street Number Street Name • City, ST"
-    # Handle case where price and street number run together: "$820,0003709 N Harrison"
-    # In this case "820,000" is price and "3709" is street number
-    price_address_pattern = re.compile(
-        r'\$\s*([\d,]+(?:\.\d{2})?)\s+'  # Price followed by whitespace
-        r'(\d{1,5}\s+(?:[NSEW]\.?\s+)?[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)'
-        r'\s*[,•\-]\s*'
-        r'(Davenport|Bettendorf|Moline|Rock Island|Clinton|Muscatine|Iowa City|Cedar Rapids|Des Moines|Omaha|Lincoln|Las Vegas|Henderson|Reno|Boise|Nampa)',
-        re.IGNORECASE
-    )
-
-    # Pattern for parsing concatenated price+street (common in listing scraped text)
-    # e.g., "$820,0003709 N Harrison Street" -> price=$820,000, street=3709 N Harrison Street
-    concat_pattern = re.compile(
-        r'\$\s*([\d,]+,\d{3})(\d{2,5})\s+(?:([NSEW]\.?\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)'
-        r'\s*[,•\-]?\s*'
-        r'(Davenport|Bettendorf|Moline|Rock Island|Clinton|Muscatine|Iowa City|Cedar Rapids|Des Moines|Omaha|Lincoln)',
-        re.IGNORECASE
-    )
-
-    for result in search_results:
-        content = (result.get('content') or '') + ' ' + (result.get('raw_content') or '')
-        url = result.get('url') or ''
-
-        # First try to parse concatenated price+street patterns
-        for match in concat_pattern.finditer(content):
-            price_str = match.group(1)  # e.g., "820,000"
-            street_num = match.group(2)  # e.g., "3709"
-            direction = match.group(3) or ''
-            street_name = match.group(4)
-            city = match.group(5).strip().title()
-
-            # Reconstruct the full street address
-            street = f"{street_num} {direction}{street_name}"
-            street = re.sub(r'\s+', ' ', street).strip()
-
-            # Determine state from city
-            state = 'IA'
-            if city.lower() in ['omaha', 'lincoln']:
-                state = 'NE'
-            elif city.lower() in ['moline', 'rock island']:
-                state = 'IL'
-
-            addr_key = normalize_address(street, city)
-            if addr_key in seen_addresses:
-                continue
-            seen_addresses.add(addr_key)
-
-            price = f"${price_str}"
+        for script in scripts:
             try:
-                price_numeric = float(price_str.replace(',', ''))
-            except:
-                price_numeric = None
+                data = json.loads(script.string)
 
-            # Look for sqft nearby
-            sqft = None
-            sqft_numeric = None
-            match_pos = match.start()
-            context = content[max(0, match_pos-50):match_pos+250]
-            sqft_match = sqft_pattern.search(context)
-            if sqft_match:
-                sqft_str = sqft_match.group(1)
-                sqft = f"{sqft_str} SF"
-                try:
-                    sqft_numeric = float(sqft_str.replace(',', ''))
-                except:
-                    pass
+                # Handle arrays of JSON-LD
+                if isinstance(data, list):
+                    for item in data:
+                        listing = parse_json_ld_item(item, url, source)
+                        if listing:
+                            return listing
+                else:
+                    listing = parse_json_ld_item(data, url, source)
+                    if listing:
+                        return listing
 
-            if not sqft:
-                acres_match = acres_pattern.search(context)
-                if acres_match:
-                    sqft = f"{acres_match.group(1)} acres"
-
-            # Determine property type
-            property_type = "retail"
-            context_lower = context.lower()
-            if any(word in context_lower for word in ['land', 'lot', 'acres', 'vacant']):
-                property_type = "land"
-            elif 'office' in context_lower:
-                property_type = "office"
-            elif any(word in context_lower for word in ['warehouse', 'industrial']):
-                property_type = "industrial"
-
-            # Try to find a specific listing URL for this property
-            specific_url = find_specific_listing_url(content, street, city, state, source, url)
-
-            listing = PropertyListing(
-                id=f"{source.lower()}_regex_{listing_id}",
-                address=street,
-                city=city,
-                state=state,
-                price=price,
-                price_numeric=price_numeric,
-                sqft=sqft,
-                sqft_numeric=sqft_numeric,
-                property_type=property_type,
-                source=source.lower(),
-                url=specific_url,
-                description=f"{street}, {city} - {price}"[:100],
-            )
-            listings.append(listing)
-            listing_id += 1
-
-        # Then try the price+address pattern (space-separated)
-        for match in price_address_pattern.finditer(content):
-            price_str = match.group(1)
-            street = match.group(2).strip()
-            city = match.group(3).strip().title()
-
-            # Determine state from city
-            state = 'IA'  # Default
-            if city.lower() in ['omaha', 'lincoln']:
-                state = 'NE'
-            elif city.lower() in ['las vegas', 'henderson', 'reno']:
-                state = 'NV'
-            elif city.lower() in ['boise', 'nampa']:
-                state = 'ID'
-            elif city.lower() in ['moline', 'rock island', 'east moline']:
-                state = 'IL'
-
-            addr_key = normalize_address(street, city)
-            if addr_key in seen_addresses:
+            except json.JSONDecodeError:
                 continue
-            seen_addresses.add(addr_key)
 
-            price = f"${price_str}"
-            try:
-                price_numeric = float(price_str.replace(',', ''))
-            except:
-                price_numeric = None
+        return None
 
-            # Look for sqft nearby
-            sqft = None
-            sqft_numeric = None
-            match_pos = match.start()
-            context = content[max(0, match_pos-50):match_pos+250]
-            sqft_match = sqft_pattern.search(context)
-            if sqft_match:
-                sqft_str = sqft_match.group(1)
-                sqft = f"{sqft_str} SF"
-                try:
-                    sqft_numeric = float(sqft_str.replace(',', ''))
-                except:
-                    pass
+    except Exception as e:
+        print(f"[{source}] JSON-LD extraction error: {e}")
+        return None
 
-            # Determine property type
-            property_type = "retail"
-            context_lower = context.lower()
-            if any(word in context_lower for word in ['land', 'lot', 'acres', 'vacant']):
-                property_type = "land"
-            elif any(word in context_lower for word in ['office']):
-                property_type = "office"
-            elif any(word in context_lower for word in ['warehouse', 'industrial']):
-                property_type = "industrial"
 
-            # Try to find a specific listing URL for this property
-            specific_url = find_specific_listing_url(content, street, city, state, source, url)
+def parse_json_ld_item(data: dict, url: str, source: str) -> Optional[PropertyListing]:
+    """Parse a JSON-LD item for property data."""
 
-            listing = PropertyListing(
-                id=f"{source.lower()}_regex_{listing_id}",
-                address=street,
-                city=city,
-                state=state,
-                price=price,
-                price_numeric=price_numeric,
-                sqft=sqft,
-                sqft_numeric=sqft_numeric,
-                property_type=property_type,
-                source=source.lower(),
-                url=specific_url,
-                description=f"{street}, {city} - {price}"[:100],
-            )
-            listings.append(listing)
-            listing_id += 1
+    item_type = data.get("@type", "")
 
-        # Then try the address-only pattern
-        for match in address_pattern.finditer(content):
-            street = match.group(1).strip()
-            city = match.group(2).strip().title()
-            state = match.group(3).strip().upper()
+    # Handle different Schema.org types
+    if item_type in ["Product", "RealEstateListing", "Place", "LocalBusiness", "Offer"]:
 
-            # Normalize state
-            state_map = {'IOWA': 'IA', 'NEBRASKA': 'NE', 'NEVADA': 'NV', 'IDAHO': 'ID', 'ILLINOIS': 'IL'}
-            state = state_map.get(state, state)
+        # Extract address
+        address = ""
+        city = ""
+        state = ""
 
-            # Skip if we've seen this address
-            addr_key = normalize_address(street, city)
-            if addr_key in seen_addresses:
-                continue
-            seen_addresses.add(addr_key)
+        address_data = data.get("address", {})
+        if isinstance(address_data, dict):
+            address = address_data.get("streetAddress", "")
+            city = address_data.get("addressLocality", "")
+            state = address_data.get("addressRegion", "")
+        elif isinstance(address_data, str):
+            address = address_data
 
-            # Search for price near the address
-            price = None
-            price_numeric = None
-            # Look for price within 200 chars of address
-            addr_pos = match.start()
-            context = content[max(0, addr_pos-100):addr_pos+300]
-            price_match = price_pattern.search(context)
-            if price_match:
-                price_str = price_match.group(1) or price_match.group(2)
-                if price_str:
-                    price = f"${price_str}"
+        # Try other address fields
+        if not address:
+            address = data.get("streetAddress", "") or data.get("name", "")
+
+        if not address:
+            return None
+
+        # Extract price
+        price = None
+        price_numeric = None
+
+        offers = data.get("offers", {})
+        if isinstance(offers, dict):
+            price_val = offers.get("price")
+            if price_val:
+                price_numeric = float(price_val) if isinstance(price_val, (int, float)) else None
+                price = f"${price_val:,.0f}" if price_numeric else str(price_val)
+
+        if not price:
+            price_str = data.get("price", "")
+            if price_str:
+                price = str(price_str)
+                # Try to extract numeric
+                match = re.search(r'[\d,]+(?:\.\d+)?', str(price_str).replace(',', ''))
+                if match:
                     try:
-                        price_numeric = float(price_str.replace(',', ''))
+                        price_numeric = float(match.group().replace(',', ''))
                     except:
                         pass
 
-            # Search for sqft near the address
-            sqft = None
-            sqft_numeric = None
-            sqft_match = sqft_pattern.search(context)
-            if sqft_match:
-                sqft_str = sqft_match.group(1)
-                sqft = f"{sqft_str} SF"
+        # Extract size
+        sqft = None
+        sqft_numeric = None
+
+        floor_size = data.get("floorSize", {})
+        if isinstance(floor_size, dict):
+            sqft_numeric = floor_size.get("value")
+            if sqft_numeric:
+                sqft = f"{sqft_numeric:,.0f} SF"
+
+        # Extract coordinates
+        latitude = None
+        longitude = None
+
+        geo = data.get("geo", {})
+        if isinstance(geo, dict):
+            latitude = geo.get("latitude")
+            longitude = geo.get("longitude")
+
+        # Determine property type from description/name
+        property_type = determine_property_type(
+            data.get("description", "") + " " + data.get("name", "")
+        )
+
+        return PropertyListing(
+            id=f"{source}_{hash(url) % 100000}",
+            address=address,
+            city=city,
+            state=state,
+            price=price,
+            price_numeric=price_numeric,
+            sqft=sqft,
+            sqft_numeric=sqft_numeric,
+            property_type=property_type,
+            source=source,
+            url=url,
+            latitude=latitude,
+            longitude=longitude,
+            description=data.get("description", "")[:100] if data.get("description") else None,
+        )
+
+    return None
+
+
+def extract_html_listing(html: str, url: str, source: str) -> Optional[PropertyListing]:
+    """Extract listing data from HTML using pattern matching."""
+
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # Extract title/address
+        address = ""
+        title_tag = soup.find('h1') or soup.find('title')
+        if title_tag:
+            address = title_tag.get_text(strip=True)
+
+        # Try meta tags
+        if not address:
+            og_title = soup.find('meta', property='og:title')
+            if og_title:
+                address = og_title.get('content', '')
+
+        # Clean up address - remove site name
+        address = re.sub(r'\s*[-|]\s*(Crexi|LoopNet|CommercialCafe|CoStar).*$', '', address, flags=re.IGNORECASE)
+        address = address.strip()
+
+        if not address or len(address) < 5:
+            return None
+
+        # Parse city/state from address
+        city, state = parse_location_from_text(address + " " + html[:2000])
+
+        # Extract price from page
+        price = None
+        price_numeric = None
+
+        price_patterns = [
+            r'\$\s*([\d,]+(?:\.\d{2})?)\s*(?:USD)?',
+            r'Price[:\s]*\$\s*([\d,]+)',
+            r'Asking[:\s]*\$\s*([\d,]+)',
+        ]
+
+        page_text = soup.get_text()
+        for pattern in price_patterns:
+            match = re.search(pattern, page_text, re.IGNORECASE)
+            if match:
+                price_str = match.group(1).replace(',', '')
                 try:
-                    sqft_numeric = float(sqft_str.replace(',', ''))
+                    price_numeric = float(price_str)
+                    price = f"${price_numeric:,.0f}"
+                    break
                 except:
-                    pass
+                    continue
 
-            # Check for acreage if no sqft
-            if not sqft:
-                acres_match = acres_pattern.search(context)
-                if acres_match:
-                    sqft = f"{acres_match.group(1)} acres"
+        # Extract square footage
+        sqft = None
+        sqft_numeric = None
 
-            # Determine property type from context
-            property_type = "retail"  # default
-            context_lower = context.lower()
-            if any(word in context_lower for word in ['land', 'lot', 'acres', 'vacant']):
-                property_type = "land"
-            elif any(word in context_lower for word in ['office']):
-                property_type = "office"
-            elif any(word in context_lower for word in ['warehouse', 'industrial', 'distribution']):
-                property_type = "industrial"
-            elif any(word in context_lower for word in ['mixed use', 'mixed-use']):
-                property_type = "mixed_use"
+        sqft_patterns = [
+            r'([\d,]+)\s*(?:sq\.?\s*ft\.?|SF|square\s*feet)',
+            r'Size[:\s]*([\d,]+)',
+        ]
 
-            # Try to find a specific listing URL for this property
-            specific_url = find_specific_listing_url(content, street, city, state, source, url)
+        for pattern in sqft_patterns:
+            match = re.search(pattern, page_text, re.IGNORECASE)
+            if match:
+                sqft_str = match.group(1).replace(',', '')
+                try:
+                    sqft_numeric = float(sqft_str)
+                    sqft = f"{sqft_numeric:,.0f} SF"
+                    break
+                except:
+                    continue
 
-            listing = PropertyListing(
-                id=f"{source.lower()}_regex_{listing_id}",
-                address=street,
-                city=city,
-                state=state,
-                price=price,
-                price_numeric=price_numeric,
-                sqft=sqft,
-                sqft_numeric=sqft_numeric,
-                property_type=property_type,
-                source=source.lower(),
-                url=specific_url,
-                description=f"Property at {street}, {city}"[:100],
-            )
-            listings.append(listing)
-            listing_id += 1
+        # Extract coordinates from page
+        latitude = None
+        longitude = None
 
-    print(f"[PropertySearch] Regex extraction found {len(listings)} listings from {source}")
+        # Look for coordinates in various formats
+        coord_patterns = [
+            r'"lat(?:itude)?"[:\s]*(-?\d+\.\d+)',
+            r'"lng|longitude"[:\s]*(-?\d+\.\d+)',
+            r'data-lat[=:"]+(-?\d+\.\d+)',
+            r'data-lng[=:"]+(-?\d+\.\d+)',
+        ]
+
+        lat_match = re.search(coord_patterns[0], html)
+        lng_match = re.search(coord_patterns[1], html)
+
+        if lat_match and lng_match:
+            try:
+                latitude = float(lat_match.group(1))
+                longitude = float(lng_match.group(1))
+            except:
+                pass
+
+        # Determine property type
+        property_type = determine_property_type(page_text[:3000])
+
+        # Get description
+        description = None
+        desc_tag = soup.find('meta', attrs={'name': 'description'})
+        if desc_tag:
+            description = desc_tag.get('content', '')[:100]
+
+        return PropertyListing(
+            id=f"{source}_{hash(url) % 100000}",
+            address=address,
+            city=city,
+            state=state,
+            price=price,
+            price_numeric=price_numeric,
+            sqft=sqft,
+            sqft_numeric=sqft_numeric,
+            property_type=property_type,
+            source=source,
+            url=url,
+            latitude=latitude,
+            longitude=longitude,
+            description=description,
+        )
+
+    except Exception as e:
+        print(f"[{source}] HTML extraction error: {e}")
+        return None
+
+
+async def extract_from_search_content(results: list[dict], location: str, property_types: Optional[list[str]] = None) -> list[PropertyListing]:
+    """Extract listings from Tavily search result content when no direct URLs found."""
+
+    listings = []
+
+    # Combine all content
+    content = ""
+    for result in results:
+        content += (result.get('content') or '') + "\n"
+        content += (result.get('raw_content') or '') + "\n"
+
+    # Use regex patterns to extract listings
+    # Pattern: Address followed by price and/or size
+    listing_pattern = re.compile(
+        r'(\d{1,5}\s+(?:[NSEW]\.?\s+)?[A-Za-z]+(?:\s+[A-Za-z]+)*\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)'
+        r'[,\s]+([A-Za-z\s]+)'  # City
+        r'[,\s]+([A-Z]{2})'  # State
+        r'.*?'
+        r'(?:\$\s*([\d,]+))?',  # Optional price
+        re.IGNORECASE | re.DOTALL
+    )
+
+    seen = set()
+
+    for match in listing_pattern.finditer(content):
+        address = match.group(1).strip()
+        city = match.group(2).strip().title()
+        state = match.group(3).upper()
+        price_str = match.group(4)
+
+        # Skip duplicates
+        key = f"{address.lower()}_{city.lower()}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        price = None
+        price_numeric = None
+        if price_str:
+            try:
+                price_numeric = float(price_str.replace(',', ''))
+                price = f"${price_numeric:,.0f}"
+            except:
+                pass
+
+        property_type = determine_property_type(content[max(0, match.start()-100):match.end()+200])
+
+        if property_types and property_type not in property_types:
+            continue
+
+        listings.append(PropertyListing(
+            id=f"general_{len(listings)}_{hash(address) % 10000}",
+            address=address,
+            city=city,
+            state=state,
+            price=price,
+            price_numeric=price_numeric,
+            property_type=property_type,
+            source="general",
+            url=construct_search_url(address, city, state),
+        ))
+
     return listings
+
+
+def parse_location_from_text(text: str) -> tuple[str, str]:
+    """Extract city and state from text."""
+
+    # Target market cities
+    cities = {
+        'davenport': 'IA', 'bettendorf': 'IA', 'clinton': 'IA', 'muscatine': 'IA',
+        'iowa city': 'IA', 'cedar rapids': 'IA', 'des moines': 'IA',
+        'omaha': 'NE', 'lincoln': 'NE',
+        'las vegas': 'NV', 'henderson': 'NV', 'reno': 'NV',
+        'boise': 'ID', 'nampa': 'ID',
+        'moline': 'IL', 'rock island': 'IL', 'east moline': 'IL',
+    }
+
+    text_lower = text.lower()
+
+    for city, state in cities.items():
+        if city in text_lower:
+            return city.title(), state
+
+    # Try to find state pattern
+    state_match = re.search(r'\b(IA|NE|NV|ID|IL)\b', text)
+    if state_match:
+        return "", state_match.group(1)
+
+    return "", ""
+
+
+def determine_property_type(text: str) -> str:
+    """Determine property type from descriptive text."""
+
+    text_lower = text.lower()
+
+    if any(w in text_lower for w in ['land', 'lot', 'acres', 'vacant', 'development site']):
+        return "land"
+    if any(w in text_lower for w in ['office', 'professional']):
+        return "office"
+    if any(w in text_lower for w in ['warehouse', 'industrial', 'distribution', 'manufacturing', 'flex']):
+        return "industrial"
+    if any(w in text_lower for w in ['mixed use', 'mixed-use', 'live/work']):
+        return "mixed_use"
+
+    return "retail"  # Default
+
+
+def construct_search_url(address: str, city: str, state: str) -> str:
+    """Construct a search URL for finding a specific property."""
+
+    full_address = f"{address}, {city}, {state}"
+    encoded = urllib.parse.quote(full_address)
+
+    # Default to LoopNet search
+    return f"https://www.loopnet.com/search/commercial-real-estate/{city.lower().replace(' ', '-')}-{state.lower()}/for-sale/?sk={encoded}"
+
+
+async def reverse_geocode_to_city(lat: float, lng: float) -> str:
+    """Get city/area name from coordinates using Google Geocoding API."""
+
+    if not settings.GOOGLE_PLACES_API_KEY:
+        return f"{lat:.4f}, {lng:.4f}"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://maps.googleapis.com/maps/api/geocode/json",
+                params={
+                    "latlng": f"{lat},{lng}",
+                    "key": settings.GOOGLE_PLACES_API_KEY,
+                    "result_type": "locality|administrative_area_level_2",
+                },
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("results"):
+                    result = data["results"][0]
+                    city = ""
+                    state = ""
+                    for component in result.get("address_components", []):
+                        if "locality" in component["types"]:
+                            city = component["long_name"]
+                        if "administrative_area_level_1" in component["types"]:
+                            state = component["short_name"]
+
+                    if city and state:
+                        return f"{city}, {state}"
+                    elif city:
+                        return city
+    except Exception as e:
+        print(f"[Geocode] Reverse geocoding error: {e}")
+
+    return f"{lat:.4f}, {lng:.4f}"
 
 
 async def geocode_listings(listings: list[PropertyListing]) -> list[PropertyListing]:
     """Add coordinates to listings that don't have them."""
+
     if not settings.GOOGLE_PLACES_API_KEY:
         return listings
 
@@ -918,7 +806,6 @@ async def geocode_listings(listings: list[PropertyListing]) -> list[PropertyList
             if listing.latitude and listing.longitude:
                 continue
 
-            # Build address for geocoding
             address_parts = [listing.address]
             if listing.city:
                 address_parts.append(listing.city)
@@ -943,7 +830,7 @@ async def geocode_listings(listings: list[PropertyListing]) -> list[PropertyList
                         listing.latitude = location["lat"]
                         listing.longitude = location["lng"]
             except Exception as e:
-                print(f"Geocoding error for {full_address}: {e}")
+                print(f"[Geocode] Error for {full_address}: {e}")
                 continue
 
     return listings
@@ -959,32 +846,19 @@ def filter_by_radius(
     from math import radians, sin, cos, sqrt, atan2
 
     def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """Calculate distance in miles between two points."""
         R = 3959  # Earth's radius in miles
-
         lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
         dlat = lat2 - lat1
         dlon = lon2 - lon1
-
         a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
         c = 2 * atan2(sqrt(a), sqrt(1-a))
-
         return R * c
 
-    filtered = []
-    for listing in listings:
-        if not listing.latitude or not listing.longitude:
-            continue
-
-        distance = haversine_distance(
-            center_lat, center_lng,
-            listing.latitude, listing.longitude
-        )
-
-        if distance <= radius_miles:
-            filtered.append(listing)
-
-    return filtered
+    return [
+        listing for listing in listings
+        if listing.latitude and listing.longitude
+        and haversine_distance(center_lat, center_lng, listing.latitude, listing.longitude) <= radius_miles
+    ]
 
 
 def filter_by_bounds(
@@ -995,31 +869,29 @@ def filter_by_bounds(
     max_lng: float,
 ) -> list[PropertyListing]:
     """Filter listings to those within map viewport bounds."""
-    filtered = []
-    for listing in listings:
-        if not listing.latitude or not listing.longitude:
-            continue
-
-        if (min_lat <= listing.latitude <= max_lat and
-            min_lng <= listing.longitude <= max_lng):
-            filtered.append(listing)
-
-    return filtered
+    return [
+        listing for listing in listings
+        if listing.latitude and listing.longitude
+        and min_lat <= listing.latitude <= max_lat
+        and min_lng <= listing.longitude <= max_lng
+    ]
 
 
 def deduplicate_listings(listings: list[PropertyListing]) -> list[PropertyListing]:
     """Remove duplicate listings based on address similarity."""
-    seen_addresses: set[str] = set()
+    seen: set[str] = set()
     unique: list[PropertyListing] = []
 
     for listing in listings:
-        # Normalize address for comparison
+        # Normalize address
         normalized = listing.address.lower().strip()
         normalized = re.sub(r'[^\w\s]', '', normalized)
         normalized = re.sub(r'\s+', ' ', normalized)
 
-        if normalized not in seen_addresses:
-            seen_addresses.add(normalized)
+        key = f"{normalized}_{listing.city.lower() if listing.city else ''}"
+
+        if key not in seen:
+            seen.add(key)
             unique.append(listing)
 
     return unique
@@ -1035,6 +907,6 @@ async def check_api_keys() -> dict:
         "crexi_configured": settings.CREXI_API_KEY is not None,
         "all_required_configured": all([
             settings.TAVILY_API_KEY,
-            settings.ANTHROPIC_API_KEY or settings.OPENAI_API_KEY,  # Either AI provider works
+            settings.GOOGLE_PLACES_API_KEY,  # Needed for geocoding
         ]),
     }
