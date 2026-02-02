@@ -436,10 +436,11 @@ async def search_properties_endpoint(request: PropertySearchRequest):
             detail="Tavily API key not configured. Please set TAVILY_API_KEY environment variable."
         )
 
-    if not settings.OPENAI_API_KEY:
+    # Check for at least one AI provider (prefer Anthropic/Claude)
+    if not settings.ANTHROPIC_API_KEY and not settings.OPENAI_API_KEY:
         raise HTTPException(
             status_code=503,
-            detail="OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
+            detail="No AI API key configured. Please set ANTHROPIC_API_KEY (recommended) or OPENAI_API_KEY environment variable."
         )
 
     try:

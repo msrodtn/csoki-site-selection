@@ -9,7 +9,7 @@ import json
 import re
 from typing import Optional
 from pydantic import BaseModel
-from openai import AsyncOpenAI
+import anthropic
 import httpx
 
 from ..core.config import settings
@@ -249,9 +249,14 @@ async def extract_listings_with_ai(
     source: str,
     location: str,
 ) -> list[PropertyListing]:
-    """Use OpenAI to extract structured property data from search results."""
+    """Use Claude to extract structured property data from search results."""
 
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    # Check for Anthropic API key first, fall back to OpenAI
+    if not settings.ANTHROPIC_API_KEY:
+        print(f"[PropertySearch] No Anthropic API key, falling back to regex for {source}")
+        return extract_listings_with_regex(search_results, source, location)
+
+    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     # Prepare content for AI extraction
     content_text = ""
@@ -290,7 +295,7 @@ For each property found, extract what you can find:
 
 Be generous in extraction - if you see something that looks like a property listing with an address and price, include it.
 
-Return JSON: {{"listings": [...]}}
+Return ONLY valid JSON in this exact format: {{"listings": [...]}}
 If no listings found, return: {{"listings": []}}
 
 Search Results:
@@ -298,20 +303,22 @@ Search Results:
 """
 
     try:
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=4096,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a data extraction assistant. Extract structured property listing data from web search results. Return only valid JSON."
-                },
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
+            system="You are a data extraction assistant. Extract structured property listing data from web search results. Return only valid JSON, no other text.",
         )
 
-        content = response.choices[0].message.content
+        content = response.content[0].text
+
+        # Extract JSON from response (Claude might include markdown code blocks)
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
         data = json.loads(content)
 
         # Handle both {"listings": [...]} and direct array formats
@@ -756,11 +763,12 @@ async def check_api_keys() -> dict:
     """Check which API keys are configured for property search."""
     return {
         "tavily_configured": settings.TAVILY_API_KEY is not None,
+        "anthropic_configured": settings.ANTHROPIC_API_KEY is not None,
         "openai_configured": settings.OPENAI_API_KEY is not None,
         "google_configured": settings.GOOGLE_PLACES_API_KEY is not None,
         "crexi_configured": settings.CREXI_API_KEY is not None,
         "all_required_configured": all([
             settings.TAVILY_API_KEY,
-            settings.OPENAI_API_KEY,
+            settings.ANTHROPIC_API_KEY or settings.OPENAI_API_KEY,  # Either AI provider works
         ]),
     }

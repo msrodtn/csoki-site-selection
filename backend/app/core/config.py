@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     REPORTALL_API_KEY: Optional[str] = None
     TAVILY_API_KEY: Optional[str] = None
     CREXI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
 
     # CORS
     CORS_ORIGINS: list[str] = [
