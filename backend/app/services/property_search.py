@@ -536,9 +536,10 @@ Search Results:
 """
 
     try:
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        # Use async client for better compatibility with async context
+        client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
-        response = client.messages.create(
+        response = await client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
