@@ -393,6 +393,16 @@ def extract_listings_with_regex(
 
     seen_addresses = set()
 
+    def normalize_address(addr: str, city: str) -> str:
+        """Normalize address for deduplication."""
+        # Remove leading zeros from street numbers
+        addr = re.sub(r'^0+(\d)', r'\1', addr)
+        # Remove street suffix variations
+        addr = re.sub(r'\s+(Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?$', '', addr, flags=re.IGNORECASE)
+        # Normalize whitespace
+        addr = re.sub(r'\s+', ' ', addr).strip().lower()
+        return f"{addr}_{city.lower()}"
+
     # Alternative pattern: "$price Street Number Street Name • City, ST"
     # Handle case where price and street number run together: "$820,0003709 N Harrison"
     # In this case "820,000" is price and "3709" is street number
@@ -436,7 +446,7 @@ def extract_listings_with_regex(
             elif city.lower() in ['moline', 'rock island']:
                 state = 'IL'
 
-            addr_key = f"{street.lower()}_{city.lower()}"
+            addr_key = normalize_address(street, city)
             if addr_key in seen_addresses:
                 continue
             seen_addresses.add(addr_key)
@@ -510,7 +520,7 @@ def extract_listings_with_regex(
             elif city.lower() in ['moline', 'rock island', 'east moline']:
                 state = 'IL'
 
-            addr_key = f"{street.lower()}_{city.lower()}"
+            addr_key = normalize_address(street, city)
             if addr_key in seen_addresses:
                 continue
             seen_addresses.add(addr_key)
@@ -573,7 +583,7 @@ def extract_listings_with_regex(
             state = state_map.get(state, state)
 
             # Skip if we've seen this address
-            addr_key = f"{street.lower()}_{city.lower()}"
+            addr_key = normalize_address(street, city)
             if addr_key in seen_addresses:
                 continue
             seen_addresses.add(addr_key)
