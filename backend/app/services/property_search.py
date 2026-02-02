@@ -345,7 +345,135 @@ Search Results:
 
     except Exception as e:
         print(f"AI extraction error: {e}")
-        return []
+        # Fall back to regex extraction
+        print(f"[PropertySearch] Falling back to regex extraction for {source}")
+        return extract_listings_with_regex(search_results, source, location)
+
+
+def extract_listings_with_regex(
+    search_results: list[dict],
+    source: str,
+    location: str,
+) -> list[PropertyListing]:
+    """
+    Fallback regex-based extraction when AI is unavailable.
+    Looks for common patterns in commercial real estate listings.
+    """
+    listings = []
+    listing_id = 0
+
+    # Common address patterns
+    address_pattern = re.compile(
+        r'(\d+[\-\d]*\s+(?:[NSEW]\.?\s+)?[A-Za-z0-9\s]+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)\.?)\s*[,•\-]?\s*([A-Za-z\s]+),?\s*(IA|Iowa|NE|Nebraska|NV|Nevada|ID|Idaho)',
+        re.IGNORECASE
+    )
+
+    # Price patterns
+    price_pattern = re.compile(
+        r'\$\s*([\d,]+(?:\.\d{2})?)\s*(?:/(?:SqFt|SF|sq\s*ft))?|'
+        r'\$\s*([\d,]+(?:\.\d{2})?)\s*(?:K|M)?',
+        re.IGNORECASE
+    )
+
+    # Square footage patterns
+    sqft_pattern = re.compile(
+        r'([\d,]+)\s*(?:sq\s*ft|SF|square\s*feet)',
+        re.IGNORECASE
+    )
+
+    # Acreage patterns
+    acres_pattern = re.compile(
+        r'([\d.]+)\s*acres?',
+        re.IGNORECASE
+    )
+
+    seen_addresses = set()
+
+    for result in search_results:
+        content = (result.get('content') or '') + ' ' + (result.get('raw_content') or '')
+        url = result.get('url') or ''
+
+        # Find all address matches
+        for match in address_pattern.finditer(content):
+            street = match.group(1).strip()
+            city = match.group(2).strip()
+            state = match.group(3).strip().upper()
+
+            # Normalize state
+            state_map = {'IOWA': 'IA', 'NEBRASKA': 'NE', 'NEVADA': 'NV', 'IDAHO': 'ID'}
+            state = state_map.get(state, state)
+
+            # Skip if we've seen this address
+            addr_key = f"{street.lower()}_{city.lower()}"
+            if addr_key in seen_addresses:
+                continue
+            seen_addresses.add(addr_key)
+
+            # Search for price near the address
+            price = None
+            price_numeric = None
+            # Look for price within 200 chars of address
+            addr_pos = match.start()
+            context = content[max(0, addr_pos-100):addr_pos+300]
+            price_match = price_pattern.search(context)
+            if price_match:
+                price_str = price_match.group(1) or price_match.group(2)
+                if price_str:
+                    price = f"${price_str}"
+                    try:
+                        price_numeric = float(price_str.replace(',', ''))
+                    except:
+                        pass
+
+            # Search for sqft near the address
+            sqft = None
+            sqft_numeric = None
+            sqft_match = sqft_pattern.search(context)
+            if sqft_match:
+                sqft_str = sqft_match.group(1)
+                sqft = f"{sqft_str} SF"
+                try:
+                    sqft_numeric = float(sqft_str.replace(',', ''))
+                except:
+                    pass
+
+            # Check for acreage if no sqft
+            if not sqft:
+                acres_match = acres_pattern.search(context)
+                if acres_match:
+                    sqft = f"{acres_match.group(1)} acres"
+
+            # Determine property type from context
+            property_type = "retail"  # default
+            context_lower = context.lower()
+            if any(word in context_lower for word in ['land', 'lot', 'acres', 'vacant']):
+                property_type = "land"
+            elif any(word in context_lower for word in ['office']):
+                property_type = "office"
+            elif any(word in context_lower for word in ['warehouse', 'industrial', 'distribution']):
+                property_type = "industrial"
+            elif any(word in context_lower for word in ['mixed use', 'mixed-use']):
+                property_type = "mixed_use"
+
+            listing = PropertyListing(
+                id=f"{source.lower()}_regex_{listing_id}",
+                address=street,
+                city=city,
+                state=state,
+                price=price,
+                price_numeric=price_numeric,
+                sqft=sqft,
+                sqft_numeric=sqft_numeric,
+                property_type=property_type,
+                source=source.lower(),
+                url=url,
+                description=f"Property at {street}, {city}"[:100],
+            )
+            listings.append(listing)
+            listing_id += 1
+
+    print(f"[PropertySearch] Regex extraction found {len(listings)} listings from {source}")
+    return listings
 
 
 async def geocode_listings(listings: list[PropertyListing]) -> list[PropertyListing]:
