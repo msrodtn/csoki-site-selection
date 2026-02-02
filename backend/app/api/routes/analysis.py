@@ -465,48 +465,125 @@ async def check_property_search_api_keys():
 
 
 @router.get("/debug-property-search/")
-async def debug_property_search(location: str = "Davenport, IA"):
+async def debug_property_search(location: str = "Davenport, IA", extract: bool = False):
     """
     Debug endpoint to see raw Tavily search results for a location.
+    Add ?extract=true to also run AI extraction on the results.
     """
     import httpx
+    from openai import AsyncOpenAI
+    import json as json_module
 
     if not settings.TAVILY_API_KEY:
         return {"error": "TAVILY_API_KEY not configured"}
 
     query = f'"{location}" commercial property for sale listing price address'
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            "https://api.tavily.com/search",
-            json={
-                "api_key": settings.TAVILY_API_KEY,
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": settings.TAVILY_API_KEY,
+                    "query": query,
+                    "search_depth": "advanced",
+                    "include_raw_content": True,
+                    "max_results": 5,
+                },
+            )
+
+            if response.status_code != 200:
+                return {"error": f"Tavily failed: {response.status_code}", "details": response.text}
+
+            data = response.json()
+            results = data.get("results", [])
+
+            # Return simplified results for debugging
+            debug_results = []
+            for r in results:
+                debug_results.append({
+                    "title": r.get("title", "")[:100],
+                    "url": r.get("url", ""),
+                    "content_preview": r.get("content", "")[:500],
+                    "has_raw_content": bool(r.get("raw_content")),
+                    "raw_content_length": len(r.get("raw_content", "")),
+                })
+
+            response_data = {
                 "query": query,
-                "search_depth": "advanced",
-                "include_raw_content": True,
-                "max_results": 5,
-            },
-        )
+                "result_count": len(results),
+                "results": debug_results,
+            }
 
-        if response.status_code != 200:
-            return {"error": f"Tavily failed: {response.status_code}", "details": response.text}
+            # Optionally run AI extraction to see what it finds
+            if extract and settings.OPENAI_API_KEY and results:
+                try:
+                    openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-        data = response.json()
-        results = data.get("results", [])
+                    # Build content text like the main function does
+                    content_text = ""
+                    for i, result in enumerate(results):
+                        content_text += f"\n--- Result {i+1} ---\n"
+                        content_text += f"Title: {result.get('title', '')}\n"
+                        content_text += f"URL: {result.get('url', '')}\n"
+                        content_text += f"Content: {result.get('content', '')[:1500]}\n"
+                        if result.get('raw_content'):
+                            content_text += f"Raw Content: {result.get('raw_content', '')[:2000]}\n"
 
-        # Return simplified results for debugging
-        debug_results = []
-        for r in results:
-            debug_results.append({
-                "title": r.get("title", "")[:100],
-                "url": r.get("url", ""),
-                "content_preview": r.get("content", "")[:500],
-                "has_raw_content": bool(r.get("raw_content")),
-                "raw_content_length": len(r.get("raw_content", "")),
-            })
+                    prompt = f"""Extract commercial property listings from these search results for {location}.
 
-        return {
-            "query": query,
-            "result_count": len(results),
-            "results": debug_results,
-        }
+Look for ANY property that appears to be for sale, including:
+- Retail spaces, storefronts, shopping centers
+- Office buildings, office space
+- Land, lots, development sites
+- Industrial, warehouse, distribution centers
+- Mixed-use properties
+
+For each property found, extract what you can find:
+- address: street address (required - skip if not found)
+- city: city name
+- state: 2-letter state code
+- price: price as shown (e.g., "$500,000", "$15/sqft", "Contact for pricing")
+- price_numeric: just the number, null if unavailable
+- sqft: square footage as shown
+- sqft_numeric: just the number, null if unavailable
+- property_type: one of: retail, land, office, industrial, mixed_use
+- url: the listing URL
+- description: brief description (max 100 chars)
+
+Be generous in extraction - if you see something that looks like a property listing with an address and price, include it.
+
+Return JSON: {{"listings": [...]}}
+If no listings found, return: {{"listings": []}}
+
+Search Results:
+{content_text}
+"""
+
+                    ai_response = await openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a data extraction assistant. Extract structured property listing data from web search results. Return only valid JSON."
+                            },
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.1,
+                    )
+
+                    ai_content = ai_response.choices[0].message.content
+                    ai_data = json_module.loads(ai_content)
+
+                    response_data["ai_extraction"] = {
+                        "raw_response": ai_content[:2000],
+                        "parsed_listings": ai_data.get("listings", []),
+                        "listing_count": len(ai_data.get("listings", []))
+                    }
+                except Exception as ai_err:
+                    response_data["ai_extraction_error"] = str(ai_err)
+
+            return response_data
+    except Exception as e:
+        return {"error": f"Exception: {str(e)}", "type": str(type(e).__name__)}
