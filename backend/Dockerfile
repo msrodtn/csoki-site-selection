@@ -41,10 +41,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright browsers (Chromium only) with system deps
-RUN playwright install chromium --with-deps
+# Cache bust: v2 - force fresh browser install
+RUN playwright install chromium --with-deps && \
+    echo "Playwright browsers installed:" && \
+    ls -la /opt/playwright/ && \
+    ls -la /opt/playwright/chromium-* 2>/dev/null || echo "Listing chromium dir"
 
 # Make playwright dir accessible
-RUN chmod -R 755 /opt/playwright
+RUN chmod -R 755 /opt/playwright && \
+    echo "Playwright browser executable:" && \
+    find /opt/playwright -name "chrome" -o -name "chromium" 2>/dev/null | head -5
 
 # Copy application code
 COPY . .
