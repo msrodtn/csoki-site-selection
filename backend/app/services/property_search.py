@@ -7,6 +7,7 @@ from multiple sources (Crexi, LoopNet, Zillow Commercial, etc.)
 
 import json
 import re
+import urllib.parse
 from typing import Optional
 from pydantic import BaseModel
 import anthropic
@@ -244,6 +245,24 @@ async def search_source(
         return listings
 
 
+def construct_property_search_url(address: str, city: str, state: str, source: str) -> str:
+    """Construct a search URL for major CRE platforms based on address."""
+    full_address = f"{address}, {city}, {state}"
+    encoded_address = urllib.parse.quote(full_address)
+
+    # Create platform-specific search URLs
+    source_lower = source.lower()
+    if 'crexi' in source_lower:
+        return f"https://www.crexi.com/search?q={encoded_address}"
+    elif 'loopnet' in source_lower:
+        # LoopNet search URL format
+        location_slug = f"{city}-{state}".lower().replace(' ', '-')
+        return f"https://www.loopnet.com/search/commercial-real-estate/{location_slug}/for-sale/?sk={encoded_address}"
+    else:
+        # Default to Google search for the specific property listing
+        return f"https://www.google.com/search?q={encoded_address}+commercial+property+for+sale"
+
+
 async def extract_listings_with_ai(
     search_results: list[dict],
     source: str,
@@ -290,7 +309,11 @@ For each property found, extract what you can find:
 - sqft: square footage as shown
 - sqft_numeric: just the number, null if unavailable
 - property_type: one of: retail, land, office, industrial, mixed_use
-- url: IMPORTANT - Find the SPECIFIC listing URL for this exact property, NOT the general search/category page. Look for URLs containing property IDs, MLS numbers, or specific addresses (e.g., "crexi.com/properties/123456" or "loopnet.com/Listing/12345"). If no specific URL found, use null.
+- url: Look for specific listing URLs in the content. Valid URLs include patterns like:
+  * crexi.com/properties/[id-or-slug]
+  * loopnet.com/Listing/[id]/[address-slug]
+  * Any URL with /property/, /listing/, /properties/ that includes a property ID or MLS number
+  If you find such a URL, use it. If you can only find general search/category pages, set url to null (we'll construct a search URL later).
 - description: brief description (max 100 chars)
 
 Be generous in extraction - if you see something that looks like a property listing with an address and price, include it.
@@ -332,6 +355,17 @@ Search Results:
             if not item.get("address"):
                 continue
 
+            # Get extracted URL, or construct a search URL if none found
+            extracted_url = item.get("url")
+            if not extracted_url:
+                # Construct a useful search URL for this specific property
+                extracted_url = construct_property_search_url(
+                    address=item.get("address", ""),
+                    city=item.get("city", ""),
+                    state=item.get("state", ""),
+                    source=source,
+                )
+
             listing = PropertyListing(
                 id=f"{source.lower()}_{i}_{hash(item.get('address', '')) % 10000}",
                 address=item.get("address", ""),
@@ -343,7 +377,7 @@ Search Results:
                 sqft_numeric=item.get("sqft_numeric"),
                 property_type=item.get("property_type", "retail"),
                 source=source.lower(),
-                url=item.get("url"),
+                url=extracted_url,
                 description=item.get("description"),
             )
             listings.append(listing)
@@ -400,36 +434,54 @@ def extract_listings_with_regex(
 
     seen_addresses = set()
 
-    # Pattern to find specific listing URLs (with property IDs, MLS numbers, etc.)
-    listing_url_pattern = re.compile(
-        r'https?://(?:www\.)?'
-        r'(?:'
-        r'crexi\.com/properties/\d+|'
-        r'loopnet\.com/Listing/\d+|'
-        r'commercialcafe\.com/listing/\d+|'
-        r'cityfeet\.com/listing/\d+|'
-        r'[\w.-]+/(?:property|listing|commercial)[/-][\w-]+\d+'
-        r')',
-        re.IGNORECASE
-    )
+    # Expanded pattern to find specific listing URLs (matches slugs, not just numeric IDs)
+    listing_url_patterns = [
+        # Crexi - matches /properties/ followed by ID and optional slug
+        re.compile(r'https?://(?:www\.)?crexi\.com/properties/[\w-]+', re.IGNORECASE),
+        # LoopNet - matches /Listing/ with ID and optional address slug
+        re.compile(r'https?://(?:www\.)?loopnet\.com/Listing/[\w/-]+', re.IGNORECASE),
+        # CommercialCafe
+        re.compile(r'https?://(?:www\.)?commercialcafe\.com/[\w/-]*listing[\w/-]+', re.IGNORECASE),
+        # CityFeet
+        re.compile(r'https?://(?:www\.)?cityfeet\.com/[\w/-]*(?:listing|commercial)[\w/-]+', re.IGNORECASE),
+        # Zillow Commercial
+        re.compile(r'https?://(?:www\.)?zillow\.com/commercial/[\w/-]+', re.IGNORECASE),
+        # CoStar/Ten-X
+        re.compile(r'https?://(?:www\.)?ten-x\.com/[\w/-]*property[\w/-]+', re.IGNORECASE),
+        # Generic pattern for URLs with property identifiers
+        re.compile(r'https?://[\w.-]+/(?:property|listing|commercial|properties|listings)/[\w-]+\d+[\w-]*', re.IGNORECASE),
+    ]
 
-    def find_specific_listing_url(content: str, address: str, fallback_url: str) -> str:
+    def construct_search_url(address: str, city: str, state: str, source: str) -> str:
+        """Construct a search URL for major CRE platforms based on address."""
+        # Use the module-level function
+        return construct_property_search_url(address, city, state, source)
+
+    def find_specific_listing_url(content: str, address: str, city: str, state: str, source: str, fallback_url: str) -> str:
         """Try to find a specific listing URL in the content for this property."""
-        # First look for URLs with property IDs
-        url_matches = listing_url_pattern.findall(content)
-        if url_matches:
-            return url_matches[0]
+        # First look for URLs matching known CRE listing patterns
+        for pattern in listing_url_patterns:
+            matches = pattern.findall(content)
+            if matches:
+                # Return the first match that looks like a real listing
+                for match in matches:
+                    # Skip URLs that are just category pages
+                    if not any(skip in match.lower() for skip in ['/search', '/results', '/browse', '/category']):
+                        return match
 
-        # Try to find any URL near the address
-        addr_lower = address.lower()
-        # Look for URLs in the content
-        all_urls = re.findall(r'https?://[^\s<>"\']+', content)
+        # Look for any URL in content that might be a listing
+        all_urls = re.findall(r'https?://[^\s<>"\')\]]+', content)
         for url in all_urls:
-            # Prefer URLs that look like specific listings
-            if any(x in url.lower() for x in ['/property/', '/listing/', '/properties/', 'mls=', 'id=', 'pid=']):
-                return url
+            url_lower = url.lower()
+            # Check for listing indicators
+            if any(x in url_lower for x in ['/property/', '/listing/', '/properties/', '/listings/', 'mls=', 'propertyid=', 'pid=']):
+                # Skip search/category pages
+                if not any(skip in url_lower for skip in ['/search', '/results', '/browse', '/category', 'property-search']):
+                    return url.rstrip('.,;:')
 
-        return fallback_url
+        # If no specific listing URL found, construct a search URL for this exact property
+        # This is better than linking to a general category page
+        return construct_search_url(address, city, state, source)
 
     def normalize_address(addr: str, city: str) -> str:
         """Normalize address for deduplication."""
@@ -525,7 +577,7 @@ def extract_listings_with_regex(
                 property_type = "industrial"
 
             # Try to find a specific listing URL for this property
-            specific_url = find_specific_listing_url(content, street, url)
+            specific_url = find_specific_listing_url(content, street, city, state, source, url)
 
             listing = PropertyListing(
                 id=f"{source.lower()}_regex_{listing_id}",
@@ -597,7 +649,7 @@ def extract_listings_with_regex(
                 property_type = "industrial"
 
             # Try to find a specific listing URL for this property
-            specific_url = find_specific_listing_url(content, street, url)
+            specific_url = find_specific_listing_url(content, street, city, state, source, url)
 
             listing = PropertyListing(
                 id=f"{source.lower()}_regex_{listing_id}",
@@ -679,7 +731,7 @@ def extract_listings_with_regex(
                 property_type = "mixed_use"
 
             # Try to find a specific listing URL for this property
-            specific_url = find_specific_listing_url(content, street, url)
+            specific_url = find_specific_listing_url(content, street, city, state, source, url)
 
             listing = PropertyListing(
                 id=f"{source.lower()}_regex_{listing_id}",
