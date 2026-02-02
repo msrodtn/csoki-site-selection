@@ -290,7 +290,7 @@ For each property found, extract what you can find:
 - sqft: square footage as shown
 - sqft_numeric: just the number, null if unavailable
 - property_type: one of: retail, land, office, industrial, mixed_use
-- url: the listing URL
+- url: IMPORTANT - Find the SPECIFIC listing URL for this exact property, NOT the general search/category page. Look for URLs containing property IDs, MLS numbers, or specific addresses (e.g., "crexi.com/properties/123456" or "loopnet.com/Listing/12345"). If no specific URL found, use null.
 - description: brief description (max 100 chars)
 
 Be generous in extraction - if you see something that looks like a property listing with an address and price, include it.
@@ -400,6 +400,37 @@ def extract_listings_with_regex(
 
     seen_addresses = set()
 
+    # Pattern to find specific listing URLs (with property IDs, MLS numbers, etc.)
+    listing_url_pattern = re.compile(
+        r'https?://(?:www\.)?'
+        r'(?:'
+        r'crexi\.com/properties/\d+|'
+        r'loopnet\.com/Listing/\d+|'
+        r'commercialcafe\.com/listing/\d+|'
+        r'cityfeet\.com/listing/\d+|'
+        r'[\w.-]+/(?:property|listing|commercial)[/-][\w-]+\d+'
+        r')',
+        re.IGNORECASE
+    )
+
+    def find_specific_listing_url(content: str, address: str, fallback_url: str) -> str:
+        """Try to find a specific listing URL in the content for this property."""
+        # First look for URLs with property IDs
+        url_matches = listing_url_pattern.findall(content)
+        if url_matches:
+            return url_matches[0]
+
+        # Try to find any URL near the address
+        addr_lower = address.lower()
+        # Look for URLs in the content
+        all_urls = re.findall(r'https?://[^\s<>"\']+', content)
+        for url in all_urls:
+            # Prefer URLs that look like specific listings
+            if any(x in url.lower() for x in ['/property/', '/listing/', '/properties/', 'mls=', 'id=', 'pid=']):
+                return url
+
+        return fallback_url
+
     def normalize_address(addr: str, city: str) -> str:
         """Normalize address for deduplication."""
         # Remove leading zeros from street numbers
@@ -493,6 +524,9 @@ def extract_listings_with_regex(
             elif any(word in context_lower for word in ['warehouse', 'industrial']):
                 property_type = "industrial"
 
+            # Try to find a specific listing URL for this property
+            specific_url = find_specific_listing_url(content, street, url)
+
             listing = PropertyListing(
                 id=f"{source.lower()}_regex_{listing_id}",
                 address=street,
@@ -504,7 +538,7 @@ def extract_listings_with_regex(
                 sqft_numeric=sqft_numeric,
                 property_type=property_type,
                 source=source.lower(),
-                url=url,
+                url=specific_url,
                 description=f"{street}, {city} - {price}"[:100],
             )
             listings.append(listing)
@@ -562,6 +596,9 @@ def extract_listings_with_regex(
             elif any(word in context_lower for word in ['warehouse', 'industrial']):
                 property_type = "industrial"
 
+            # Try to find a specific listing URL for this property
+            specific_url = find_specific_listing_url(content, street, url)
+
             listing = PropertyListing(
                 id=f"{source.lower()}_regex_{listing_id}",
                 address=street,
@@ -573,7 +610,7 @@ def extract_listings_with_regex(
                 sqft_numeric=sqft_numeric,
                 property_type=property_type,
                 source=source.lower(),
-                url=url,
+                url=specific_url,
                 description=f"{street}, {city} - {price}"[:100],
             )
             listings.append(listing)
@@ -641,6 +678,9 @@ def extract_listings_with_regex(
             elif any(word in context_lower for word in ['mixed use', 'mixed-use']):
                 property_type = "mixed_use"
 
+            # Try to find a specific listing URL for this property
+            specific_url = find_specific_listing_url(content, street, url)
+
             listing = PropertyListing(
                 id=f"{source.lower()}_regex_{listing_id}",
                 address=street,
@@ -652,7 +692,7 @@ def extract_listings_with_regex(
                 sqft_numeric=sqft_numeric,
                 property_type=property_type,
                 source=source.lower(),
-                url=url,
+                url=specific_url,
                 description=f"Property at {street}, {city}"[:100],
             )
             listings.append(listing)
