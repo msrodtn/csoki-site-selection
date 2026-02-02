@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from app.services.places import fetch_nearby_pois, TradeAreaAnalysis
 from app.services.arcgis import fetch_demographics, DemographicsResponse
-from app.services.property_search import search_properties, PropertySearchResult, check_api_keys as check_property_api_keys
+from app.services.property_search import search_properties, PropertySearchResult, MapBounds, check_api_keys as check_property_api_keys
 from app.core.config import settings
 from app.core.database import get_db
 
@@ -406,12 +406,21 @@ async def check_reportall_api_key():
 # Property Search (AI-powered CRE listings)
 # ============================================
 
+class PropertySearchBounds(BaseModel):
+    """Map viewport bounds for filtering."""
+    min_lat: float
+    max_lat: float
+    min_lng: float
+    max_lng: float
+
+
 class PropertySearchRequest(BaseModel):
     """Request model for property search."""
     latitude: float
     longitude: float
     radius_miles: float = 5.0
     property_types: Optional[list[str]] = None  # retail, land, office, industrial, mixed_use
+    bounds: Optional[PropertySearchBounds] = None  # Map viewport bounds for precise filtering
 
 
 @router.post("/property-search/", response_model=PropertySearchResult)
@@ -444,11 +453,22 @@ async def search_properties_endpoint(request: PropertySearchRequest):
         )
 
     try:
+        # Convert API bounds to service bounds if provided
+        service_bounds = None
+        if request.bounds:
+            service_bounds = MapBounds(
+                min_lat=request.bounds.min_lat,
+                max_lat=request.bounds.max_lat,
+                min_lng=request.bounds.min_lng,
+                max_lng=request.bounds.max_lng,
+            )
+
         result = await search_properties(
             latitude=request.latitude,
             longitude=request.longitude,
             radius_miles=request.radius_miles,
             property_types=request.property_types,
+            bounds=service_bounds,
         )
         return result
     except ValueError as e:

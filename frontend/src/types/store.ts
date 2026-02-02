@@ -229,11 +229,19 @@ export interface PropertySearchResult {
   total_found: number;
 }
 
+export interface MapBounds {
+  min_lat: number;
+  max_lat: number;
+  min_lng: number;
+  max_lng: number;
+}
+
 export interface PropertySearchRequest {
   latitude: number;
   longitude: number;
   radius_miles?: number;
   property_types?: PropertyType[];
+  bounds?: MapBounds;  // Map viewport bounds for precise filtering
 }
 
 // Property type colors for map markers

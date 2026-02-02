@@ -45,6 +45,14 @@ class PropertyListing(BaseModel):
     listing_date: Optional[str] = None
 
 
+class MapBounds(BaseModel):
+    """Map viewport bounds for geographic filtering."""
+    min_lat: float
+    max_lat: float
+    min_lng: float
+    max_lng: float
+
+
 class PropertySearchResult(BaseModel):
     """Result of a property search."""
     center_latitude: float
@@ -54,6 +62,7 @@ class PropertySearchResult(BaseModel):
     listings: list[PropertyListing]
     sources_searched: list[str]
     total_found: int
+    bounds: Optional[MapBounds] = None  # Bounds used for filtering (if provided)
 
 
 async def search_properties(
@@ -61,6 +70,7 @@ async def search_properties(
     longitude: float,
     radius_miles: float = 5.0,
     property_types: Optional[list[str]] = None,
+    bounds: Optional[MapBounds] = None,
 ) -> PropertySearchResult:
     """
     Search for commercial properties for sale near a location.
@@ -119,17 +129,26 @@ async def search_properties(
     for listing in all_listings[:5]:
         print(f"  - {listing.address}, {listing.city}, {listing.state} | lat={listing.latitude}, lng={listing.longitude}")
 
-    # Filter to listings within radius (use larger radius to avoid filtering too aggressively)
-    # Use 50 miles as minimum to ensure we capture listings
-    effective_radius = max(radius_miles, 50)
-    filtered_listings = filter_by_radius(
-        listings=all_listings,
-        center_lat=latitude,
-        center_lng=longitude,
-        radius_miles=effective_radius,
-    )
-
-    print(f"[PropertySearch] Listings within {effective_radius} miles: {len(filtered_listings)}")
+    # Filter to listings within bounds or radius
+    if bounds:
+        # Use bounds-based filtering when viewport bounds are provided
+        filtered_listings = filter_by_bounds(
+            listings=all_listings,
+            min_lat=bounds.min_lat,
+            max_lat=bounds.max_lat,
+            min_lng=bounds.min_lng,
+            max_lng=bounds.max_lng,
+        )
+        print(f"[PropertySearch] Listings within bounds: {len(filtered_listings)}")
+    else:
+        # Fall back to radius-based filtering
+        filtered_listings = filter_by_radius(
+            listings=all_listings,
+            center_lat=latitude,
+            center_lng=longitude,
+            radius_miles=radius_miles,
+        )
+        print(f"[PropertySearch] Listings within {radius_miles} miles: {len(filtered_listings)}")
 
     # Deduplicate by address
     unique_listings = deduplicate_listings(filtered_listings)
@@ -149,6 +168,7 @@ async def search_properties(
         listings=unique_listings,
         sources_searched=sources_to_search,
         total_found=len(unique_listings),
+        bounds=bounds,
     )
 
 
@@ -962,6 +982,26 @@ def filter_by_radius(
         )
 
         if distance <= radius_miles:
+            filtered.append(listing)
+
+    return filtered
+
+
+def filter_by_bounds(
+    listings: list[PropertyListing],
+    min_lat: float,
+    max_lat: float,
+    min_lng: float,
+    max_lng: float,
+) -> list[PropertyListing]:
+    """Filter listings to those within map viewport bounds."""
+    filtered = []
+    for listing in listings:
+        if not listing.latitude or not listing.longitude:
+            continue
+
+        if (min_lat <= listing.latitude <= max_lat and
+            min_lng <= listing.longitude <= max_lng):
             filtered.append(listing)
 
     return filtered

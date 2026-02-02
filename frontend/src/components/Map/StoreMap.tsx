@@ -270,17 +270,26 @@ export function StoreMap() {
     return filtered.slice(0, 100);
   }, [analysisResult?.pois, visiblePOICategoriesArray]);
 
-  // Filter property listings by visible property types
+  // Filter property listings by visible property types AND map viewport
   const visiblePropertyTypesArray = useMemo(() => Array.from(visiblePropertyTypes), [visiblePropertyTypes]);
   const visibleProperties = useMemo(() => {
     if (!propertySearchResult?.listings) return [];
-    return propertySearchResult.listings.filter(
-      (listing) =>
-        listing.latitude &&
-        listing.longitude &&
-        visiblePropertyTypesArray.includes(listing.property_type)
-    );
-  }, [propertySearchResult?.listings, visiblePropertyTypesArray]);
+    return propertySearchResult.listings.filter((listing) => {
+      // Must have coordinates
+      if (!listing.latitude || !listing.longitude) return false;
+
+      // Must match visible property types
+      if (!visiblePropertyTypesArray.includes(listing.property_type)) return false;
+
+      // Must be within current map viewport (client-side safety filter)
+      if (mapBounds) {
+        if (listing.latitude < mapBounds.south || listing.latitude > mapBounds.north) return false;
+        if (listing.longitude < mapBounds.west || listing.longitude > mapBounds.east) return false;
+      }
+
+      return true;
+    });
+  }, [propertySearchResult?.listings, visiblePropertyTypesArray, mapBounds]);
 
   // Dynamic map options based on business labels layer
   const mapOptions = useMemo((): google.maps.MapOptions => {
@@ -687,46 +696,95 @@ export function StoreMap() {
     }
   }, [visibleLayersArray, visibleStores]);
 
-  // Property search when layer is enabled
+  // Track last search bounds to detect significant map movement
+  const lastSearchBoundsRef = useRef<{
+    min_lat: number;
+    max_lat: number;
+    min_lng: number;
+    max_lng: number;
+  } | null>(null);
+
+  // Property search when layer is enabled or map moves significantly
   useEffect(() => {
     const showProperties = visibleLayersArray.includes('properties_for_sale');
     const map = mapRef.current;
 
-    if (showProperties && map && !propertySearchResult && !isPropertySearching) {
-      // Get current map center for the search
-      const center = map.getCenter();
-      if (!center) return;
-
-      const lat = center.lat();
-      const lng = center.lng();
-
-      // Trigger property search
-      setIsPropertySearching(true);
-      setPropertySearchError(null);
-
-      analysisApi
-        .searchProperties({
-          latitude: lat,
-          longitude: lng,
-          radius_miles: 10, // Search within 10 miles of map center
-        })
-        .then((result) => {
-          setPropertySearchResult(result);
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : 'Failed to search properties';
-          setPropertySearchError(message);
-          console.error('Property search error:', error);
-        })
-        .finally(() => {
-          setIsPropertySearching(false);
-        });
-    } else if (!showProperties && propertySearchResult) {
+    if (!showProperties) {
       // Clear results when layer is disabled
-      setPropertySearchResult(null);
-      setSelectedProperty(null);
+      if (propertySearchResult) {
+        setPropertySearchResult(null);
+        setSelectedProperty(null);
+        lastSearchBoundsRef.current = null;
+      }
+      return;
     }
-  }, [visibleLayersArray, propertySearchResult, isPropertySearching, setPropertySearchResult, setIsPropertySearching, setPropertySearchError]);
+
+    if (!map || isPropertySearching) return;
+
+    // Get current map bounds
+    const bounds = map.getBounds();
+    const center = map.getCenter();
+    if (!bounds || !center) return;
+
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const currentBounds = {
+      min_lat: sw.lat(),
+      max_lat: ne.lat(),
+      min_lng: sw.lng(),
+      max_lng: ne.lng(),
+    };
+
+    // Check if we need to search (first time or significant movement)
+    const needsSearch = !propertySearchResult || !lastSearchBoundsRef.current ||
+      hasMapMovedSignificantly(lastSearchBoundsRef.current, currentBounds);
+
+    if (!needsSearch) return;
+
+    // Trigger property search with bounds
+    setIsPropertySearching(true);
+    setPropertySearchError(null);
+
+    analysisApi
+      .searchProperties({
+        latitude: center.lat(),
+        longitude: center.lng(),
+        radius_miles: 15, // Wider radius for initial search, bounds filter for precision
+        bounds: currentBounds,
+      })
+      .then((result) => {
+        setPropertySearchResult(result);
+        lastSearchBoundsRef.current = currentBounds;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : 'Failed to search properties';
+        setPropertySearchError(message);
+        console.error('Property search error:', error);
+      })
+      .finally(() => {
+        setIsPropertySearching(false);
+      });
+  }, [visibleLayersArray, mapBounds, propertySearchResult, isPropertySearching, setPropertySearchResult, setIsPropertySearching, setPropertySearchError, setSelectedProperty]);
+
+  // Helper function to check if map has moved significantly (> 30% of viewport)
+  function hasMapMovedSignificantly(
+    oldBounds: { min_lat: number; max_lat: number; min_lng: number; max_lng: number },
+    newBounds: { min_lat: number; max_lat: number; min_lng: number; max_lng: number }
+  ): boolean {
+    const oldHeight = oldBounds.max_lat - oldBounds.min_lat;
+    const oldWidth = oldBounds.max_lng - oldBounds.min_lng;
+
+    // Check if center moved by more than 30% of old viewport
+    const oldCenterLat = (oldBounds.min_lat + oldBounds.max_lat) / 2;
+    const oldCenterLng = (oldBounds.min_lng + oldBounds.max_lng) / 2;
+    const newCenterLat = (newBounds.min_lat + newBounds.max_lat) / 2;
+    const newCenterLng = (newBounds.min_lng + newBounds.max_lng) / 2;
+
+    const latDiff = Math.abs(newCenterLat - oldCenterLat);
+    const lngDiff = Math.abs(newCenterLng - oldCenterLng);
+
+    return latDiff > oldHeight * 0.3 || lngDiff > oldWidth * 0.3;
+  }
 
   // Create marker icon for each brand using logo images
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Icon => {
