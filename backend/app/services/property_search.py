@@ -90,8 +90,10 @@ async def search_properties(
     if property_types:
         type_filter = " OR ".join(property_types)
 
-    sources_to_search = ["Crexi", "LoopNet", "Zillow Commercial"]
+    sources_to_search = ["Crexi", "LoopNet", "General"]
     all_listings: list[PropertyListing] = []
+
+    print(f"[PropertySearch] Starting search for {location_name} (radius: {radius_miles} mi)")
 
     # Search each source
     for source in sources_to_search:
@@ -104,8 +106,10 @@ async def search_properties(
             )
             all_listings.extend(listings)
         except Exception as e:
-            print(f"Error searching {source}: {e}")
+            print(f"[PropertySearch] Error searching {source}: {e}")
             continue
+
+    print(f"[PropertySearch] Total listings before geocoding: {len(all_listings)}")
 
     # Geocode listings that don't have coordinates
     all_listings = await geocode_listings(all_listings)
@@ -177,12 +181,21 @@ async def search_source(
 ) -> list[PropertyListing]:
     """Search a specific source for property listings using Tavily."""
 
-    # Build search query
-    type_terms = ""
-    if property_types:
-        type_terms = " ".join(property_types)
+    # Build more specific search queries that find actual listings
+    type_terms = "retail OR office OR land OR industrial" if not property_types else " OR ".join(property_types)
 
-    query = f"commercial property for sale {location} {type_terms} site:{source.lower()}.com"
+    # Different query strategies for different sources
+    if source.lower() == "crexi":
+        query = f'"{location}" commercial property for sale price sqft crexi.com'
+    elif source.lower() == "loopnet":
+        query = f'"{location}" commercial real estate for sale loopnet.com listing'
+    elif source.lower() == "general":
+        # Broader search across all commercial real estate sites
+        query = f'"{location}" commercial property for sale listing price address'
+    else:
+        query = f'"{location}" commercial property for sale {type_terms}'
+
+    print(f"[PropertySearch] Searching {source} with query: {query}")
 
     # Use Tavily for web search
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -198,11 +211,15 @@ async def search_source(
         )
 
         if response.status_code != 200:
-            print(f"Tavily search failed for {source}: {response.status_code}")
+            print(f"[PropertySearch] Tavily search failed for {source}: {response.status_code} - {response.text}")
             return []
 
         data = response.json()
         results = data.get("results", [])
+
+        print(f"[PropertySearch] {source} returned {len(results)} results")
+        for i, r in enumerate(results[:3]):
+            print(f"  [{i}] {r.get('title', 'No title')[:60]}...")
 
         if not results:
             return []
@@ -213,6 +230,8 @@ async def search_source(
             source=source,
             location=location,
         )
+
+        print(f"[PropertySearch] Extracted {len(listings)} listings from {source}")
 
         return listings
 
@@ -236,24 +255,31 @@ async def extract_listings_with_ai(
         if result.get('raw_content'):
             content_text += f"Raw Content: {result.get('raw_content', '')[:2000]}\n"
 
-    prompt = f"""Extract commercial property listings from these search results.
-Location context: {location}
-Source: {source}
+    prompt = f"""Extract commercial property listings from these search results for {location}.
 
-For each distinct property listing found, extract:
-- address (full street address)
-- city
-- state (2-letter code)
-- price (as shown, e.g., "$500,000" or "$15/sqft")
-- price_numeric (numeric value only, null if not available)
-- sqft (as shown)
-- sqft_numeric (numeric value only, null if not available)
-- property_type (one of: retail, land, office, industrial, mixed_use)
-- url (listing URL if available)
-- description (brief description, max 100 chars)
+Look for ANY property that appears to be for sale, including:
+- Retail spaces, storefronts, shopping centers
+- Office buildings, office space
+- Land, lots, development sites
+- Industrial, warehouse, distribution centers
+- Mixed-use properties
 
-Return as JSON array. Only include actual property listings, not search pages or category pages.
-If no valid listings are found, return an empty array [].
+For each property found, extract what you can find:
+- address: street address (required - skip if not found)
+- city: city name
+- state: 2-letter state code
+- price: price as shown (e.g., "$500,000", "$15/sqft", "Contact for pricing")
+- price_numeric: just the number, null if unavailable
+- sqft: square footage as shown
+- sqft_numeric: just the number, null if unavailable
+- property_type: one of: retail, land, office, industrial, mixed_use
+- url: the listing URL
+- description: brief description (max 100 chars)
+
+Be generous in extraction - if you see something that looks like a property listing with an address and price, include it.
+
+Return JSON: {{"listings": [...]}}
+If no listings found, return: {{"listings": []}}
 
 Search Results:
 {content_text}
