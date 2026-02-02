@@ -105,15 +105,16 @@ async def search_properties(
 
     results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
+    source_names = ["Crexi", "LoopNet", "General"]
     for i, result in enumerate(results):
-        source_names = ["Crexi", "LoopNet", "General"]
         if isinstance(result, Exception):
             print(f"[PropertySearch] Error searching {source_names[i]}: {result}")
             continue
+        # Add to sources_searched even if empty (means search ran successfully)
+        sources_searched.append(source_names[i])
         if result:
             all_listings.extend(result)
-            sources_searched.append(source_names[i])
-            print(f"[PropertySearch] {source_names[i]}: Found {len(result)} listings")
+        print(f"[PropertySearch] {source_names[i]}: Found {len(result) if result else 0} listings")
 
     print(f"[PropertySearch] Total listings before geocoding: {len(all_listings)}")
 
