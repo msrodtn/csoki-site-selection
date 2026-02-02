@@ -9,6 +9,8 @@ import type {
   SavedLocation,
   PropertySearchResult,
   PropertyType,
+  PropertyListing,
+  ParcelInfo,
 } from '../types/store';
 
 // Target market states
@@ -109,6 +111,20 @@ interface MapState {
   togglePropertyType: (type: PropertyType) => void;
   setAllPropertyTypesVisible: (visible: boolean) => void;
   clearPropertySearch: () => void;
+
+  // Selected Property (for info window)
+  selectedProperty: PropertyListing | null;
+  setSelectedProperty: (property: PropertyListing | null) => void;
+
+  // Property Parcel (auto-fetched when property is selected)
+  propertyParcel: ParcelInfo | null;
+  setPropertyParcel: (parcel: ParcelInfo | null) => void;
+  isLoadingPropertyParcel: boolean;
+  setIsLoadingPropertyParcel: (loading: boolean) => void;
+  propertyParcelError: string | null;
+  setPropertyParcelError: (error: string | null) => void;
+  showPropertyParcelPanel: boolean;
+  setShowPropertyParcelPanel: (show: boolean) => void;
 
   // Clear analysis
   clearAnalysis: () => void;
@@ -308,6 +324,20 @@ export const useMapStore = create<MapState>((set, get) => ({
       propertySearchResult: null,
       propertySearchError: null,
     }),
+
+  // Selected Property (for info window)
+  selectedProperty: null,
+  setSelectedProperty: (property) => set({ selectedProperty: property }),
+
+  // Property Parcel (auto-fetched when property is selected)
+  propertyParcel: null,
+  setPropertyParcel: (parcel) => set({ propertyParcel: parcel }),
+  isLoadingPropertyParcel: false,
+  setIsLoadingPropertyParcel: (loading) => set({ isLoadingPropertyParcel: loading }),
+  propertyParcelError: null,
+  setPropertyParcelError: (error) => set({ propertyParcelError: error }),
+  showPropertyParcelPanel: false,
+  setShowPropertyParcelPanel: (show) => set({ showPropertyParcelPanel: show }),
 
   // Clear all analysis state
   clearAnalysis: () =>

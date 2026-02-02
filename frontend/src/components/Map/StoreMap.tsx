@@ -13,7 +13,6 @@ import {
   PROPERTY_TYPE_LABELS,
   type BrandKey,
   type POICategory,
-  type PropertyListing,
   type PropertyType,
 } from '../../types/store';
 import type { Store, ParcelInfo } from '../../types/store';
@@ -172,6 +171,18 @@ export function StoreMap() {
     setIsPropertySearching,
     setPropertySearchError,
     visiblePropertyTypes,
+    // Selected property
+    selectedProperty,
+    setSelectedProperty,
+    // Property parcel
+    propertyParcel,
+    setPropertyParcel,
+    isLoadingPropertyParcel,
+    setIsLoadingPropertyParcel,
+    propertyParcelError,
+    setPropertyParcelError,
+    showPropertyParcelPanel,
+    setShowPropertyParcelPanel,
   } = useMapStore();
 
   const [selectedPOI, setSelectedPOI] = useState<{
@@ -184,16 +195,16 @@ export function StoreMap() {
     rating: number | null;
   } | null>(null);
 
-  // Selected property listing state
-  const [selectedProperty, setSelectedProperty] = useState<PropertyListing | null>(null);
-
-  // Parcel info state
+  // Parcel info state (for map click queries)
   const [selectedParcel, setSelectedParcel] = useState<ParcelInfo | null>(null);
   const [isLoadingParcel, setIsLoadingParcel] = useState(false);
   const [parcelError, setParcelError] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [parcelBoundary, setParcelBoundary] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [parcelClickPosition, setParcelClickPosition] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Property parcel boundary state (for selected property listings)
+  const [propertyParcelBoundary, setPropertyParcelBoundary] = useState<google.maps.LatLngLiteral[] | null>(null);
 
   // Map bounds for filtering "In View" stats
   const [mapBounds, setMapBounds] = useState<{
@@ -440,7 +451,7 @@ export function StoreMap() {
     }
   }, [analysisRadius]); // Only trigger on radius change
 
-  // Parse parcel geometry when a parcel is selected
+  // Parse parcel geometry when a parcel is selected (map click)
   useEffect(() => {
     if (selectedParcel?.geometry) {
       const coords = parseWKTToLatLng(selectedParcel.geometry);
@@ -449,6 +460,47 @@ export function StoreMap() {
       setParcelBoundary(null);
     }
   }, [selectedParcel]);
+
+  // Auto-fetch parcel when property is selected (with debounce)
+  useEffect(() => {
+    if (!selectedProperty?.latitude || !selectedProperty?.longitude) {
+      setPropertyParcel(null);
+      setPropertyParcelBoundary(null);
+      setPropertyParcelError(null);
+      return;
+    }
+
+    // Clear previous parcel data immediately
+    setPropertyParcel(null);
+    setPropertyParcelBoundary(null);
+    setPropertyParcelError(null);
+
+    // Debounce to avoid rapid API calls if user clicks multiple properties quickly
+    const timeoutId = setTimeout(async () => {
+      setIsLoadingPropertyParcel(true);
+
+      try {
+        const parcelInfo = await analysisApi.getParcelInfo({
+          latitude: selectedProperty.latitude!,
+          longitude: selectedProperty.longitude!,
+        });
+        setPropertyParcel(parcelInfo);
+
+        // Parse geometry for boundary polygon
+        if (parcelInfo.geometry) {
+          const coords = parseWKTToLatLng(parcelInfo.geometry);
+          setPropertyParcelBoundary(coords);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Parcel data unavailable';
+        setPropertyParcelError(message);
+      } finally {
+        setIsLoadingPropertyParcel(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [selectedProperty, setPropertyParcel, setIsLoadingPropertyParcel, setPropertyParcelError]);
 
   // Handle mouse move for hover effect on parcels
   const handleMouseMove = useCallback(
@@ -851,6 +903,50 @@ export function StoreMap() {
           );
         })()}
 
+        {/* Property parcel boundary highlight - green theme to match property markers */}
+        {propertyParcelBoundary && propertyParcelBoundary.length > 0 && (() => {
+          // Determine colors based on zoning layer visibility
+          const isZoningEnabled = visibleLayersArray.includes('zoning');
+          const zoningCategory = isZoningEnabled && propertyParcel
+            ? getZoningCategory(propertyParcel.zoning, propertyParcel.land_use)
+            : null;
+          const zoningStyle = zoningCategory ? ZONING_COLORS[zoningCategory] : null;
+
+          // Use zoning colors if enabled, otherwise green theme (matching property markers)
+          const strokeColor = zoningStyle?.color || '#16A34A';  // green-600
+          const fillColor = zoningStyle?.fill || '#DCFCE7';     // green-100
+          const glowColor = zoningStyle?.color || '#22C55E';    // green-500
+
+          return (
+            <>
+              {/* Outer glow effect */}
+              <PolygonF
+                paths={propertyParcelBoundary}
+                options={{
+                  fillColor: 'transparent',
+                  fillOpacity: 0,
+                  strokeColor: glowColor,
+                  strokeOpacity: 0.5,
+                  strokeWeight: 8,
+                  zIndex: 47,
+                }}
+              />
+              {/* Main boundary */}
+              <PolygonF
+                paths={propertyParcelBoundary}
+                options={{
+                  fillColor: fillColor,
+                  fillOpacity: 0.4,
+                  strokeColor: strokeColor,
+                  strokeOpacity: 1,
+                  strokeWeight: 4,
+                  zIndex: 48,
+                }}
+              />
+            </>
+          );
+        })()}
+
         {/* Parcel click location marker - shows exactly where user clicked */}
         {parcelClickPosition && (selectedParcel || isLoadingParcel) && (
           <>
@@ -1017,10 +1113,16 @@ export function StoreMap() {
         {selectedProperty && selectedProperty.latitude && selectedProperty.longitude && (
           <InfoWindowF
             position={{ lat: selectedProperty.latitude, lng: selectedProperty.longitude }}
-            onCloseClick={() => setSelectedProperty(null)}
+            onCloseClick={() => {
+              setSelectedProperty(null);
+              setPropertyParcel(null);
+              setPropertyParcelBoundary(null);
+              setPropertyParcelError(null);
+              setShowPropertyParcelPanel(false);
+            }}
             options={{ disableAutoPan: true }}
           >
-            <div className="min-w-[220px] p-1">
+            <div className="min-w-[240px] max-w-[280px] p-1">
               <div
                 className="text-xs font-semibold px-2 py-1 rounded mb-2 text-white flex items-center justify-between"
                 style={{
@@ -1045,6 +1147,48 @@ export function StoreMap() {
                   <p className="text-gray-500 text-xs mt-1 line-clamp-2">{selectedProperty.description}</p>
                 )}
               </div>
+
+              {/* Parcel Summary Section */}
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                {isLoadingPropertyParcel ? (
+                  <div className="flex items-center gap-2 text-gray-500 text-xs">
+                    <div className="animate-spin w-3 h-3 border border-green-600 border-t-transparent rounded-full" />
+                    Loading parcel...
+                  </div>
+                ) : propertyParcelError ? (
+                  <p className="text-xs text-gray-400">{propertyParcelError}</p>
+                ) : propertyParcel ? (
+                  <div className="text-xs space-y-1">
+                    <p className="font-medium text-gray-700">Parcel Info</p>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-gray-600">
+                      {propertyParcel.acreage != null && (
+                        <span>{propertyParcel.acreage.toFixed(2)} acres</span>
+                      )}
+                      {propertyParcel.zoning && (
+                        <span>Zoning: {propertyParcel.zoning}</span>
+                      )}
+                      {propertyParcel.building_sqft != null && (
+                        <span>{propertyParcel.building_sqft.toLocaleString()} SF</span>
+                      )}
+                      {propertyParcel.year_built != null && (
+                        <span>Built: {propertyParcel.year_built}</span>
+                      )}
+                    </div>
+                    {propertyParcel.total_value != null && (
+                      <p className="text-green-700 font-medium">
+                        Assessed: ${propertyParcel.total_value.toLocaleString()}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => setShowPropertyParcelPanel(true)}
+                      className="text-green-600 hover:text-green-700 text-[10px] font-medium mt-1"
+                    >
+                      View full parcel details →
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
               {selectedProperty.url && (
                 <a
                   href={selectedProperty.url}
@@ -1061,7 +1205,7 @@ export function StoreMap() {
 
       </GoogleMap>
 
-      {/* Draggable Parcel Info Panel */}
+      {/* Draggable Parcel Info Panel (for map click queries) */}
       {(selectedParcel || isLoadingParcel || parcelError) && parcelClickPosition && (
         <DraggableParcelInfo
           parcel={selectedParcel}
@@ -1072,6 +1216,17 @@ export function StoreMap() {
             setParcelError(null);
             setParcelClickPosition(null);
           }}
+        />
+      )}
+
+      {/* Draggable Property Parcel Info Panel (for selected property listings) */}
+      {showPropertyParcelPanel && propertyParcel && (
+        <DraggableParcelInfo
+          parcel={propertyParcel}
+          isLoading={false}
+          error={null}
+          variant="property"
+          onClose={() => setShowPropertyParcelPanel(false)}
         />
       )}
     </div>

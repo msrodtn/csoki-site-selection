@@ -7,6 +7,7 @@ interface DraggableParcelInfoProps {
   isLoading: boolean;
   error: string | null;
   onClose: () => void;
+  variant?: 'default' | 'property';  // default=amber, property=green
 }
 
 export function DraggableParcelInfo({
@@ -14,7 +15,12 @@ export function DraggableParcelInfo({
   isLoading,
   error,
   onClose,
+  variant = 'default',
 }: DraggableParcelInfoProps) {
+  // Colors based on variant
+  const headerBg = variant === 'property' ? 'bg-green-600' : 'bg-amber-700';
+  const headerHoverBg = variant === 'property' ? 'hover:bg-green-700' : 'hover:bg-amber-800';
+  const spinnerBorder = variant === 'property' ? 'border-green-600' : 'border-amber-600';
   const [position, setPosition] = useState({ x: 20, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -77,16 +83,18 @@ export function DraggableParcelInfo({
       >
         {/* Draggable header */}
         <div
-          className="flex items-center justify-between px-3 py-2 bg-amber-700 text-white rounded-t-lg cursor-move select-none"
+          className={`flex items-center justify-between px-3 py-2 ${headerBg} text-white rounded-t-lg cursor-move select-none`}
           onMouseDown={handleMouseDown}
         >
           <div className="flex items-center gap-2">
             <GripHorizontal className="w-4 h-4 opacity-70" />
-            <span className="text-sm font-semibold">Parcel Information</span>
+            <span className="text-sm font-semibold">
+              {variant === 'property' ? 'Property Parcel Details' : 'Parcel Information'}
+            </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-amber-800 rounded transition-colors"
+            className={`p-1 ${headerHoverBg} rounded transition-colors`}
           >
             <X className="w-4 h-4" />
           </button>
@@ -96,7 +104,7 @@ export function DraggableParcelInfo({
         <div className="p-3 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
           {isLoading ? (
             <div className="text-center py-6 text-gray-500">
-              <div className="animate-spin inline-block w-6 h-6 border-2 border-amber-600 border-t-transparent rounded-full mb-2"></div>
+              <div className={`animate-spin inline-block w-6 h-6 border-2 ${spinnerBorder} border-t-transparent rounded-full mb-2`}></div>
               <p className="text-sm">Loading parcel data...</p>
             </div>
           ) : error ? (
