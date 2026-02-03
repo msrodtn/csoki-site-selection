@@ -130,42 +130,67 @@ def _get_headers() -> dict:
     }
 
 
-def _classify_property_type(use_code: Optional[str], land_use: Optional[str]) -> PropertyType:
+def _classify_property_type(
+    prop_indicator: Optional[str] = None,
+    prop_type: Optional[str] = None,
+    land_use: Optional[str] = None
+) -> PropertyType:
     """
-    Classify property type based on ATTOM use codes.
+    Classify property type based on ATTOM property indicator or text descriptions.
 
-    ATTOM uses standardized property use codes. Common commercial codes:
-    - 300-399: Commercial
-    - 400-499: Industrial
-    - 500-599: Agricultural/Rural
-    - 700-799: Vacant Land
+    ATTOM Property Indicators:
+    - 20 = Commercial (general)
+    - 25 = Retail
+    - 27 = Office Building
+    - 50 = Industrial
+    - 51 = Industrial Light
+    - 52 = Industrial Heavy
+    - 80 = Vacant Land
     """
-    if not use_code and not land_use:
+    # First try property indicator (most reliable)
+    if prop_indicator:
+        indicator = str(prop_indicator)
+        if indicator == "25":
+            return PropertyType.RETAIL
+        elif indicator == "27":
+            return PropertyType.OFFICE
+        elif indicator in ("50", "51", "52"):
+            return PropertyType.INDUSTRIAL
+        elif indicator == "80":
+            return PropertyType.LAND
+        elif indicator == "20":
+            # Generic commercial - check text for more specific classification
+            pass
+
+    # Fall back to text-based classification
+    combined = f"{prop_type or ''} {land_use or ''}".lower()
+
+    if not combined.strip():
         return PropertyType.UNKNOWN
-
-    code_str = str(use_code or "").lower()
-    land_str = str(land_use or "").lower()
-    combined = f"{code_str} {land_str}"
-
-    # Retail indicators
-    if any(x in combined for x in ["retail", "store", "shop", "restaurant", "commercial"]):
-        return PropertyType.RETAIL
 
     # Office indicators
     if any(x in combined for x in ["office", "professional"]):
         return PropertyType.OFFICE
+
+    # Retail indicators
+    if any(x in combined for x in ["retail", "store", "shop", "restaurant"]):
+        return PropertyType.RETAIL
 
     # Industrial indicators
     if any(x in combined for x in ["industrial", "warehouse", "manufacturing", "distribution"]):
         return PropertyType.INDUSTRIAL
 
     # Land indicators
-    if any(x in combined for x in ["vacant", "land", "lot", "undeveloped"]):
+    if any(x in combined for x in ["vacant", "land", "lot", "undeveloped", "acreage"]):
         return PropertyType.LAND
 
     # Mixed use indicators
-    if any(x in combined for x in ["mixed", "multi-use"]):
+    if any(x in combined for x in ["mixed", "multi-use", "residential"]):
         return PropertyType.MIXED_USE
+
+    # Default commercial
+    if "commercial" in combined:
+        return PropertyType.RETAIL
 
     return PropertyType.UNKNOWN
 
@@ -362,9 +387,10 @@ async def _search_attom_api(
 
                 for prop in property_list:
                     try:
-                        # Extract address info
+                        # Extract data sections
                         address_info = prop.get("address", {})
                         location_info = prop.get("location", {})
+                        summary_info = prop.get("summary", {})  # Key info is here!
                         assessment_info = prop.get("assessment", {})
                         sale_info = prop.get("sale", {})
                         building_info = prop.get("building", {})
@@ -377,10 +403,11 @@ async def _search_attom_api(
                         if not lat or not lng:
                             continue
 
-                        # Classify property type
-                        use_code = assessment_info.get("propertyType")
-                        land_use = lot_info.get("landUse")
-                        prop_type = _classify_property_type(use_code, land_use)
+                        # Classify property type using summary data
+                        prop_indicator = summary_info.get("propIndicator")
+                        prop_type_text = summary_info.get("propertyType") or summary_info.get("proptype")
+                        land_use = summary_info.get("propLandUse")
+                        prop_type = _classify_property_type(prop_indicator, prop_type_text, land_use)
 
                         # Filter by requested property types
                         if property_types and prop_type not in property_types:
@@ -409,9 +436,9 @@ async def _search_attom_api(
                         # Use market value or assessed value as estimated price
                         price = market_value or assessed_value
 
-                        # Get building info
-                        sqft = building_info.get("size", {}).get("grossSize")
-                        year_built = building_info.get("construction", {}).get("yearBuilt")
+                        # Get building info - check both locations
+                        sqft = building_info.get("size", {}).get("universalsize") or building_info.get("size", {}).get("grossSize")
+                        year_built = summary_info.get("yearbuilt") or building_info.get("construction", {}).get("yearBuilt")
                         lot_acres = lot_info.get("lotSize1")
 
                         # Get owner info
