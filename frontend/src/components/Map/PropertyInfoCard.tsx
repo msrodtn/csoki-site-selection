@@ -10,10 +10,11 @@
  */
 
 import { useState } from 'react';
-import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2 } from 'lucide-react';
+import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2, Search } from 'lucide-react';
 import type { PropertyListing, ParcelInfo } from '../../types/store';
 import { analysisApi } from '../../services/api';
 import { PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS } from '../../types/store';
+import { generateListingLinks } from '../../utils/listingLinks';
 
 interface PropertyInfoCardProps {
   property: PropertyListing;
@@ -277,6 +278,31 @@ export function PropertyInfoCard({ property, onClose }: PropertyInfoCardProps) {
         {/* Source */}
         <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500">
           Source: {SOURCE_LABELS[property.source] || property.source}
+        </div>
+
+        {/* Search Active Listings - External Links */}
+        <div className="px-4 py-3 border-t">
+          <div className="flex items-center gap-2 mb-2">
+            <Search className="w-4 h-4 text-gray-500" />
+            <span className="text-sm font-semibold text-gray-700">Search Active Listings</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {generateListingLinks(property.city, property.state, property.latitude, property.longitude)
+              .slice(0, 4) // Limit to 4 links
+              .map((link) => (
+                <a
+                  key={link.name}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors hover:opacity-80"
+                  style={{ backgroundColor: `${link.color}15`, color: link.color }}
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  {link.name}
+                </a>
+              ))}
+          </div>
         </div>
       </div>
 
