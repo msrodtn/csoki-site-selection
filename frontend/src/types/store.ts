@@ -219,6 +219,21 @@ export interface PropertyListing {
   listing_date: string | null;
 }
 
+// External search link for link-out strategy
+export interface ExternalSearchLink {
+  name: string;  // Display name (e.g., "Crexi", "LoopNet")
+  url: string;   // Pre-filled search URL
+  icon: string;  // Icon identifier
+}
+
+export interface PropertySearchLinks {
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+  links: ExternalSearchLink[];
+}
+
 export interface PropertySearchResult {
   center_latitude: number;
   center_longitude: number;
@@ -227,6 +242,7 @@ export interface PropertySearchResult {
   listings: PropertyListing[];
   sources_searched: string[];
   total_found: number;
+  external_links?: PropertySearchLinks;  // New: links to external CRE platforms
 }
 
 export interface MapBounds {

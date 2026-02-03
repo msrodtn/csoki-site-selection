@@ -9,20 +9,17 @@ import {
   BRAND_LOGOS,
   POI_CATEGORY_COLORS,
   POI_CATEGORY_LABELS,
-  PROPERTY_TYPE_COLORS,
-  PROPERTY_TYPE_LABELS,
   type BrandKey,
   type POICategory,
-  type PropertyType,
 } from '../../types/store';
 import type { Store, ParcelInfo } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
 import { ZoningLegend, ZONING_COLORS, getZoningCategory } from './ZoningLegend';
-import { PropertyLegend } from './PropertyLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 import { DraggableParcelInfo } from './DraggableParcelInfo';
+import { PropertySearchPanel } from './PropertySearchPanel';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -164,25 +161,6 @@ export function StoreMap() {
     analysisRadius,
     setMapInstance,
     visibleLayers,
-    // Property search
-    propertySearchResult,
-    setPropertySearchResult,
-    isPropertySearching,
-    setIsPropertySearching,
-    setPropertySearchError,
-    visiblePropertyTypes,
-    // Selected property
-    selectedProperty,
-    setSelectedProperty,
-    // Property parcel
-    propertyParcel,
-    setPropertyParcel,
-    isLoadingPropertyParcel,
-    setIsLoadingPropertyParcel,
-    propertyParcelError,
-    setPropertyParcelError,
-    showPropertyParcelPanel,
-    setShowPropertyParcelPanel,
   } = useMapStore();
 
   const [selectedPOI, setSelectedPOI] = useState<{
@@ -202,9 +180,6 @@ export function StoreMap() {
   const [hoverPosition, setHoverPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [parcelBoundary, setParcelBoundary] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [parcelClickPosition, setParcelClickPosition] = useState<{ lat: number; lng: number } | null>(null);
-
-  // Property parcel boundary state (for selected property listings)
-  const [propertyParcelBoundary, setPropertyParcelBoundary] = useState<google.maps.LatLngLiteral[] | null>(null);
 
   // Map bounds for filtering "In View" stats
   const [mapBounds, setMapBounds] = useState<{
@@ -269,27 +244,6 @@ export function StoreMap() {
     );
     return filtered.slice(0, 100);
   }, [analysisResult?.pois, visiblePOICategoriesArray]);
-
-  // Filter property listings by visible property types AND map viewport
-  const visiblePropertyTypesArray = useMemo(() => Array.from(visiblePropertyTypes), [visiblePropertyTypes]);
-  const visibleProperties = useMemo(() => {
-    if (!propertySearchResult?.listings) return [];
-    return propertySearchResult.listings.filter((listing) => {
-      // Must have coordinates
-      if (!listing.latitude || !listing.longitude) return false;
-
-      // Must match visible property types
-      if (!visiblePropertyTypesArray.includes(listing.property_type)) return false;
-
-      // Must be within current map viewport (client-side safety filter)
-      if (mapBounds) {
-        if (listing.latitude < mapBounds.south || listing.latitude > mapBounds.north) return false;
-        if (listing.longitude < mapBounds.west || listing.longitude > mapBounds.east) return false;
-      }
-
-      return true;
-    });
-  }, [propertySearchResult?.listings, visiblePropertyTypesArray, mapBounds]);
 
   // Dynamic map options based on business labels layer
   const mapOptions = useMemo((): google.maps.MapOptions => {
@@ -469,47 +423,6 @@ export function StoreMap() {
       setParcelBoundary(null);
     }
   }, [selectedParcel]);
-
-  // Auto-fetch parcel when property is selected (with debounce)
-  useEffect(() => {
-    if (!selectedProperty?.latitude || !selectedProperty?.longitude) {
-      setPropertyParcel(null);
-      setPropertyParcelBoundary(null);
-      setPropertyParcelError(null);
-      return;
-    }
-
-    // Clear previous parcel data immediately
-    setPropertyParcel(null);
-    setPropertyParcelBoundary(null);
-    setPropertyParcelError(null);
-
-    // Debounce to avoid rapid API calls if user clicks multiple properties quickly
-    const timeoutId = setTimeout(async () => {
-      setIsLoadingPropertyParcel(true);
-
-      try {
-        const parcelInfo = await analysisApi.getParcelInfo({
-          latitude: selectedProperty.latitude!,
-          longitude: selectedProperty.longitude!,
-        });
-        setPropertyParcel(parcelInfo);
-
-        // Parse geometry for boundary polygon
-        if (parcelInfo.geometry) {
-          const coords = parseWKTToLatLng(parcelInfo.geometry);
-          setPropertyParcelBoundary(coords);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Parcel data unavailable';
-        setPropertyParcelError(message);
-      } finally {
-        setIsLoadingPropertyParcel(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [selectedProperty, setPropertyParcel, setIsLoadingPropertyParcel, setPropertyParcelError]);
 
   // Handle mouse move for hover effect on parcels
   const handleMouseMove = useCallback(
@@ -696,96 +609,6 @@ export function StoreMap() {
     }
   }, [visibleLayersArray, visibleStores]);
 
-  // Track last search bounds to detect significant map movement
-  const lastSearchBoundsRef = useRef<{
-    min_lat: number;
-    max_lat: number;
-    min_lng: number;
-    max_lng: number;
-  } | null>(null);
-
-  // Property search when layer is enabled or map moves significantly
-  useEffect(() => {
-    const showProperties = visibleLayersArray.includes('properties_for_sale');
-    const map = mapRef.current;
-
-    if (!showProperties) {
-      // Clear results when layer is disabled
-      if (propertySearchResult) {
-        setPropertySearchResult(null);
-        setSelectedProperty(null);
-        lastSearchBoundsRef.current = null;
-      }
-      return;
-    }
-
-    if (!map || isPropertySearching) return;
-
-    // Get current map bounds
-    const bounds = map.getBounds();
-    const center = map.getCenter();
-    if (!bounds || !center) return;
-
-    const ne = bounds.getNorthEast();
-    const sw = bounds.getSouthWest();
-    const currentBounds = {
-      min_lat: sw.lat(),
-      max_lat: ne.lat(),
-      min_lng: sw.lng(),
-      max_lng: ne.lng(),
-    };
-
-    // Check if we need to search (first time or significant movement)
-    const needsSearch = !propertySearchResult || !lastSearchBoundsRef.current ||
-      hasMapMovedSignificantly(lastSearchBoundsRef.current, currentBounds);
-
-    if (!needsSearch) return;
-
-    // Trigger property search with bounds
-    setIsPropertySearching(true);
-    setPropertySearchError(null);
-
-    analysisApi
-      .searchProperties({
-        latitude: center.lat(),
-        longitude: center.lng(),
-        radius_miles: 15, // Wider radius for initial search, bounds filter for precision
-        bounds: currentBounds,
-      })
-      .then((result) => {
-        setPropertySearchResult(result);
-        lastSearchBoundsRef.current = currentBounds;
-      })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : 'Failed to search properties';
-        setPropertySearchError(message);
-        console.error('Property search error:', error);
-      })
-      .finally(() => {
-        setIsPropertySearching(false);
-      });
-  }, [visibleLayersArray, mapBounds, propertySearchResult, isPropertySearching, setPropertySearchResult, setIsPropertySearching, setPropertySearchError, setSelectedProperty]);
-
-  // Helper function to check if map has moved significantly (> 30% of viewport)
-  function hasMapMovedSignificantly(
-    oldBounds: { min_lat: number; max_lat: number; min_lng: number; max_lng: number },
-    newBounds: { min_lat: number; max_lat: number; min_lng: number; max_lng: number }
-  ): boolean {
-    const oldHeight = oldBounds.max_lat - oldBounds.min_lat;
-    const oldWidth = oldBounds.max_lng - oldBounds.min_lng;
-
-    // Check if center moved by more than 30% of old viewport
-    const oldCenterLat = (oldBounds.min_lat + oldBounds.max_lat) / 2;
-    const oldCenterLng = (oldBounds.min_lng + oldBounds.max_lng) / 2;
-    const newCenterLat = (newBounds.min_lat + newBounds.max_lat) / 2;
-    const newCenterLng = (newBounds.min_lng + newBounds.max_lng) / 2;
-
-    const latDiff = Math.abs(newCenterLat - oldCenterLat);
-    const lngDiff = Math.abs(newCenterLng - oldCenterLng);
-
-    return latDiff > oldHeight * 0.3 || lngDiff > oldWidth * 0.3;
-  }
-
   // Create marker icon for each brand using logo images
   const createMarkerIcon = (brand: string, isSelected: boolean): google.maps.Icon => {
     const logoUrl = BRAND_LOGOS[brand as BrandKey];
@@ -810,22 +633,6 @@ export function StoreMap() {
       strokeColor: isSelected ? '#ffffff' : color,
       strokeWeight: isSelected ? 2 : 1,
       scale: scale,
-    };
-  };
-
-  // Create Property marker icon (dollar sign shape)
-  const createPropertyMarkerIcon = (propertyType: PropertyType, isSelected: boolean): google.maps.Symbol => {
-    const color = PROPERTY_TYPE_COLORS[propertyType] || '#22C55E';
-    const scale = isSelected ? 10 : 7;
-
-    return {
-      path: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-4.18-1.62-4.18-3.67 0-1.72 1.39-2.84 3.11-3.21V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.3c-.05-1.11-.64-1.87-2.22-1.87-1.5 0-2.4.68-2.4 1.64 0 .84.65 1.39 2.67 1.91s4.18 1.39 4.18 3.91c-.01 1.83-1.38 2.83-3.12 3.16z',
-      fillColor: color,
-      fillOpacity: 1,
-      strokeColor: isSelected ? '#ffffff' : '#000000',
-      strokeWeight: isSelected ? 2 : 0.5,
-      scale: scale / 12,
-      anchor: new google.maps.Point(12, 12),
     };
   };
 
@@ -854,17 +661,6 @@ export function StoreMap() {
         </div>
       )}
 
-      {/* Property search loading indicator */}
-      {isPropertySearching && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-green-600 text-white px-4 py-2 rounded-lg shadow-md flex items-center gap-2">
-          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          Searching for properties...
-        </div>
-      )}
-
       {/* Quick Stats Bar - shows store counts by brand */}
       <QuickStatsBar stores={storesInView} />
 
@@ -880,8 +676,18 @@ export function StoreMap() {
       {/* Zoning Colors Legend */}
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
 
-      {/* Properties For Sale Legend */}
-      <PropertyLegend isVisible={visibleLayersArray.includes('properties_for_sale')} />
+      {/* Property Search Panel - shows external links when layer is enabled */}
+      {visibleLayersArray.includes('properties_for_sale') && mapBounds && (
+        <PropertySearchPanel
+          latitude={(mapBounds.north + mapBounds.south) / 2}
+          longitude={(mapBounds.east + mapBounds.west) / 2}
+          onClose={() => {
+            // Toggle off the layer when panel is closed
+            const { toggleLayer } = useMapStore.getState();
+            toggleLayer('properties_for_sale');
+          }}
+        />
+      )}
 
       {/* Hover indicator for parcel layer */}
       {hoverPosition && visibleLayersArray.includes('parcels') && !selectedParcel && !isLoadingParcel && (
@@ -955,50 +761,6 @@ export function StoreMap() {
                   strokeOpacity: 1,
                   strokeWeight: 4,
                   zIndex: 50,
-                }}
-              />
-            </>
-          );
-        })()}
-
-        {/* Property parcel boundary highlight - green theme to match property markers */}
-        {propertyParcelBoundary && propertyParcelBoundary.length > 0 && (() => {
-          // Determine colors based on zoning layer visibility
-          const isZoningEnabled = visibleLayersArray.includes('zoning');
-          const zoningCategory = isZoningEnabled && propertyParcel
-            ? getZoningCategory(propertyParcel.zoning, propertyParcel.land_use)
-            : null;
-          const zoningStyle = zoningCategory ? ZONING_COLORS[zoningCategory] : null;
-
-          // Use zoning colors if enabled, otherwise green theme (matching property markers)
-          const strokeColor = zoningStyle?.color || '#16A34A';  // green-600
-          const fillColor = zoningStyle?.fill || '#DCFCE7';     // green-100
-          const glowColor = zoningStyle?.color || '#22C55E';    // green-500
-
-          return (
-            <>
-              {/* Outer glow effect */}
-              <PolygonF
-                paths={propertyParcelBoundary}
-                options={{
-                  fillColor: 'transparent',
-                  fillOpacity: 0,
-                  strokeColor: glowColor,
-                  strokeOpacity: 0.5,
-                  strokeWeight: 8,
-                  zIndex: 47,
-                }}
-              />
-              {/* Main boundary */}
-              <PolygonF
-                paths={propertyParcelBoundary}
-                options={{
-                  fillColor: fillColor,
-                  fillOpacity: 0.4,
-                  strokeColor: strokeColor,
-                  strokeOpacity: 1,
-                  strokeWeight: 4,
-                  zIndex: 48,
                 }}
               />
             </>
@@ -1088,21 +850,6 @@ export function StoreMap() {
           />
         ))}
 
-        {/* Property listing markers */}
-        {visibleProperties.map((property) => (
-          <MarkerF
-            key={property.id}
-            position={{ lat: property.latitude!, lng: property.longitude! }}
-            icon={createPropertyMarkerIcon(property.property_type, selectedProperty?.id === property.id)}
-            onClick={() => {
-              setSelectedProperty(property);
-              setSelectedStore(null);
-              setSelectedPOI(null);
-            }}
-            zIndex={selectedProperty?.id === property.id ? 1500 : 300}
-          />
-        ))}
-
         {/* Info window for selected POI */}
         {selectedPOI && (
           <InfoWindowF
@@ -1167,100 +914,6 @@ export function StoreMap() {
           </InfoWindowF>
         )}
 
-        {/* Info window for selected property listing */}
-        {selectedProperty && selectedProperty.latitude && selectedProperty.longitude && (
-          <InfoWindowF
-            position={{ lat: selectedProperty.latitude, lng: selectedProperty.longitude }}
-            onCloseClick={() => {
-              setSelectedProperty(null);
-              setPropertyParcel(null);
-              setPropertyParcelBoundary(null);
-              setPropertyParcelError(null);
-              setShowPropertyParcelPanel(false);
-            }}
-            options={{ disableAutoPan: true }}
-          >
-            <div className="min-w-[240px] max-w-[280px] p-1">
-              <div
-                className="text-xs font-semibold px-2 py-1 rounded mb-2 text-white flex items-center justify-between"
-                style={{
-                  backgroundColor: PROPERTY_TYPE_COLORS[selectedProperty.property_type] || '#22C55E',
-                }}
-              >
-                <span>{PROPERTY_TYPE_LABELS[selectedProperty.property_type]}</span>
-                <span className="opacity-75 text-[10px] uppercase">{selectedProperty.source}</span>
-              </div>
-              <div className="text-sm">
-                <p className="font-medium">{selectedProperty.address}</p>
-                <p className="text-gray-600">
-                  {selectedProperty.city}, {selectedProperty.state}
-                </p>
-                {selectedProperty.price && (
-                  <p className="font-bold text-green-600 mt-1">{selectedProperty.price}</p>
-                )}
-                {selectedProperty.sqft && (
-                  <p className="text-gray-500 text-xs">{selectedProperty.sqft}</p>
-                )}
-                {selectedProperty.description && (
-                  <p className="text-gray-500 text-xs mt-1 line-clamp-2">{selectedProperty.description}</p>
-                )}
-              </div>
-
-              {/* Parcel Summary Section */}
-              <div className="mt-2 pt-2 border-t border-gray-200">
-                {isLoadingPropertyParcel ? (
-                  <div className="flex items-center gap-2 text-gray-500 text-xs">
-                    <div className="animate-spin w-3 h-3 border border-green-600 border-t-transparent rounded-full" />
-                    Loading parcel...
-                  </div>
-                ) : propertyParcelError ? (
-                  <p className="text-xs text-gray-400">{propertyParcelError}</p>
-                ) : propertyParcel ? (
-                  <div className="text-xs space-y-1">
-                    <p className="font-medium text-gray-700">Parcel Info</p>
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-gray-600">
-                      {propertyParcel.acreage != null && (
-                        <span>{propertyParcel.acreage.toFixed(2)} acres</span>
-                      )}
-                      {propertyParcel.zoning && (
-                        <span>Zoning: {propertyParcel.zoning}</span>
-                      )}
-                      {propertyParcel.building_sqft != null && (
-                        <span>{propertyParcel.building_sqft.toLocaleString()} SF</span>
-                      )}
-                      {propertyParcel.year_built != null && (
-                        <span>Built: {propertyParcel.year_built}</span>
-                      )}
-                    </div>
-                    {propertyParcel.total_value != null && (
-                      <p className="text-green-700 font-medium">
-                        Assessed: ${propertyParcel.total_value.toLocaleString()}
-                      </p>
-                    )}
-                    <button
-                      onClick={() => setShowPropertyParcelPanel(true)}
-                      className="text-green-600 hover:text-green-700 text-[10px] font-medium mt-1"
-                    >
-                      View full parcel details →
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-
-              {selectedProperty.url && (
-                <a
-                  href={selectedProperty.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 block w-full text-center bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
-                >
-                  View Listing
-                </a>
-              )}
-            </div>
-          </InfoWindowF>
-        )}
-
       </GoogleMap>
 
       {/* Draggable Parcel Info Panel (for map click queries) */}
@@ -1274,17 +927,6 @@ export function StoreMap() {
             setParcelError(null);
             setParcelClickPosition(null);
           }}
-        />
-      )}
-
-      {/* Draggable Property Parcel Info Panel (for selected property listings) */}
-      {showPropertyParcelPanel && propertyParcel && (
-        <DraggableParcelInfo
-          parcel={propertyParcel}
-          isLoading={false}
-          error={null}
-          variant="property"
-          onClose={() => setShowPropertyParcelPanel(false)}
         />
       )}
     </div>
