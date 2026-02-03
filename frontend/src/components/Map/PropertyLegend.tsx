@@ -1,4 +1,4 @@
-import { DollarSign, TrendingUp, Building2 } from 'lucide-react';
+import { DollarSign, TrendingUp } from 'lucide-react';
 import { PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS, type PropertyType } from '../../types/store';
 
 interface PropertyLegendProps {

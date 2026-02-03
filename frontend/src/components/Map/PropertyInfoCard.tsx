@@ -10,9 +10,8 @@
  */
 
 import { useState } from 'react';
-import { X, ExternalLink, MapPin, Building2, DollarSign, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2 } from 'lucide-react';
+import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2 } from 'lucide-react';
 import type { PropertyListing, ParcelInfo } from '../../types/store';
-import { useMapStore } from '../../store/useMapStore';
 import { analysisApi } from '../../services/api';
 import { PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS } from '../../types/store';
 

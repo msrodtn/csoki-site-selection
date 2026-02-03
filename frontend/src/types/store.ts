@@ -309,6 +309,7 @@ export const PROPERTY_TYPE_COLORS: Record<PropertyType, string> = {
   office: '#3B82F6',      // Blue
   industrial: '#6B7280',  // Gray
   mixed_use: '#8B5CF6',   // Purple
+  unknown: '#9CA3AF',     // Light Gray
 };
 
 export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
@@ -317,6 +318,7 @@ export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
   office: 'Office',
   industrial: 'Industrial',
   mixed_use: 'Mixed Use',
+  unknown: 'Unknown',
 };
 
 // Source icons/colors for property listings

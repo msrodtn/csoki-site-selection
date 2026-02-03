@@ -9,7 +9,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { X, MapPin, Building2, DollarSign, FileText, User, Link, Loader2 } from 'lucide-react';
 import { teamPropertiesApi } from '../../services/api';
 import type { TeamPropertyCreate, PropertyType, TeamPropertySourceType } from '../../types/store';
-import { PROPERTY_TYPE_LABELS } from '../../types/store';
 
 interface TeamPropertyFormProps {
   isOpen: boolean;

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, PolygonF } from '@react-google-maps/api';
 import { useMapStore } from '../../store/useMapStore';
 import { useStores } from '../../hooks/useStores';
-import { analysisApi } from '../../services/api';
+import { analysisApi, teamPropertiesApi } from '../../services/api';
 import {
   BRAND_COLORS,
   BRAND_LABELS,
@@ -10,9 +10,12 @@ import {
   POI_CATEGORY_COLORS,
   POI_CATEGORY_LABELS,
   PROPERTY_TYPE_COLORS,
+  TEAM_PROPERTY_COLOR,
+  TEAM_PROPERTY_SOURCE_LABELS,
   type BrandKey,
   type POICategory,
   type PropertyListing,
+  type TeamProperty,
 } from '../../types/store';
 import type { Store, ParcelInfo } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
@@ -21,9 +24,9 @@ import { ParcelLegend } from './ParcelLegend';
 import { ZoningLegend, ZONING_COLORS, getZoningCategory } from './ZoningLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 import { DraggableParcelInfo } from './DraggableParcelInfo';
-import { PropertySearchPanel } from './PropertySearchPanel';
 import { PropertyInfoCard } from './PropertyInfoCard';
 import { PropertyLegend } from './PropertyLegend';
+import { TeamPropertyForm } from './TeamPropertyForm';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -198,6 +201,15 @@ export function StoreMap() {
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
   const [propertyError, setPropertyError] = useState<string | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyListing | null>(null);
+
+  // Team properties state (user-contributed)
+  const [teamProperties, setTeamProperties] = useState<TeamProperty[]>([]);
+  const [isLoadingTeamProperties, setIsLoadingTeamProperties] = useState(false);
+  const [selectedTeamProperty, setSelectedTeamProperty] = useState<TeamProperty | null>(null);
+
+  // Team property form state
+  const [showTeamPropertyForm, setShowTeamPropertyForm] = useState(false);
+  const [teamPropertyFormCoords, setTeamPropertyFormCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -618,6 +630,39 @@ export function StoreMap() {
     }
   }, [visibleLayersArray.includes('properties_for_sale'), mapBounds]);
 
+  // Manage team properties when layer is enabled
+  useEffect(() => {
+    const showProperties = visibleLayersArray.includes('properties_for_sale');
+
+    if (showProperties && mapBounds) {
+      const loadTeamProperties = async () => {
+        setIsLoadingTeamProperties(true);
+
+        try {
+          const result = await teamPropertiesApi.getInBounds({
+            min_lat: mapBounds.south,
+            max_lat: mapBounds.north,
+            min_lng: mapBounds.west,
+            max_lng: mapBounds.east,
+            status: 'active',
+          });
+
+          setTeamProperties(result.properties || []);
+        } catch (error: any) {
+          console.error('[TeamProperties] Error loading:', error);
+          setTeamProperties([]);
+        } finally {
+          setIsLoadingTeamProperties(false);
+        }
+      };
+
+      loadTeamProperties();
+    } else if (!showProperties) {
+      setTeamProperties([]);
+      setSelectedTeamProperty(null);
+    }
+  }, [visibleLayersArray.includes('properties_for_sale'), mapBounds]);
+
   // Manage heat map layer (separate effect since it depends on visibleStores)
   useEffect(() => {
     const map = mapRef.current;
@@ -715,9 +760,59 @@ export function StoreMap() {
   // Handle property marker click
   const handlePropertyMarkerClick = useCallback((property: PropertyListing) => {
     setSelectedProperty(property);
+    setSelectedTeamProperty(null);
     setSelectedStore(null);
     setSelectedPOI(null);
   }, [setSelectedStore]);
+
+  // Create team property marker icon (orange pin style)
+  const createTeamPropertyMarkerIcon = (isSelected: boolean): google.maps.Symbol => {
+    const scale = isSelected ? 10 : 7;
+
+    return {
+      path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+      fillColor: TEAM_PROPERTY_COLOR,
+      fillOpacity: 0.9,
+      strokeColor: isSelected ? '#ffffff' : '#EA580C',
+      strokeWeight: isSelected ? 3 : 2,
+      scale: scale,
+    };
+  };
+
+  // Handle team property marker click
+  const handleTeamPropertyMarkerClick = useCallback((property: TeamProperty) => {
+    setSelectedTeamProperty(property);
+    setSelectedProperty(null);
+    setSelectedStore(null);
+    setSelectedPOI(null);
+  }, [setSelectedStore]);
+
+  // Handle right-click to flag a property
+  const handleMapRightClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (e.latLng) {
+      setTeamPropertyFormCoords({
+        lat: e.latLng.lat(),
+        lng: e.latLng.lng(),
+      });
+      setShowTeamPropertyForm(true);
+    }
+  }, []);
+
+  // Handle team property form success
+  const handleTeamPropertySuccess = useCallback(() => {
+    // Reload team properties
+    if (mapBounds && visibleLayersArray.includes('properties_for_sale')) {
+      teamPropertiesApi.getInBounds({
+        min_lat: mapBounds.south,
+        max_lat: mapBounds.north,
+        min_lng: mapBounds.west,
+        max_lng: mapBounds.east,
+        status: 'active',
+      }).then(result => {
+        setTeamProperties(result.properties || []);
+      }).catch(console.error);
+    }
+  }, [mapBounds, visibleLayersArray]);
 
   if (loadError) {
     return (
@@ -795,6 +890,7 @@ export function StoreMap() {
         onUnmount={onUnmount}
         onIdle={onIdle}
         onClick={handleMapClick}
+        onRightClick={handleMapRightClick}
         onMouseMove={handleMouseMove}
         options={mapOptions}
       >
@@ -923,6 +1019,18 @@ export function StoreMap() {
           />
         ))}
 
+        {/* Team property markers (user-contributed) */}
+        {teamProperties.map((property) => (
+          <MarkerF
+            key={`team-${property.id}`}
+            position={{ lat: property.latitude, lng: property.longitude }}
+            icon={createTeamPropertyMarkerIcon(selectedTeamProperty?.id === property.id)}
+            onClick={() => handleTeamPropertyMarkerClick(property)}
+            zIndex={selectedTeamProperty?.id === property.id ? 1600 : 250}
+            title={`${property.address} - Team Flagged`}
+          />
+        ))}
+
         {/* POI markers */}
         {visiblePOIs.map((poi) => (
           <MarkerF
@@ -1019,6 +1127,65 @@ export function StoreMap() {
           </InfoWindowF>
         )}
 
+        {/* Info window for selected team property */}
+        {selectedTeamProperty && (
+          <InfoWindowF
+            position={{ lat: selectedTeamProperty.latitude, lng: selectedTeamProperty.longitude }}
+            onCloseClick={() => setSelectedTeamProperty(null)}
+            options={{ disableAutoPan: true }}
+          >
+            <div className="min-w-[220px] p-1">
+              <div
+                className="text-xs font-semibold px-2 py-1 rounded mb-2 text-white flex items-center gap-1"
+                style={{ backgroundColor: TEAM_PROPERTY_COLOR }}
+              >
+                <span>Team Flagged</span>
+                {selectedTeamProperty.source_type && (
+                  <span className="opacity-75">
+                    • {TEAM_PROPERTY_SOURCE_LABELS[selectedTeamProperty.source_type]}
+                  </span>
+                )}
+              </div>
+              <div className="text-sm">
+                <p className="font-medium">{selectedTeamProperty.address}</p>
+                <p className="text-gray-600">
+                  {selectedTeamProperty.city}, {selectedTeamProperty.state} {selectedTeamProperty.postal_code || ''}
+                </p>
+                {selectedTeamProperty.price && (
+                  <p className="text-green-700 font-medium mt-1">
+                    ${selectedTeamProperty.price.toLocaleString()}
+                  </p>
+                )}
+                {selectedTeamProperty.sqft && (
+                  <p className="text-gray-500 text-xs">
+                    {selectedTeamProperty.sqft.toLocaleString()} sqft
+                  </p>
+                )}
+                {selectedTeamProperty.notes && (
+                  <p className="text-gray-600 text-xs mt-2 italic border-t pt-2">
+                    "{selectedTeamProperty.notes}"
+                  </p>
+                )}
+                {selectedTeamProperty.contributor_name && (
+                  <p className="text-gray-400 text-xs mt-1">
+                    — {selectedTeamProperty.contributor_name}
+                  </p>
+                )}
+              </div>
+              {selectedTeamProperty.listing_url && (
+                <a
+                  href={selectedTeamProperty.listing_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 block w-full text-center bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+                >
+                  View Listing
+                </a>
+              )}
+            </div>
+          </InfoWindowF>
+        )}
+
       </GoogleMap>
 
       {/* Draggable Parcel Info Panel (for map click queries) */}
@@ -1044,6 +1211,44 @@ export function StoreMap() {
           />
         </div>
       )}
+
+      {/* Flag Property FAB - visible when properties layer is enabled */}
+      {visibleLayersArray.includes('properties_for_sale') && (
+        <button
+          onClick={() => {
+            setTeamPropertyFormCoords(null);
+            setShowTeamPropertyForm(true);
+          }}
+          className="absolute bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-full shadow-lg transition-all hover:scale-105"
+          title="Flag a property (or right-click on map)"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
+          <span>Flag Property</span>
+        </button>
+      )}
+
+      {/* Team Property loading indicator */}
+      {isLoadingTeamProperties && visibleLayersArray.includes('properties_for_sale') && (
+        <div className="absolute bottom-20 right-6 z-40 bg-orange-100 text-orange-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full" />
+          Loading team properties...
+        </div>
+      )}
+
+      {/* Team Property Form Modal */}
+      <TeamPropertyForm
+        isOpen={showTeamPropertyForm}
+        onClose={() => {
+          setShowTeamPropertyForm(false);
+          setTeamPropertyFormCoords(null);
+        }}
+        onSuccess={handleTeamPropertySuccess}
+        initialLatitude={teamPropertyFormCoords?.lat}
+        initialLongitude={teamPropertyFormCoords?.lng}
+      />
     </div>
   );
 }
