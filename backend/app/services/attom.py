@@ -265,43 +265,100 @@ async def search_properties_by_bounds(
     """
     Search for properties within geographic bounds.
 
-    Uses ATTOM's Property API to find properties and enriches with
-    opportunity signals.
+    Converts bounds to center point + radius and calls search_properties_by_radius.
+    """
+    import math
+
+    # Calculate center point
+    center_lat = (bounds.min_lat + bounds.max_lat) / 2
+    center_lng = (bounds.min_lng + bounds.max_lng) / 2
+
+    # Calculate approximate radius in miles (use the larger dimension)
+    lat_diff = bounds.max_lat - bounds.min_lat
+    lng_diff = bounds.max_lng - bounds.min_lng
+    # 1 degree latitude ≈ 69 miles, longitude varies by latitude
+    lat_miles = lat_diff * 69
+    lng_miles = lng_diff * 69 * math.cos(math.radians(center_lat))
+    approx_radius = max(lat_miles, lng_miles) / 2
+
+    # Cap radius at ATTOM's max of 20 miles
+    approx_radius = min(approx_radius, 20.0)
+
+    # Delegate to radius-based search
+    return await search_properties_by_radius(
+        latitude=center_lat,
+        longitude=center_lng,
+        radius_miles=approx_radius,
+        property_types=property_types,
+        min_opportunity_score=min_opportunity_score,
+        limit=limit,
+    )
+
+
+# Property indicator mapping for ATTOM API
+# See: https://cloud-help.attomdata.com/article/688-property-indicator
+ATTOM_PROPERTY_INDICATORS = {
+    PropertyType.RETAIL: "25",
+    PropertyType.OFFICE: "27",
+    PropertyType.INDUSTRIAL: "50",
+    PropertyType.LAND: "80",
+    PropertyType.MIXED_USE: "20",  # General commercial
+    PropertyType.UNKNOWN: "20",
+}
+
+
+async def _search_attom_api(
+    latitude: float,
+    longitude: float,
+    radius_miles: float,
+    property_types: Optional[List[PropertyType]] = None,
+    min_opportunity_score: float = 0,
+    limit: int = 50,
+) -> PropertySearchResult:
+    """
+    Core ATTOM API search using correct parameters.
+
+    Uses latitude/longitude/radius instead of bounding box.
+    Uses propertyindicator instead of propertytype.
     """
     if not settings.ATTOM_API_KEY:
         raise ValueError("ATTOM_API_KEY not configured")
 
-    # Calculate center point for result metadata
-    center_lat = (bounds.min_lat + bounds.max_lat) / 2
-    center_lng = (bounds.min_lng + bounds.max_lng) / 2
+    # Build property indicator filter
+    # Default: all commercial types (20=Commercial, 25=Retail, 27=Office, 50=Industrial, 80=Vacant)
+    if property_types:
+        indicators = [ATTOM_PROPERTY_INDICATORS.get(pt, "20") for pt in property_types]
+        property_indicator = "|".join(set(indicators))
+    else:
+        property_indicator = "20|25|27|50|80"  # All commercial types
 
-    # Approximate radius in miles
-    lat_diff = bounds.max_lat - bounds.min_lat
-    lng_diff = bounds.max_lng - bounds.min_lng
-    approx_radius = max(lat_diff, lng_diff) * 69 / 2  # 1 degree ≈ 69 miles
+    # Cap radius at ATTOM's max of 20 miles
+    radius_miles = min(radius_miles, 20.0)
 
     properties = []
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            # ATTOM Property Search by Geographic Area
-            # Using the area endpoint with geoIdV4 parameter
+            # ATTOM Property Search using correct parameters
+            # Per docs: https://api.developer.attomdata.com/docs
             response = await client.get(
                 f"{ATTOM_BASE_URL}/property/snapshot",
                 headers=_get_headers(),
                 params={
-                    "minLatitude": bounds.min_lat,
-                    "maxLatitude": bounds.max_lat,
-                    "minLongitude": bounds.min_lng,
-                    "maxLongitude": bounds.max_lng,
-                    "propertytype": "COMMERCIAL",  # Filter to commercial properties
-                    "pagesize": limit,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "radius": radius_miles,
+                    "propertyindicator": property_indicator,
+                    "pagesize": min(limit, 100),  # ATTOM max is 100
                 },
             )
+
+            print(f"[ATTOM] API request: lat={latitude}, lng={longitude}, radius={radius_miles}, indicators={property_indicator}")
 
             if response.status_code == 200:
                 data = response.json()
                 property_list = data.get("property", [])
+                print(f"[ATTOM] Found {len(property_list)} properties in response")
 
                 for prop in property_list:
                     try:
@@ -409,9 +466,9 @@ async def search_properties_by_bounds(
     properties.sort(key=lambda p: p.opportunity_score or 0, reverse=True)
 
     return PropertySearchResult(
-        center_latitude=center_lat,
-        center_longitude=center_lng,
-        radius_miles=approx_radius,
+        center_latitude=latitude,
+        center_longitude=longitude,
+        radius_miles=radius_miles,
         properties=properties,
         total_found=len(properties),
         sources=["ATTOM"],
@@ -430,36 +487,16 @@ async def search_properties_by_radius(
     """
     Search for properties within a radius of a point.
 
-    Converts radius to bounds and calls search_properties_by_bounds.
+    Uses ATTOM's radius-based search API directly.
     """
-    # Convert radius to approximate bounds
-    # 1 degree latitude ≈ 69 miles
-    # 1 degree longitude ≈ 69 miles * cos(latitude)
-    import math
-
-    lat_delta = radius_miles / 69
-    lng_delta = radius_miles / (69 * math.cos(math.radians(latitude)))
-
-    bounds = GeoBounds(
-        min_lat=latitude - lat_delta,
-        max_lat=latitude + lat_delta,
-        min_lng=longitude - lng_delta,
-        max_lng=longitude + lng_delta,
-    )
-
-    result = await search_properties_by_bounds(
-        bounds=bounds,
+    return await _search_attom_api(
+        latitude=latitude,
+        longitude=longitude,
+        radius_miles=radius_miles,
         property_types=property_types,
         min_opportunity_score=min_opportunity_score,
         limit=limit,
     )
-
-    # Update with actual center and radius
-    result.center_latitude = latitude
-    result.center_longitude = longitude
-    result.radius_miles = radius_miles
-
-    return result
 
 
 async def get_property_details(attom_id: str) -> Optional[PropertyListing]:
