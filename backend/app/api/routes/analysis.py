@@ -616,3 +616,143 @@ Search Results:
             return response_data
     except Exception as e:
         return {"error": f"Exception: {str(e)}", "type": str(type(e).__name__)}
+
+
+# ============================================
+# ATTOM-Powered Property Search (New)
+# ============================================
+
+from app.services.attom import (
+    search_properties_by_radius as attom_search_radius,
+    search_properties_by_bounds as attom_search_bounds,
+    check_attom_api_key,
+    PropertySearchResult as ATTOMPropertySearchResult,
+    GeoBounds as ATTOMGeoBounds,
+    PropertyType as ATTOMPropertyType,
+)
+
+
+class ATTOMSearchRequest(BaseModel):
+    """Request model for ATTOM property search."""
+    latitude: float
+    longitude: float
+    radius_miles: float = 5.0
+    property_types: Optional[list[str]] = None  # retail, land, office, industrial, mixed_use
+    min_opportunity_score: float = 0  # Filter by minimum opportunity score (0-100)
+    limit: int = 50
+
+
+class ATTOMBoundsSearchRequest(BaseModel):
+    """Request model for ATTOM property search by map bounds."""
+    min_lat: float
+    max_lat: float
+    min_lng: float
+    max_lng: float
+    property_types: Optional[list[str]] = None
+    min_opportunity_score: float = 0
+    limit: int = 50
+
+
+@router.post("/properties/search/", response_model=ATTOMPropertySearchResult)
+async def search_attom_properties(request: ATTOMSearchRequest):
+    """
+    Search for commercial properties using ATTOM Property API.
+
+    Returns properties with opportunity signals (likelihood to sell indicators).
+    Unlike active listings, these are properties that show signs of potential sale:
+    - Tax delinquency
+    - Long-term ownership (estate planning)
+    - Foreclosure/pre-foreclosure status
+    - Undervalued assessments
+
+    Parameters:
+    - **latitude**: Center point latitude
+    - **longitude**: Center point longitude
+    - **radius_miles**: Search radius in miles (default: 5.0)
+    - **property_types**: Filter by type (retail, land, office, industrial, mixed_use)
+    - **min_opportunity_score**: Filter by minimum score 0-100 (default: 0)
+    - **limit**: Maximum properties to return (default: 50)
+    """
+    if not settings.ATTOM_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="ATTOM API key not configured. Please set ATTOM_API_KEY environment variable."
+        )
+
+    # Convert string property types to enum
+    prop_types = None
+    if request.property_types:
+        prop_types = []
+        for pt in request.property_types:
+            try:
+                prop_types.append(ATTOMPropertyType(pt.lower()))
+            except ValueError:
+                pass  # Ignore invalid property types
+
+    try:
+        result = await attom_search_radius(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            radius_miles=request.radius_miles,
+            property_types=prop_types,
+            min_opportunity_score=request.min_opportunity_score,
+            limit=request.limit,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching properties: {str(e)}")
+
+
+@router.post("/properties/search-bounds/", response_model=ATTOMPropertySearchResult)
+async def search_attom_properties_by_bounds(request: ATTOMBoundsSearchRequest):
+    """
+    Search for commercial properties within map viewport bounds.
+
+    Same as /properties/search/ but uses bounding box instead of radius.
+    Ideal for map-based searches where you want to show properties in the current view.
+    """
+    if not settings.ATTOM_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="ATTOM API key not configured. Please set ATTOM_API_KEY environment variable."
+        )
+
+    bounds = ATTOMGeoBounds(
+        min_lat=request.min_lat,
+        max_lat=request.max_lat,
+        min_lng=request.min_lng,
+        max_lng=request.max_lng,
+    )
+
+    # Convert string property types to enum
+    prop_types = None
+    if request.property_types:
+        prop_types = []
+        for pt in request.property_types:
+            try:
+                prop_types.append(ATTOMPropertyType(pt.lower()))
+            except ValueError:
+                pass
+
+    try:
+        result = await attom_search_bounds(
+            bounds=bounds,
+            property_types=prop_types,
+            min_opportunity_score=request.min_opportunity_score,
+            limit=request.limit,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching properties: {str(e)}")
+
+
+@router.get("/check-attom-key/")
+async def check_attom_api_key_endpoint():
+    """
+    Check if the ATTOM API key is configured and valid.
+    """
+    return await check_attom_api_key()

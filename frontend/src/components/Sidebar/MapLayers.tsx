@@ -57,7 +57,7 @@ export const MAP_LAYERS = {
     name: 'Properties For Sale',
     icon: DollarSign,
     color: '#22C55E',
-    description: 'Commercial listings (AI-powered)',
+    description: 'Opportunities & listings (ATTOM)',
   },
 } as const;
 

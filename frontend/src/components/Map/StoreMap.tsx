@@ -9,8 +9,10 @@ import {
   BRAND_LOGOS,
   POI_CATEGORY_COLORS,
   POI_CATEGORY_LABELS,
+  PROPERTY_TYPE_COLORS,
   type BrandKey,
   type POICategory,
+  type PropertyListing,
 } from '../../types/store';
 import type { Store, ParcelInfo } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
@@ -20,6 +22,8 @@ import { ZoningLegend, ZONING_COLORS, getZoningCategory } from './ZoningLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 import { DraggableParcelInfo } from './DraggableParcelInfo';
 import { PropertySearchPanel } from './PropertySearchPanel';
+import { PropertyInfoCard } from './PropertyInfoCard';
+import { PropertyLegend } from './PropertyLegend';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -188,6 +192,12 @@ export function StoreMap() {
     east: number;
     west: number;
   } | null>(null);
+
+  // Property search state (ATTOM-powered)
+  const [properties, setProperties] = useState<PropertyListing[]>([]);
+  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+  const [propertyError, setPropertyError] = useState<string | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<PropertyListing | null>(null);
 
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -570,6 +580,44 @@ export function StoreMap() {
     }
   }, [visibleLayersArray]);
 
+  // Manage property search when layer is toggled
+  useEffect(() => {
+    const showProperties = visibleLayersArray.includes('properties_for_sale');
+
+    if (showProperties && mapBounds) {
+      // Trigger property search when layer is enabled and we have bounds
+      const searchProperties = async () => {
+        setIsLoadingProperties(true);
+        setPropertyError(null);
+
+        try {
+          const result = await analysisApi.searchPropertiesByBounds({
+            min_lat: mapBounds.south,
+            max_lat: mapBounds.north,
+            min_lng: mapBounds.west,
+            max_lng: mapBounds.east,
+            limit: 50,
+          });
+
+          setProperties(result.properties || []);
+        } catch (error: any) {
+          console.error('[PropertySearch] Error:', error);
+          setPropertyError(error.response?.data?.detail || 'Failed to search properties');
+          setProperties([]);
+        } finally {
+          setIsLoadingProperties(false);
+        }
+      };
+
+      searchProperties();
+    } else if (!showProperties) {
+      // Clear properties when layer is disabled
+      setProperties([]);
+      setSelectedProperty(null);
+      setPropertyError(null);
+    }
+  }, [visibleLayersArray.includes('properties_for_sale'), mapBounds]);
+
   // Manage heat map layer (separate effect since it depends on visibleStores)
   useEffect(() => {
     const map = mapRef.current;
@@ -636,6 +684,41 @@ export function StoreMap() {
     };
   };
 
+  // Create property marker icon (opportunity vs active listing)
+  const createPropertyMarkerIcon = (property: PropertyListing, isSelected: boolean): google.maps.Symbol => {
+    const isOpportunity = property.listing_type === 'opportunity';
+    const typeColor = PROPERTY_TYPE_COLORS[property.property_type] || '#22C55E';
+    const scale = isSelected ? 10 : 7;
+
+    // Opportunity markers use a different shape (diamond) vs active listings (circle)
+    if (isOpportunity) {
+      return {
+        path: 'M 0,-1 L 1,0 L 0,1 L -1,0 Z', // Diamond shape
+        fillColor: '#8B5CF6', // Purple for opportunities
+        fillOpacity: 0.9,
+        strokeColor: isSelected ? '#ffffff' : '#6D28D9',
+        strokeWeight: isSelected ? 3 : 2,
+        scale: scale * 1.2,
+      };
+    }
+
+    return {
+      path: google.maps.SymbolPath.CIRCLE,
+      fillColor: typeColor,
+      fillOpacity: 0.9,
+      strokeColor: isSelected ? '#ffffff' : typeColor,
+      strokeWeight: isSelected ? 3 : 2,
+      scale: scale,
+    };
+  };
+
+  // Handle property marker click
+  const handlePropertyMarkerClick = useCallback((property: PropertyListing) => {
+    setSelectedProperty(property);
+    setSelectedStore(null);
+    setSelectedPOI(null);
+  }, [setSelectedStore]);
+
   if (loadError) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-100">
@@ -676,17 +759,27 @@ export function StoreMap() {
       {/* Zoning Colors Legend */}
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
 
-      {/* Property Search Panel - shows external links when layer is enabled */}
-      {visibleLayersArray.includes('properties_for_sale') && mapBounds && (
-        <PropertySearchPanel
-          latitude={(mapBounds.north + mapBounds.south) / 2}
-          longitude={(mapBounds.east + mapBounds.west) / 2}
-          onClose={() => {
-            // Toggle off the layer when panel is closed
-            const { toggleLayer } = useMapStore.getState();
-            toggleLayer('properties_for_sale');
-          }}
-        />
+      {/* Property Legend - shows when property layer is enabled */}
+      <PropertyLegend
+        isVisible={visibleLayersArray.includes('properties_for_sale')}
+        propertyCount={properties.length}
+        isLoading={isLoadingProperties}
+        error={propertyError}
+      />
+
+      {/* Property loading indicator */}
+      {isLoadingProperties && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+          Searching properties...
+        </div>
+      )}
+
+      {/* Property error display */}
+      {propertyError && visibleLayersArray.includes('properties_for_sale') && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-red-600 text-white px-4 py-2 rounded-lg shadow-md text-sm">
+          {propertyError}
+        </div>
       )}
 
       {/* Hover indicator for parcel layer */}
@@ -818,6 +911,18 @@ export function StoreMap() {
           />
         )}
 
+        {/* Property markers (ATTOM opportunities) */}
+        {properties.map((property) => (
+          <MarkerF
+            key={property.id}
+            position={{ lat: property.latitude, lng: property.longitude }}
+            icon={createPropertyMarkerIcon(property, selectedProperty?.id === property.id)}
+            onClick={() => handlePropertyMarkerClick(property)}
+            zIndex={selectedProperty?.id === property.id ? 1500 : 200}
+            title={`${property.address} - ${property.price_display || 'Price N/A'}`}
+          />
+        ))}
+
         {/* POI markers */}
         {visiblePOIs.map((poi) => (
           <MarkerF
@@ -928,6 +1033,16 @@ export function StoreMap() {
             setParcelClickPosition(null);
           }}
         />
+      )}
+
+      {/* Property Info Card (for property marker clicks) */}
+      {selectedProperty && (
+        <div className="absolute top-20 right-4 z-50">
+          <PropertyInfoCard
+            property={selectedProperty}
+            onClose={() => setSelectedProperty(null)}
+          />
+        </div>
       )}
     </div>
   );

@@ -128,7 +128,7 @@ export const analysisApi = {
     return data;
   },
 
-  // Search for commercial properties for sale
+  // Search for commercial properties for sale (legacy - uses Tavily/AI)
   searchProperties: async (request: PropertySearchRequest): Promise<PropertySearchResult> => {
     const { data } = await api.post('/analysis/property-search/', request);
     return data;
@@ -143,6 +143,47 @@ export const analysisApi = {
     all_required_configured: boolean;
   }> => {
     const { data } = await api.get('/analysis/check-property-search-keys/');
+    return data;
+  },
+
+  // ============================================
+  // ATTOM-Powered Property Search (New)
+  // ============================================
+
+  // Search for properties by radius using ATTOM
+  searchPropertiesATTOM: async (request: {
+    latitude: number;
+    longitude: number;
+    radius_miles?: number;
+    property_types?: string[];
+    min_opportunity_score?: number;
+    limit?: number;
+  }): Promise<PropertySearchResult> => {
+    const { data } = await api.post('/analysis/properties/search/', request);
+    return data;
+  },
+
+  // Search for properties by map bounds using ATTOM
+  searchPropertiesByBounds: async (request: {
+    min_lat: number;
+    max_lat: number;
+    min_lng: number;
+    max_lng: number;
+    property_types?: string[];
+    min_opportunity_score?: number;
+    limit?: number;
+  }): Promise<PropertySearchResult> => {
+    const { data } = await api.post('/analysis/properties/search-bounds/', request);
+    return data;
+  },
+
+  // Check if ATTOM API key is configured
+  checkATTOMKey: async (): Promise<{
+    configured: boolean;
+    valid: boolean;
+    message: string;
+  }> => {
+    const { data } = await api.get('/analysis/check-attom-key/');
     return data;
   },
 };

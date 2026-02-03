@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     ARCGIS_API_KEY: Optional[str] = None
     REPORTALL_API_KEY: Optional[str] = None
     TAVILY_API_KEY: Optional[str] = None
+    ATTOM_API_KEY: Optional[str] = None
     CREXI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
 

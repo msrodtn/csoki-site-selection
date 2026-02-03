@@ -198,25 +198,63 @@ export interface ParcelRequest {
   longitude: number;
 }
 
-// Property Search Types (AI-powered CRE listings)
-export type PropertyType = 'retail' | 'land' | 'office' | 'industrial' | 'mixed_use';
+// Property Search Types (ATTOM-powered property intelligence)
+export type PropertyType = 'retail' | 'land' | 'office' | 'industrial' | 'mixed_use' | 'unknown';
+
+export type PropertySource = 'attom' | 'reportall' | 'quantumlisting' | 'team_contributed';
+
+export interface OpportunitySignal {
+  signal_type: string;  // e.g., "tax_delinquent", "owner_age", "vacancy", "distress"
+  description: string;
+  strength: 'high' | 'medium' | 'low';
+}
 
 export interface PropertyListing {
   id: string;
   address: string;
   city: string;
   state: string;
-  price: string | null;
-  price_numeric: number | null;
-  sqft: string | null;
-  sqft_numeric: number | null;
+  zip_code: string | null;
+  latitude: number;
+  longitude: number;
+
+  // Listing details
   property_type: PropertyType;
-  source: string;  // crexi, loopnet, zillow, etc.
-  url: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  description: string | null;
-  listing_date: string | null;
+  price: number | null;
+  price_display: string | null;  // Formatted price string (e.g., "$1.2M")
+  sqft: number | null;
+  lot_size_acres: number | null;
+  year_built: number | null;
+
+  // Ownership
+  owner_name: string | null;
+  owner_type: string | null;  // "individual", "corporate", "trust", etc.
+
+  // Valuation
+  assessed_value: number | null;
+  market_value: number | null;
+
+  // Transaction history
+  last_sale_date: string | null;
+  last_sale_price: number | null;
+
+  // Source and status
+  source: PropertySource;
+  listing_type: 'active_listing' | 'opportunity';  // opportunity = likely to sell soon
+
+  // Opportunity signals (for predictive properties)
+  opportunity_signals: OpportunitySignal[];
+  opportunity_score: number | null;  // 0-100 score
+
+  // External links
+  external_url: string | null;
+
+  // Legacy fields for backwards compatibility
+  price_numeric?: number | null;
+  sqft_numeric?: number | null;
+  url?: string | null;
+  description?: string | null;
+  listing_date?: string | null;
 }
 
 // External search link for link-out strategy
@@ -238,11 +276,15 @@ export interface PropertySearchResult {
   center_latitude: number;
   center_longitude: number;
   radius_miles: number;
-  search_query: string;
-  listings: PropertyListing[];
-  sources_searched: string[];
+  properties: PropertyListing[];
   total_found: number;
-  external_links?: PropertySearchLinks;  // New: links to external CRE platforms
+  sources: string[];
+  search_timestamp: string;
+  // Legacy fields for backwards compatibility
+  search_query?: string;
+  listings?: PropertyListing[];
+  sources_searched?: string[];
+  external_links?: PropertySearchLinks;
 }
 
 export interface MapBounds {
