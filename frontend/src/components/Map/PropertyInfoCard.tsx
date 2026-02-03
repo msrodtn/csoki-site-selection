@@ -9,16 +9,17 @@
  * - Contextual data (nearby competitors, demographics)
  */
 
-import { useState } from 'react';
-import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2, Search } from 'lucide-react';
+import { useState, useCallback, useRef } from 'react';
+import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2, GripHorizontal } from 'lucide-react';
 import type { PropertyListing, ParcelInfo } from '../../types/store';
 import { analysisApi } from '../../services/api';
 import { PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS } from '../../types/store';
-import { generateListingLinks } from '../../utils/listingLinks';
 
 interface PropertyInfoCardProps {
   property: PropertyListing;
   onClose: () => void;
+  initialPosition?: { x: number; y: number };
+  onPositionChange?: (position: { x: number; y: number }) => void;
 }
 
 const SIGNAL_STRENGTH_COLORS = {
@@ -34,13 +35,55 @@ const SOURCE_LABELS: Record<string, string> = {
   team_contributed: 'Team Contributed',
 };
 
-export function PropertyInfoCard({ property, onClose }: PropertyInfoCardProps) {
+export function PropertyInfoCard({ property, onClose, initialPosition, onPositionChange }: PropertyInfoCardProps) {
   const [parcelInfo, setParcelInfo] = useState<ParcelInfo | null>(null);
   const [isLoadingParcel, setIsLoadingParcel] = useState(false);
   const [parcelError, setParcelError] = useState<string | null>(null);
   const [showParcelDetails, setShowParcelDetails] = useState(false);
 
+  // Draggable state
+  const [position, setPosition] = useState(initialPosition || { x: window.innerWidth - 420, y: 80 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const isOpportunity = property.listing_type === 'opportunity';
+
+  // Drag handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (panelRef.current) {
+      const rect = panelRef.current.getBoundingClientRect();
+      dragOffset.current = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+      setIsDragging(true);
+      e.preventDefault();
+    }
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isDragging && panelRef.current) {
+      const newX = e.clientX - dragOffset.current.x;
+      const newY = e.clientY - dragOffset.current.y;
+
+      // Keep panel within viewport bounds
+      const maxX = window.innerWidth - (panelRef.current.offsetWidth || 384);
+      const maxY = window.innerHeight - 100; // Leave some room at bottom
+
+      const boundedPosition = {
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY)),
+      };
+
+      setPosition(boundedPosition);
+      onPositionChange?.(boundedPosition);
+    }
+  }, [isDragging, onPositionChange]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
 
   // Fetch parcel details from ReportAll
   const handleGetParcelDetails = async () => {
@@ -94,13 +137,27 @@ export function PropertyInfoCard({ property, onClose }: PropertyInfoCardProps) {
   const propertyTypeColor = PROPERTY_TYPE_COLORS[property.property_type] || '#6B7280';
 
   return (
-    <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-96 max-h-[80vh] overflow-hidden flex flex-col">
-      {/* Header */}
+    <div
+      ref={panelRef}
+      className="bg-white rounded-lg shadow-xl border border-gray-200 w-96 max-h-[80vh] overflow-hidden flex flex-col"
+      style={{
+        position: 'absolute',
+        left: position.x,
+        top: position.y,
+        zIndex: 1000,
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      {/* Header - Draggable */}
       <div
-        className="px-4 py-3 border-b flex items-center justify-between"
+        className="px-4 py-3 border-b flex items-center justify-between cursor-move select-none"
         style={{ backgroundColor: `${propertyTypeColor}10` }}
+        onMouseDown={handleMouseDown}
       >
         <div className="flex items-center gap-2">
+          <GripHorizontal className="w-4 h-4 text-gray-400 flex-shrink-0" />
           {isOpportunity ? (
             <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
               <TrendingUp className="w-4 h-4 text-purple-600" />
@@ -124,6 +181,7 @@ export function PropertyInfoCard({ property, onClose }: PropertyInfoCardProps) {
         </div>
         <button
           onClick={onClose}
+          onMouseDown={(e) => e.stopPropagation()} // Prevent drag when clicking close
           className="p-1 hover:bg-gray-200 rounded transition-colors"
         >
           <X className="w-5 h-5 text-gray-500" />
@@ -278,31 +336,6 @@ export function PropertyInfoCard({ property, onClose }: PropertyInfoCardProps) {
         {/* Source */}
         <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500">
           Source: {SOURCE_LABELS[property.source] || property.source}
-        </div>
-
-        {/* Search Active Listings - External Links */}
-        <div className="px-4 py-3 border-t">
-          <div className="flex items-center gap-2 mb-2">
-            <Search className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-semibold text-gray-700">Search Active Listings</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {generateListingLinks(property.city, property.state, property.latitude, property.longitude)
-              .slice(0, 4) // Limit to 4 links
-              .map((link) => (
-                <a
-                  key={link.name}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors hover:opacity-80"
-                  style={{ backgroundColor: `${link.color}15`, color: link.color }}
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  {link.name}
-                </a>
-              ))}
-          </div>
         </div>
       </div>
 

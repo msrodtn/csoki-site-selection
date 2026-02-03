@@ -277,7 +277,7 @@ export const listingsApi = {
     return data;
   },
 
-  // Search cached listings
+  // Search cached listings by city/state
   search: async (params: {
     city: string;
     state: string;
@@ -288,6 +288,20 @@ export const listingsApi = {
     limit?: number;
   }): Promise<ScrapedListingsResponse> => {
     const { data } = await api.get('/listings/search', { params });
+    return data;
+  },
+
+  // Search cached listings by map bounds
+  searchByBounds: async (params: {
+    min_lat: number;
+    max_lat: number;
+    min_lng: number;
+    max_lng: number;
+    source?: string;
+    property_type?: string;
+    limit?: number;
+  }): Promise<ScrapedListingsResponse> => {
+    const { data } = await api.post('/listings/search-bounds', params);
     return data;
   },
 

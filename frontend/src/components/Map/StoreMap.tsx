@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, PolygonF } from '@react-google-maps/api';
 import { useMapStore } from '../../store/useMapStore';
 import { useStores } from '../../hooks/useStores';
-import { analysisApi, teamPropertiesApi } from '../../services/api';
+import { analysisApi, teamPropertiesApi, listingsApi } from '../../services/api';
 import {
   BRAND_COLORS,
   BRAND_LABELS,
@@ -17,7 +17,7 @@ import {
   type PropertyListing,
   type TeamProperty,
 } from '../../types/store';
-import type { Store, ParcelInfo } from '../../types/store';
+import type { Store, ParcelInfo, ScrapedListing } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
@@ -211,6 +211,11 @@ export function StoreMap() {
   // Team property form state
   const [showTeamPropertyForm, setShowTeamPropertyForm] = useState(false);
   const [teamPropertyFormCoords, setTeamPropertyFormCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Scraped listings state (Active Listings from Crexi/LoopNet)
+  const [scrapedListings, setScrapedListings] = useState<ScrapedListing[]>([]);
+  const [isLoadingScrapedListings, setIsLoadingScrapedListings] = useState(false);
+  const [selectedScrapedListing, setSelectedScrapedListing] = useState<ScrapedListing | null>(null);
 
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -664,6 +669,40 @@ export function StoreMap() {
     }
   }, [visibleLayersArray.includes('properties_for_sale'), mapBounds]);
 
+  // Manage scraped listings (Active Listings from Crexi/LoopNet) when toggle is enabled
+  useEffect(() => {
+    const showScraped = visiblePropertySources.has('scraped');
+
+    if (showScraped && mapBounds) {
+      const fetchScrapedListings = async () => {
+        setIsLoadingScrapedListings(true);
+
+        try {
+          const result = await listingsApi.searchByBounds({
+            min_lat: mapBounds.south,
+            max_lat: mapBounds.north,
+            min_lng: mapBounds.west,
+            max_lng: mapBounds.east,
+            limit: 100,
+          });
+
+          setScrapedListings(result.listings || []);
+        } catch (error: any) {
+          console.error('[ScrapedListings] Error fetching:', error);
+          setScrapedListings([]);
+        } finally {
+          setIsLoadingScrapedListings(false);
+        }
+      };
+
+      fetchScrapedListings();
+    } else if (!showScraped) {
+      // Clear scraped listings when toggle is disabled
+      setScrapedListings([]);
+      setSelectedScrapedListing(null);
+    }
+  }, [visiblePropertySources, mapBounds]);
+
   // Manage heat map layer (separate effect since it depends on visibleStores)
   useEffect(() => {
     const map = mapRef.current;
@@ -764,6 +803,7 @@ export function StoreMap() {
     setSelectedTeamProperty(null);
     setSelectedStore(null);
     setSelectedPOI(null);
+    setSelectedScrapedListing(null);
   }, [setSelectedStore]);
 
   // Create team property marker icon (orange pin style)
@@ -784,6 +824,33 @@ export function StoreMap() {
   const handleTeamPropertyMarkerClick = useCallback((property: TeamProperty) => {
     setSelectedTeamProperty(property);
     setSelectedProperty(null);
+    setSelectedStore(null);
+    setSelectedPOI(null);
+    setSelectedScrapedListing(null);
+  }, [setSelectedStore]);
+
+  // Create scraped listing marker icon (blue circle with $ sign)
+  const createScrapedListingMarkerIcon = (isSelected: boolean): google.maps.Icon => {
+    const size = isSelected ? 36 : 28;
+    const color = isSelected ? '#1D4ED8' : '#3B82F6';
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}">
+        <circle cx="12" cy="12" r="10" fill="${color}" stroke="white" stroke-width="2"/>
+        <text x="12" y="16" text-anchor="middle" fill="white" font-size="12" font-weight="bold">$</text>
+      </svg>
+    `;
+    return {
+      url: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+      scaledSize: new google.maps.Size(size, size),
+      anchor: new google.maps.Point(size / 2, size / 2),
+    };
+  };
+
+  // Handle scraped listing marker click
+  const handleScrapedListingMarkerClick = useCallback((listing: ScrapedListing) => {
+    setSelectedScrapedListing(listing);
+    setSelectedProperty(null);
+    setSelectedTeamProperty(null);
     setSelectedStore(null);
     setSelectedPOI(null);
   }, [setSelectedStore]);
@@ -1020,6 +1087,23 @@ export function StoreMap() {
           />
         ))}
 
+        {/* Highlight circle around selected property marker */}
+        {selectedProperty && (
+          <CircleF
+            center={{ lat: selectedProperty.latitude, lng: selectedProperty.longitude }}
+            radius={50} // meters
+            options={{
+              fillColor: '#8B5CF6',
+              fillOpacity: 0.15,
+              strokeColor: '#8B5CF6',
+              strokeWeight: 3,
+              strokeOpacity: 0.8,
+              zIndex: 1400,
+              clickable: false,
+            }}
+          />
+        )}
+
         {/* Team property markers (user-contributed) - only show if 'team' source is visible */}
         {visiblePropertySources.has('team') && teamProperties.map((property) => (
           <MarkerF
@@ -1031,6 +1115,20 @@ export function StoreMap() {
             title={`${property.address} - Team Flagged`}
           />
         ))}
+
+        {/* Scraped listing markers (Active Listings from Crexi/LoopNet) - only show if 'scraped' source is visible */}
+        {visiblePropertySources.has('scraped') && scrapedListings
+          .filter((listing) => listing.latitude != null && listing.longitude != null)
+          .map((listing) => (
+            <MarkerF
+              key={`scraped-${listing.id}`}
+              position={{ lat: listing.latitude!, lng: listing.longitude! }}
+              icon={createScrapedListingMarkerIcon(selectedScrapedListing?.id === listing.id)}
+              onClick={() => handleScrapedListingMarkerClick(listing)}
+              zIndex={selectedScrapedListing?.id === listing.id ? 1700 : 300}
+              title={`${listing.title || listing.address} - ${listing.price_display || 'Price N/A'}`}
+            />
+          ))}
 
         {/* POI markers */}
         {visiblePOIs.map((poi) => (
@@ -1187,6 +1285,63 @@ export function StoreMap() {
           </InfoWindowF>
         )}
 
+        {/* Info window for selected scraped listing (Active Listings) */}
+        {selectedScrapedListing && selectedScrapedListing.latitude && selectedScrapedListing.longitude && (
+          <InfoWindowF
+            position={{ lat: selectedScrapedListing.latitude, lng: selectedScrapedListing.longitude }}
+            onCloseClick={() => setSelectedScrapedListing(null)}
+            options={{ disableAutoPan: true }}
+          >
+            <div className="min-w-[220px] p-1">
+              <div className="text-xs font-semibold px-2 py-1 rounded mb-2 text-white flex items-center gap-1 bg-blue-600">
+                <span>Active Listing</span>
+                <span className="opacity-75 capitalize">• {selectedScrapedListing.source}</span>
+              </div>
+              <div className="text-sm">
+                {selectedScrapedListing.title && (
+                  <p className="font-medium text-gray-900 mb-1">{selectedScrapedListing.title}</p>
+                )}
+                <p className="text-gray-700">{selectedScrapedListing.address || 'Address N/A'}</p>
+                <p className="text-gray-600">
+                  {selectedScrapedListing.city}, {selectedScrapedListing.state} {selectedScrapedListing.postal_code || ''}
+                </p>
+                {selectedScrapedListing.price_display && (
+                  <p className="text-green-700 font-bold mt-1 text-base">
+                    {selectedScrapedListing.price_display}
+                  </p>
+                )}
+                <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                  {selectedScrapedListing.sqft && (
+                    <span>{selectedScrapedListing.sqft.toLocaleString()} SF</span>
+                  )}
+                  {selectedScrapedListing.lot_size_acres && (
+                    <span>{selectedScrapedListing.lot_size_acres.toFixed(2)} acres</span>
+                  )}
+                  {selectedScrapedListing.property_type && (
+                    <span className="capitalize">{selectedScrapedListing.property_type}</span>
+                  )}
+                </div>
+                {selectedScrapedListing.broker_name && (
+                  <p className="text-gray-400 text-xs mt-2 border-t pt-2">
+                    {selectedScrapedListing.broker_name}
+                    {selectedScrapedListing.broker_company && ` • ${selectedScrapedListing.broker_company}`}
+                  </p>
+                )}
+              </div>
+              {selectedScrapedListing.listing_url && (
+                <a
+                  href={selectedScrapedListing.listing_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 block w-full text-center bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+                >
+                  View on {selectedScrapedListing.source === 'crexi' ? 'Crexi' : 'LoopNet'}
+                </a>
+              )}
+            </div>
+          </InfoWindowF>
+        )}
+
       </GoogleMap>
 
       {/* Draggable Parcel Info Panel (for map click queries) */}
@@ -1203,14 +1358,12 @@ export function StoreMap() {
         />
       )}
 
-      {/* Property Info Card (for property marker clicks) */}
+      {/* Property Info Card (for property marker clicks) - Now self-positioning and draggable */}
       {selectedProperty && (
-        <div className="absolute top-20 right-4 z-50">
-          <PropertyInfoCard
-            property={selectedProperty}
-            onClose={() => setSelectedProperty(null)}
-          />
-        </div>
+        <PropertyInfoCard
+          property={selectedProperty}
+          onClose={() => setSelectedProperty(null)}
+        />
       )}
 
       {/* Flag Property FAB - visible when properties layer is enabled */}
@@ -1236,6 +1389,14 @@ export function StoreMap() {
         <div className="absolute bottom-20 right-6 z-40 bg-orange-100 text-orange-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
           <div className="animate-spin w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full" />
           Loading team properties...
+        </div>
+      )}
+
+      {/* Scraped Listings loading indicator */}
+      {isLoadingScrapedListings && visiblePropertySources.has('scraped') && (
+        <div className="absolute bottom-32 right-6 z-40 bg-blue-100 text-blue-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full" />
+          Loading active listings...
         </div>
       )}
 

@@ -354,6 +354,91 @@ async def search_listings(
     )
 
 
+class BoundsSearchRequest(BaseModel):
+    """Request for bounds-based listing search."""
+    min_lat: float
+    max_lat: float
+    min_lng: float
+    max_lng: float
+    source: Optional[str] = None
+    property_type: Optional[str] = None
+    limit: int = Field(default=100, le=500)
+
+
+@router.post("/search-bounds", response_model=ListingsSearchResponse)
+async def search_listings_by_bounds(
+    request: BoundsSearchRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Search cached listings within geographic bounds.
+
+    Returns listings that have lat/lng coordinates within the specified bounding box.
+    This is useful for showing listings within the current map viewport.
+    """
+    query = db.query(ScrapedListing).filter(
+        ScrapedListing.latitude.isnot(None),
+        ScrapedListing.longitude.isnot(None),
+        ScrapedListing.latitude >= request.min_lat,
+        ScrapedListing.latitude <= request.max_lat,
+        ScrapedListing.longitude >= request.min_lng,
+        ScrapedListing.longitude <= request.max_lng,
+        ScrapedListing.is_active == True
+    )
+
+    if request.source:
+        query = query.filter(ScrapedListing.source == request.source)
+
+    if request.property_type:
+        query = query.filter(ScrapedListing.property_type == request.property_type)
+
+    # Get total before limit
+    total = query.count()
+
+    # Apply limit and order by newest
+    listings = query.order_by(ScrapedListing.scraped_at.desc()).limit(request.limit).all()
+
+    # Determine cache age
+    cache_age = None
+    cached = False
+    if listings:
+        oldest = min(l.scraped_at for l in listings)
+        cache_age = int((datetime.utcnow() - oldest).total_seconds() / 60)
+        cached = True
+
+    # Get unique sources
+    sources = list(set(l.source for l in listings))
+
+    return ListingsSearchResponse(
+        total=total,
+        listings=[ListingResponse(
+            id=l.id,
+            source=l.source,
+            external_id=l.external_id,
+            listing_url=l.listing_url,
+            address=l.address,
+            city=l.city,
+            state=l.state,
+            postal_code=l.postal_code,
+            latitude=l.latitude,
+            longitude=l.longitude,
+            property_type=l.property_type,
+            price=l.price,
+            price_display=l.price_display,
+            sqft=l.sqft,
+            lot_size_acres=l.lot_size_acres,
+            title=l.title,
+            broker_name=l.broker_name,
+            broker_company=l.broker_company,
+            images=l.images,
+            scraped_at=l.scraped_at
+        ) for l in listings],
+        sources=sources,
+        cached=cached,
+        cache_age_minutes=cache_age
+    )
+
+
 @router.get("/sources")
 async def get_configured_sources():
     """Check which scraping sources are configured."""

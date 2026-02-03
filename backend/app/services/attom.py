@@ -204,8 +204,19 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
     signals = []
     score = 0.0
 
+    # Debug: Log available data fields to understand what ATTOM returns
+    summary = property_data.get("summary", {})
+    assessment = property_data.get("assessment", {})
+    sale = property_data.get("sale", {})
+    lot = property_data.get("lot", {})
+    avm = property_data.get("avm", {})
+
+    print(f"[ATTOM Signal Debug] Available data: summary={bool(summary)}, assessment={bool(assessment)}, sale={bool(sale)}, lot={bool(lot)}, avm={bool(avm)}")
+
+    # ========== HIGH-VALUE SIGNALS ==========
+
     # Check for tax delinquency
-    tax_delinquent = property_data.get("assessment", {}).get("taxDelinquent")
+    tax_delinquent = assessment.get("taxDelinquent")
     if tax_delinquent:
         signals.append(OpportunitySignal(
             signal_type="tax_delinquent",
@@ -215,7 +226,7 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
         score += 25
 
     # Check for foreclosure/pre-foreclosure status
-    foreclosure_status = property_data.get("sale", {}).get("foreclosureStatus")
+    foreclosure_status = sale.get("foreclosureStatus")
     if foreclosure_status:
         signals.append(OpportunitySignal(
             signal_type="distress",
@@ -224,8 +235,10 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
         ))
         score += 30
 
+    # ========== MEDIUM-VALUE SIGNALS ==========
+
     # Check ownership duration (long-term owners more likely to sell)
-    last_sale = property_data.get("sale", {}).get("saleTransDate")
+    last_sale = sale.get("saleTransDate")
     if last_sale:
         try:
             sale_date = datetime.strptime(last_sale[:10], "%Y-%m-%d")
@@ -237,11 +250,18 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
                     strength="medium"
                 ))
                 score += 15
+            elif years_owned > 10:
+                signals.append(OpportunitySignal(
+                    signal_type="established_owner",
+                    description=f"Owned for {int(years_owned)} years",
+                    strength="low"
+                ))
+                score += 5
         except (ValueError, TypeError):
             pass
 
     # Check for corporate vs individual ownership (estates, trusts = opportunity)
-    owner_type = property_data.get("assessment", {}).get("ownerType", "").lower()
+    owner_type = assessment.get("ownerType", "").lower()
     if "trust" in owner_type or "estate" in owner_type:
         signals.append(OpportunitySignal(
             signal_type="estate_ownership",
@@ -250,21 +270,86 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
         ))
         score += 20
 
-    # Check assessed vs market value gap (undervalued = opportunity)
-    assessed = property_data.get("assessment", {}).get("assessedValue")
-    market = property_data.get("avm", {}).get("amount", {}).get("value")
-    if assessed and market and market > 0:
-        ratio = assessed / market
-        if ratio < 0.7:  # Assessed at less than 70% of market
+    # Check assessed vs market value gap
+    assessed_value = assessment.get("assessed", {}).get("assdTtlValue") or assessment.get("assessedValue")
+    market_value = avm.get("amount", {}).get("value")
+
+    if assessed_value and market_value and market_value > 0:
+        ratio = assessed_value / market_value
+        if ratio < 0.7:  # Assessed at less than 70% of market (undervalued)
             signals.append(OpportunitySignal(
                 signal_type="undervalued",
                 description=f"Assessed {int(ratio*100)}% below market value",
                 strength="medium"
             ))
             score += 10
+        elif ratio > 1.2:  # Assessed significantly above market (overassessed = motivated seller)
+            signals.append(OpportunitySignal(
+                signal_type="overassessed",
+                description="Assessed value exceeds market estimate",
+                strength="low"
+            ))
+            score += 5
+
+    # Large lot opportunity (more development potential)
+    lot_sqft = lot.get("lotSize1") or lot.get("lotsize1")
+    if lot_sqft:
+        lot_acres = float(lot_sqft) / 43560
+        if lot_acres >= 2.0:
+            signals.append(OpportunitySignal(
+                signal_type="large_lot",
+                description=f"Large lot: {lot_acres:.2f} acres",
+                strength="medium"
+            ))
+            score += 10
+        elif lot_acres >= 1.0:
+            signals.append(OpportunitySignal(
+                signal_type="sizeable_lot",
+                description=f"Lot size: {lot_acres:.2f} acres",
+                strength="low"
+            ))
+            score += 5
+
+    # ========== FALLBACK SIGNALS (ensure something always shows) ==========
+
+    # Property type indicator as baseline signal
+    prop_type = summary.get("proptype") or summary.get("propertyType") or ""
+    prop_indicator = summary.get("propIndicator")
+
+    if not signals:  # Only add fallback if no other signals
+        # Commercial property indicator
+        if prop_indicator in ("20", "25", "27", "50", "80"):
+            type_labels = {
+                "20": "Commercial",
+                "25": "Retail",
+                "27": "Office",
+                "50": "Industrial",
+                "80": "Vacant Land"
+            }
+            signals.append(OpportunitySignal(
+                signal_type="commercial_zoning",
+                description=f"Zoned: {type_labels.get(prop_indicator, 'Commercial')}",
+                strength="low"
+            ))
+            score += 5
+
+        # If still no signals, add a generic opportunity indicator
+        if not signals and (assessed_value or market_value):
+            signals.append(OpportunitySignal(
+                signal_type="market_listing",
+                description="Commercial property in target market",
+                strength="low"
+            ))
+            score += 5
 
     # Cap score at 100
     score = min(score, 100)
+
+    # Ensure minimum score if we have signals
+    if signals and score < 5:
+        score = 5
+
+    print(f"[ATTOM Signal Debug] Generated {len(signals)} signals with score {score}")
 
     return signals, score
 
