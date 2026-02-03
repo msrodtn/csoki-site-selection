@@ -13,7 +13,7 @@ Enable data-driven expansion decisions by visualizing competitor landscapes, dem
 
 ---
 
-## Current Status (Updated Jan 28, 2026)
+## Current Status (Updated Feb 3, 2026)
 
 ### Phase 1: COMPLETE
 - [x] Project scaffolding (backend + frontend)
@@ -37,6 +37,17 @@ Enable data-driven expansion decisions by visualizing competitor landscapes, dem
 - [x] Store breakdown by brand per state (expandable)
 - [x] Map stability fixes (direct navigation pattern)
 
+### Phase 2.5: COMPLETE (Properties For Sale Layer)
+- [x] ATTOM Property API integration for commercial property intelligence
+- [x] Property search by map viewport bounds
+- [x] Opportunity signal detection (tax delinquency, foreclosure, long-term ownership, estate ownership)
+- [x] Opportunity scoring (0-100) for each property
+- [x] Property type classification (retail, land, office, industrial, mixed_use)
+- [x] PropertyInfoCard component with detailed property view
+- [x] ReportAll API integration for parcel details (ownership, zoning, boundaries)
+- [x] Map layer toggle for Properties For Sale
+- [x] Visual distinction: Purple diamonds (opportunities) vs colored circles (active listings)
+
 ### Live URLs
 - **Dashboard:** https://dashboard.fivecodevelopment.com
 - **Backend API:** https://backend-production-cf26.up.railway.app
@@ -52,12 +63,16 @@ Enable data-driven expansion decisions by visualizing competitor landscapes, dem
 - **Database:** PostgreSQL 15 with PostGIS (Railway hosted)
 - **Hosting:** Railway (backend + frontend + PostgreSQL)
 - **Domain:** GoDaddy DNS → Railway
-- **External APIs:** Google Maps, Google Places API
+- **External APIs:**
+  - Google Maps & Places API (mapping, POIs, autocomplete)
+  - ArcGIS GeoEnrichment (demographics)
+  - ATTOM Property API (commercial property intelligence, opportunity signals)
+  - ReportAll API (parcel details, ownership, zoning, boundaries)
 
 ### Stack (Planned for Future Phases)
 - **AI/ML:** OpenAI API for conversational features, scikit-learn for scoring models
 - **Cache:** Redis for API response caching
-- **Demographics:** US Census API
+- **Additional Data:** QuantumListing, Digsy (free CRE listing platforms)
 
 ---
 
@@ -115,11 +130,11 @@ Located in `/backend/data/competitors/`:
 - [x] Target market state filtering with toggle visibility
 - [x] Drag-to-reorder state priority in sidebar
 - [x] Store breakdown by brand per state (expandable chevron)
-- [ ] Heat maps showing competition density (Phase 3)
+- [x] Competition density heat maps
 - [ ] Draw custom analysis areas (Phase 3)
 - [ ] Drive-time isochrones (Phase 3)
 
-### 2. Trade Area Analysis (NEW)
+### 2. Trade Area Analysis
 - [x] Click any store → "Analyze Trade Area" button
 - [x] Google Places API fetches nearby POIs
 - [x] POI categories: Anchors, Quick Service, Restaurants, Retail
@@ -130,18 +145,52 @@ Located in `/backend/data/competitors/`:
 - [x] Category visibility toggles
 - [x] PDF export with detailed report
 
-### 3. City Search with Autocomplete (NEW)
+### 3. Properties For Sale Layer (NEW - ATTOM Powered)
+- [x] Toggle "Properties For Sale" in Map Layers sidebar
+- [x] Automatic search when layer enabled (uses map viewport bounds)
+- [x] **Opportunity Detection** - Identifies properties likely to sell based on:
+  - Tax delinquency
+  - Foreclosure/pre-foreclosure status
+  - Long-term ownership (15+ years)
+  - Estate/trust ownership
+  - Undervalued assessments
+- [x] **Opportunity Scoring** - 0-100 score based on signal strength
+- [x] **Property Types** - Retail, Land, Office, Industrial, Mixed Use
+- [x] **Visual Markers**:
+  - Purple diamonds = Opportunities (likely to sell, not actively listed)
+  - Colored circles = Active listings (color by property type)
+- [x] **PropertyInfoCard** on marker click showing:
+  - Address, price, size, year built
+  - Opportunity signals with explanations
+  - Owner name and type
+  - "Get Parcel Details" button (ReportAll integration)
+- [x] **ReportAll Integration** for detailed parcel info:
+  - Parcel ID, zoning, land use
+  - Assessed value, acreage
+  - Parcel boundary polygon overlay
+
+### 4. City Search with Autocomplete
 - [x] Google Places Autocomplete as you type
 - [x] Restricted to US cities
 - [x] Dropdown with up to 5 suggestions
 - [x] Click suggestion → map navigates to location
 - [x] Debounced API calls (300ms)
 
-### 4. Password Protection
+### 5. Map Layers
+- [x] FEMA Flood Zones (zoom 12+)
+- [x] Traffic (real-time)
+- [x] Transit routes
+- [x] Parcel Boundaries (zoom 14+, click for info)
+- [x] Competition Heat Map
+- [x] Business Labels
+- [x] Zoning Colors
+- [x] Properties For Sale (ATTOM)
+
+### 6. Password Protection
 - Simple password gate: `!FiveCo`
 - Uses sessionStorage for session persistence
 
-### 5. API Endpoints (Implemented)
+### 7. API Endpoints (Implemented)
 ```
 # Store Locations
 GET  /api/v1/locations/              # List all stores with filtering
@@ -151,9 +200,18 @@ GET  /api/v1/locations/state/{state}/  # Stores in specific state
 POST /api/v1/locations/within-bounds/  # Stores in map viewport
 POST /api/v1/locations/within-radius/  # Stores within radius
 
-# Trade Area Analysis (NEW)
+# Trade Area Analysis
 POST /api/v1/analysis/trade-area/    # Analyze POIs around location
+POST /api/v1/analysis/demographics/  # ArcGIS demographics data
+POST /api/v1/analysis/parcel/        # ReportAll parcel lookup
 GET  /api/v1/analysis/check-api-key/ # Verify Google Places API key
+GET  /api/v1/analysis/check-arcgis-key/    # Verify ArcGIS API key
+GET  /api/v1/analysis/check-reportall-key/ # Verify ReportAll API key
+
+# Property Search (ATTOM - NEW)
+POST /api/v1/analysis/properties/search/        # Search by radius
+POST /api/v1/analysis/properties/search-bounds/ # Search by map bounds
+GET  /api/v1/analysis/check-attom-key/          # Verify ATTOM API key
 
 # Health
 GET  /health                         # Health check
@@ -172,11 +230,11 @@ GET  /health                         # Health check
   - Market Gaps (10%): Underserved areas
 - [ ] Draw-to-analyze tool (custom polygons)
 - [ ] Drive-time radius analysis (5/10/15 min isochrones)
-- [ ] Competition density heat maps
-- [ ] Census API integration for demographics
+- [ ] Integrate additional free listing sources (QuantumListing, Digsy)
+- [ ] Team-contributed property flagging (crowdsource from field reps)
 
 ### Phase 4: AI Integration
-- [ ] Conversational assistant (OpenAI integration)
+- [ ] Conversational assistant (OpenAI/Anthropic integration)
 - [ ] Natural language queries: "Show best opportunities in Des Moines"
 - [ ] AI-generated location recommendations
 - [ ] Insight summarization
@@ -186,6 +244,7 @@ GET  /health                         # Health check
 - [ ] Executive dashboard view
 - [ ] Enhanced PDF report generation
 - [ ] Saved analyses / bookmarks
+- [ ] Property watchlist (track opportunities over time)
 
 ---
 
@@ -199,10 +258,12 @@ GET  /health                         # Health check
 | State Management | Zustand | Simple, lightweight, React-friendly |
 | API Client | Axios + React Query | Caching, loading states, error handling |
 | Password Auth | Simple sessionStorage | MVP approach, no user management needed yet |
-| Map Navigation | Direct (imperative) | Prevents map jumping on re-renders (see below) |
+| Map Navigation | Direct (imperative) | Prevents map jumping on re-renders |
 | POI Data | Google Places API | Real-time, accurate, comprehensive |
 | Search | Google Places Autocomplete | Native integration, US city filtering |
 | PDF Export | jsPDF | Client-side generation, no server load |
+| Property Data | ATTOM API | Reliable commercial property intelligence, opportunity signals |
+| Parcel Data | ReportAll API | Precise boundaries, ownership, zoning details |
 
 ---
 
@@ -217,7 +278,10 @@ GET  /health                         # Health check
 **Backend:**
 - `DATABASE_URL` - Auto-provided by Railway PostgreSQL
 - `CORS_ORIGINS` - Includes production frontend domains
-- `GOOGLE_PLACES_API_KEY` - For trade area analysis
+- `GOOGLE_PLACES_API_KEY` - For trade area analysis, autocomplete
+- `ARCGIS_API_KEY` - For demographics data
+- `REPORTALL_API_KEY` - For parcel details and boundaries
+- `ATTOM_API_KEY` - For commercial property search and opportunity signals
 
 **Frontend:**
 - `VITE_API_URL` - Backend URL
@@ -255,9 +319,16 @@ cd ../frontend && railway service frontend && railway up
    - The `GoogleMap` component is **uncontrolled** (no `center` or `zoom` props)
    - Initial position is set only in `onLoad` callback
    - This prevents the map from jumping when clicking markers or during re-renders
-   - Previous attempts using reactive state (`setViewport` + useEffect) caused instability
 
-8. **Google Maps Libraries**: The `places` library is loaded alongside the map for autocomplete functionality. The libraries array must be defined as a constant outside the component to prevent re-render warnings.
+8. **Google Maps Libraries**: The `places` and `visualization` libraries are loaded alongside the map. The libraries array must be defined as a constant outside the component to prevent re-render warnings.
+
+9. **Properties For Sale Layer (IMPORTANT)**:
+   - Uses ATTOM API for property intelligence (NOT scraping)
+   - Previous scraping approach was unreliable - replaced with ATTOM
+   - Searches triggered automatically when layer toggled ON
+   - Uses map viewport bounds for geographic filtering
+   - ReportAll provides parcel details on click (separate from ATTOM)
+   - Opportunity signals are calculated from ATTOM data (tax status, ownership duration, foreclosure status, etc.)
 
 ### Key Files to Know
 
@@ -265,34 +336,40 @@ cd ../frontend && railway service frontend && railway up
 - `backend/app/main.py` - FastAPI app with HTTPS middleware
 - `backend/app/core/config.py` - CORS origins, API keys, settings
 - `backend/app/api/routes/locations.py` - Store API endpoints
-- `backend/app/api/routes/analysis.py` - Trade area analysis endpoint
+- `backend/app/api/routes/analysis.py` - Trade area, demographics, parcel, and property search endpoints
 - `backend/app/services/places.py` - Google Places API integration
+- `backend/app/services/arcgis.py` - ArcGIS demographics integration
+- `backend/app/services/attom.py` - ATTOM property search and opportunity detection
 - `backend/app/services/data_import.py` - CSV import with geocoding
 
 **Frontend:**
-- `frontend/src/components/Map/StoreMap.tsx` - Google Maps component (uncontrolled)
+- `frontend/src/components/Map/StoreMap.tsx` - Google Maps component with all layers
+- `frontend/src/components/Map/PropertyInfoCard.tsx` - Property detail card with opportunity signals
+- `frontend/src/components/Map/PropertyLegend.tsx` - Property layer legend
 - `frontend/src/components/Analysis/AnalysisPanel.tsx` - Trade area panel with PDF export
 - `frontend/src/components/Sidebar/SearchBar.tsx` - City autocomplete search
+- `frontend/src/components/Sidebar/MapLayers.tsx` - Layer toggle controls
 - `frontend/src/components/Sidebar/StateFilter.tsx` - State toggles with drag reorder
 - `frontend/src/components/Auth/PasswordGate.tsx` - Password protection
-- `frontend/src/services/api.ts` - API client with axios (includes analysisApi)
+- `frontend/src/services/api.ts` - API client with axios (includes ATTOM methods)
 - `frontend/src/store/useMapStore.ts` - Zustand state (includes mapInstance, navigateTo)
-- `frontend/src/types/store.ts` - TypeScript types including POI categories
+- `frontend/src/types/store.ts` - TypeScript types including PropertyListing, OpportunitySignal
 
 ### Data Freshness
 - Competitor CSV data can be refreshed by updating files in `/backend/data/competitors/`
 - Clear database and restart backend to re-import
 - Use `batch_geocode.py` script to geocode new addresses
+- Property data from ATTOM is fetched in real-time when layer is enabled
 
 ### Brand Colors
 ```typescript
 BRAND_COLORS = {
   csoki: '#E31837',           // Red (CSOKi brand)
-  russell_cellular: '#00A651', // Green
+  russell_cellular: '#FF6B00', // Orange
   verizon_corporate: '#CD040B', // Verizon Red
   victra: '#000000',           // Black
   tmobile: '#E20074',          // Magenta
-  uscellular: '#00529B',       // Blue
+  uscellular: '#00A3E0',       // Blue
 }
 ```
 
@@ -305,3 +382,21 @@ POI_CATEGORY_COLORS = {
   retail: '#3B82F6',        // Blue
 }
 ```
+
+### Property Type Colors
+```typescript
+PROPERTY_TYPE_COLORS = {
+  retail: '#22C55E',      // Green
+  land: '#A16207',        // Amber/Brown
+  office: '#3B82F6',      // Blue
+  industrial: '#6B7280',  // Gray
+  mixed_use: '#8B5CF6',   // Purple
+}
+```
+
+### Opportunity Signal Types
+- `tax_delinquent` - Property has delinquent taxes (HIGH strength)
+- `distress` - Foreclosure/pre-foreclosure status (HIGH strength)
+- `long_term_owner` - Same owner 15+ years (MEDIUM strength)
+- `estate_ownership` - Owned by trust or estate (MEDIUM strength)
+- `undervalued` - Assessed below market value (MEDIUM strength)
