@@ -168,6 +168,7 @@ export function StoreMap() {
     analysisRadius,
     setMapInstance,
     visibleLayers,
+    visiblePropertySources,
   } = useMapStore();
 
   const [selectedPOI, setSelectedPOI] = useState<{
@@ -1007,8 +1008,8 @@ export function StoreMap() {
           />
         )}
 
-        {/* Property markers (ATTOM opportunities) */}
-        {properties.map((property) => (
+        {/* Property markers (ATTOM opportunities) - only show if 'attom' source is visible */}
+        {visiblePropertySources.has('attom') && properties.map((property) => (
           <MarkerF
             key={property.id}
             position={{ lat: property.latitude, lng: property.longitude }}
@@ -1019,8 +1020,8 @@ export function StoreMap() {
           />
         ))}
 
-        {/* Team property markers (user-contributed) */}
-        {teamProperties.map((property) => (
+        {/* Team property markers (user-contributed) - only show if 'team' source is visible */}
+        {visiblePropertySources.has('team') && teamProperties.map((property) => (
           <MarkerF
             key={`team-${property.id}`}
             position={{ lat: property.latitude, lng: property.longitude }}

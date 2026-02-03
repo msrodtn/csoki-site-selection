@@ -82,6 +82,10 @@ interface MapState {
   toggleLayer: (layer: string) => void;
   setLayerVisible: (layer: string, visible: boolean) => void;
 
+  // Property source sub-toggles (for Properties For Sale layer)
+  visiblePropertySources: Set<'attom' | 'team'>;
+  togglePropertySource: (source: 'attom' | 'team') => void;
+
   // Nearest Competitors
   nearestCompetitors: NearestCompetitorsResponse | null;
   setNearestCompetitors: (data: NearestCompetitorsResponse | null) => void;
@@ -273,6 +277,19 @@ export const useMapStore = create<MapState>((set, get) => ({
         newLayers.delete(layer);
       }
       return { visibleLayers: newLayers };
+    }),
+
+  // Property source sub-toggles - both visible by default
+  visiblePropertySources: new Set<'attom' | 'team'>(['attom', 'team']),
+  togglePropertySource: (source) =>
+    set((state) => {
+      const newSources = new Set(state.visiblePropertySources);
+      if (newSources.has(source)) {
+        newSources.delete(source);
+      } else {
+        newSources.add(source);
+      }
+      return { visiblePropertySources: newSources };
     }),
 
   // Nearest Competitors
