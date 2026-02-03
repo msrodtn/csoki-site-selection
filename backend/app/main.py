@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal
 from app.api import api_router
 from app.models.store import Store
+from app.models.team_property import TeamProperty  # Ensure table is created
 
 
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
