@@ -393,3 +393,66 @@ export const TEAM_PROPERTY_SOURCE_LABELS: Record<TeamPropertySourceType, string>
   word_of_mouth: 'Word of Mouth',
   other: 'Other',
 };
+
+// =============================================================================
+// Scraped Listings (from Crexi/LoopNet via browser automation)
+// =============================================================================
+
+export interface ScrapedListing {
+  id: number;
+  source: 'crexi' | 'loopnet';
+  external_id: string | null;
+  listing_url: string | null;
+  address: string | null;
+  city: string;
+  state: string;
+  postal_code: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  property_type: PropertyType | null;
+  price: number | null;
+  price_display: string | null;
+  sqft: number | null;
+  lot_size_acres: number | null;
+  title: string | null;
+  broker_name: string | null;
+  broker_company: string | null;
+  images: string[] | null;
+  scraped_at: string;
+}
+
+export interface ScrapeRequest {
+  city: string;
+  state: string;
+  sources?: ('crexi' | 'loopnet')[];
+  property_types?: string[];
+  force_refresh?: boolean;
+}
+
+export interface ScrapeResponse {
+  job_id: string;
+  status: 'started' | 'running' | 'completed' | 'failed';
+  message: string;
+}
+
+export interface ScrapedListingsResponse {
+  total: number;
+  listings: ScrapedListing[];
+  sources: string[];
+  cached: boolean;
+  cache_age_minutes: number | null;
+}
+
+export interface ScrapedSourcesStatus {
+  crexi: {
+    configured: boolean;
+    username_set: boolean;
+  };
+  loopnet: {
+    configured: boolean;
+    username_set: boolean;
+  };
+}
+
+// Scraped listing marker color (blue for active listings)
+export const SCRAPED_LISTING_COLOR = '#3B82F6';

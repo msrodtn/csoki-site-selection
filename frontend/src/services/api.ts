@@ -15,6 +15,10 @@ import type {
   TeamProperty,
   TeamPropertyCreate,
   TeamPropertyListResponse,
+  ScrapeRequest,
+  ScrapeResponse,
+  ScrapedListingsResponse,
+  ScrapedSourcesStatus,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -243,6 +247,59 @@ export const teamPropertiesApi = {
     status?: string;
   }): Promise<TeamPropertyListResponse> => {
     const { data } = await api.post('/team-properties/in-bounds/', bounds);
+    return data;
+  },
+};
+
+// ============================================
+// Listings API (Scraped from Crexi/LoopNet)
+// ============================================
+
+export const listingsApi = {
+  // Trigger a scrape of commercial listings
+  triggerScrape: async (request: ScrapeRequest): Promise<ScrapeResponse> => {
+    const { data } = await api.post('/listings/scrape', request);
+    return data;
+  },
+
+  // Get the status of a scrape job
+  getScrapeStatus: async (jobId: string): Promise<{
+    city: string;
+    state: string;
+    sources: string[];
+    status: string;
+    started_at: string;
+    results?: Record<string, number>;
+    total_saved?: number;
+    error?: string;
+  }> => {
+    const { data } = await api.get(`/listings/scrape/${jobId}`);
+    return data;
+  },
+
+  // Search cached listings
+  search: async (params: {
+    city: string;
+    state: string;
+    source?: string;
+    property_type?: string;
+    min_price?: number;
+    max_price?: number;
+    limit?: number;
+  }): Promise<ScrapedListingsResponse> => {
+    const { data } = await api.get('/listings/search', { params });
+    return data;
+  },
+
+  // Get configured sources status
+  getSources: async (): Promise<ScrapedSourcesStatus> => {
+    const { data } = await api.get('/listings/sources');
+    return data;
+  },
+
+  // Deactivate a listing (mark as sold/removed)
+  deactivate: async (listingId: number): Promise<{ message: string }> => {
+    const { data } = await api.delete(`/listings/${listingId}`);
     return data;
   },
 };

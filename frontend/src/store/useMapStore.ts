@@ -83,8 +83,8 @@ interface MapState {
   setLayerVisible: (layer: string, visible: boolean) => void;
 
   // Property source sub-toggles (for Properties For Sale layer)
-  visiblePropertySources: Set<'attom' | 'team'>;
-  togglePropertySource: (source: 'attom' | 'team') => void;
+  visiblePropertySources: Set<'attom' | 'team' | 'scraped'>;
+  togglePropertySource: (source: 'attom' | 'team' | 'scraped') => void;
 
   // Nearest Competitors
   nearestCompetitors: NearestCompetitorsResponse | null;
@@ -279,8 +279,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { visibleLayers: newLayers };
     }),
 
-  // Property source sub-toggles - both visible by default
-  visiblePropertySources: new Set<'attom' | 'team'>(['attom', 'team']),
+  // Property source sub-toggles - all visible by default
+  visiblePropertySources: new Set<'attom' | 'team' | 'scraped'>(['attom', 'team', 'scraped']),
   togglePropertySource: (source) =>
     set((state) => {
       const newSources = new Set(state.visiblePropertySources);

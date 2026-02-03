@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin } from 'lucide-react';
+import { Layers, Droplets, Car, Train, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -64,6 +64,13 @@ export const MAP_LAYERS = {
 
 // Sub-toggle definitions for Properties For Sale layer
 const PROPERTY_SUB_TOGGLES = [
+  {
+    id: 'scraped' as const,
+    name: 'Active Listings',
+    icon: Search,
+    color: '#3B82F6', // Blue
+    description: 'Crexi & LoopNet listings',
+  },
   {
     id: 'attom' as const,
     name: 'Opportunities',

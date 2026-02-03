@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     CREXI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
 
+    # Listing Scraper Credentials (for authenticated browser automation)
+    CREXI_USERNAME: Optional[str] = None
+    CREXI_PASSWORD: Optional[str] = None
+    LOOPNET_USERNAME: Optional[str] = None
+    LOOPNET_PASSWORD: Optional[str] = None
+
     # CORS
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",

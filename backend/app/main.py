@@ -10,6 +10,7 @@ from app.core.database import engine, Base, SessionLocal
 from app.api import api_router
 from app.models.store import Store
 from app.models.team_property import TeamProperty  # Ensure table is created
+from app.models.scraped_listing import ScrapedListing  # Ensure table is created
 
 
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
