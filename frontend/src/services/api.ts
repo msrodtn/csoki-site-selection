@@ -12,6 +12,9 @@ import type {
   ParcelRequest,
   PropertySearchResult,
   PropertySearchRequest,
+  TeamProperty,
+  TeamPropertyCreate,
+  TeamPropertyListResponse,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -184,6 +187,62 @@ export const analysisApi = {
     message: string;
   }> => {
     const { data } = await api.get('/analysis/check-attom-key/');
+    return data;
+  },
+};
+
+// ============================================
+// Team Properties API (User-Contributed)
+// ============================================
+
+export const teamPropertiesApi = {
+  // Create a new team property
+  create: async (property: TeamPropertyCreate): Promise<TeamProperty> => {
+    const { data } = await api.post('/team-properties/', property);
+    return data;
+  },
+
+  // List all team properties with optional filters
+  list: async (params?: {
+    status?: string;
+    state?: string;
+    property_type?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<TeamPropertyListResponse> => {
+    const { data } = await api.get('/team-properties/', { params });
+    return data;
+  },
+
+  // Get a single team property by ID
+  get: async (id: number): Promise<TeamProperty> => {
+    const { data } = await api.get(`/team-properties/${id}`);
+    return data;
+  },
+
+  // Update a team property
+  update: async (id: number, updates: Partial<TeamPropertyCreate> & {
+    status?: string;
+    is_verified?: boolean;
+  }): Promise<TeamProperty> => {
+    const { data } = await api.put(`/team-properties/${id}`, updates);
+    return data;
+  },
+
+  // Delete a team property
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/team-properties/${id}`);
+  },
+
+  // Get team properties within map bounds
+  getInBounds: async (bounds: {
+    min_lat: number;
+    max_lat: number;
+    min_lng: number;
+    max_lng: number;
+    status?: string;
+  }): Promise<TeamPropertyListResponse> => {
+    const { data } = await api.post('/team-properties/in-bounds/', bounds);
     return data;
   },
 };

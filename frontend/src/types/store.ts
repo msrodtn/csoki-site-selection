@@ -326,3 +326,68 @@ export const PROPERTY_SOURCE_COLORS: Record<string, string> = {
   zillow: '#006AFF',      // Zillow Blue
   default: '#6B7280',     // Gray
 };
+
+// =============================================================================
+// Team Properties (User-Contributed)
+// =============================================================================
+
+export type TeamPropertySourceType = 'for_sale_sign' | 'broker' | 'word_of_mouth' | 'other';
+
+export type TeamPropertyStatus = 'active' | 'reviewed' | 'archived' | 'sold';
+
+export interface TeamProperty {
+  id: number;
+  address: string;
+  city: string;
+  state: string;
+  postal_code: string | null;
+  latitude: number;
+  longitude: number;
+  property_type: PropertyType;
+  price: number | null;
+  sqft: number | null;
+  lot_size_acres: number | null;
+  listing_url: string | null;
+  source_type: TeamPropertySourceType | null;
+  notes: string | null;
+  contributor_name: string | null;
+  contributor_email: string | null;
+  status: TeamPropertyStatus;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface TeamPropertyCreate {
+  address: string;
+  city: string;
+  state: string;
+  postal_code?: string;
+  latitude: number;
+  longitude: number;
+  property_type?: string;
+  price?: number;
+  sqft?: number;
+  lot_size_acres?: number;
+  listing_url?: string;
+  source_type?: string;
+  notes?: string;
+  contributor_name?: string;
+  contributor_email?: string;
+}
+
+export interface TeamPropertyListResponse {
+  total: number;
+  properties: TeamProperty[];
+}
+
+// Team property marker color (orange pin)
+export const TEAM_PROPERTY_COLOR = '#F97316';
+
+// Source type labels
+export const TEAM_PROPERTY_SOURCE_LABELS: Record<TeamPropertySourceType, string> = {
+  for_sale_sign: 'For Sale Sign',
+  broker: 'Broker Contact',
+  word_of_mouth: 'Word of Mouth',
+  other: 'Other',
+};
