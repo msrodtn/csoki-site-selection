@@ -46,6 +46,7 @@ import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
 import { ZoningLegend } from './ZoningLegend';
+import { TrafficCountsLegend } from './TrafficCountsLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 import { DraggableParcelInfo } from './DraggableParcelInfo';
 import { PropertyInfoCard } from './PropertyInfoCard';
@@ -1096,6 +1097,7 @@ export function MapboxMap() {
       <HeatMapLegend isVisible={visibleLayersArray.includes('competition_heat')} />
       <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
+      <TrafficCountsLegend isVisible={visibleLayersArray.includes('traffic_counts')} />
       <PropertyLegend
         isVisible={visibleLayersArray.includes('properties_for_sale')}
         propertyCount={properties.length}
@@ -1170,6 +1172,34 @@ export function MapboxMap() {
                   '#666666'
                 ],
                 'line-opacity': 0.7,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Iowa Traffic Counts (AADT) Layer */}
+        {visibleLayersArray.includes('traffic_counts') && (
+          <Source
+            id="ia-traffic-counts"
+            type="vector"
+            url="mapbox://msrodtn.ia-traffic"
+          >
+            <Layer
+              id="traffic-counts-layer"
+              type="line"
+              source-layer="traffic"
+              minzoom={8}
+              paint={{
+                'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 4],
+                'line-color': [
+                  'step',
+                  ['get', 'aadt'],
+                  '#3B82F6',      // 0-999: Blue
+                  1000, '#10B981', // 1000-1999: Green
+                  2000, '#F59E0B', // 2000-4999: Orange
+                  5000, '#EF4444', // 5000+: Red
+                ],
+                'line-opacity': 0.8,
               }}
             />
           </Source>
