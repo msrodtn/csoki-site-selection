@@ -717,6 +717,27 @@ export function MapboxMap() {
     };
   }, [visibleStores]);
 
+  // GeoJSON for clustered properties
+  const propertiesGeoJSON = useMemo(() => {
+    return {
+      type: 'FeatureCollection' as const,
+      features: properties.map((property) => ({
+        type: 'Feature' as const,
+        properties: {
+          id: property.id,
+          property_type: property.property_type,
+          listing_type: property.listing_type,
+          price: property.price,
+          address: property.address,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [property.longitude, property.latitude],
+        },
+      })),
+    };
+  }, [properties]);
+
   // GeoJSON for analysis radius circle (using Turf.js)
   const radiusGeoJSON = useMemo(() => {
     if (!analysisResult) return null;
@@ -779,6 +800,34 @@ export function MapboxMap() {
 
   // Handle map click
   const handleMapClick = useCallback(async (e: mapboxgl.MapMouseEvent) => {
+    const map = mapRef.current?.getMap();
+    
+    // Check if click was on a cluster
+    if (map) {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['clusters']
+      });
+      
+      if (features.length > 0) {
+        const clusterId = features[0].properties?.cluster_id;
+        const source = map.getSource('properties') as mapboxgl.GeoJSONSource;
+        
+        if (source && clusterId !== undefined) {
+          source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+            if (err || !features[0].geometry || features[0].geometry.type !== 'Point') return;
+            
+            const coordinates = features[0].geometry.coordinates as [number, number];
+            map.easeTo({
+              center: coordinates,
+              zoom: zoom || viewState.zoom + 2,
+              duration: 500,
+            });
+          });
+        }
+        return; // Don't process other click logic
+      }
+    }
+    
     setSelectedStore(null);
     setSelectedPOI(null);
     setSelectedProperty(null);
@@ -832,6 +881,14 @@ export function MapboxMap() {
     const map = mapRef.current?.getMap();
     if (map) {
       setMapInstance(map);
+      
+      // Change cursor on cluster hover
+      map.on('mouseenter', 'clusters', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'clusters', () => {
+        map.getCanvas().style.cursor = '';
+      });
     }
   }, [setMapInstance]);
 
@@ -1201,8 +1258,79 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Property markers (ATTOM) */}
-        {visiblePropertySources.has('attom') && properties.map((property) => (
+        {/* Clustered Property Markers (ATTOM) */}
+        {visiblePropertySources.has('attom') && properties.length > 0 && (
+          <Source
+            id="properties"
+            type="geojson"
+            data={propertiesGeoJSON}
+            cluster={true}
+            clusterMaxZoom={14}
+            clusterRadius={50}
+          >
+            {/* Cluster circles */}
+            <Layer
+              id="clusters"
+              type="circle"
+              filter={['has', 'point_count']}
+              paint={{
+                'circle-color': [
+                  'step',
+                  ['get', 'point_count'],
+                  '#8B5CF6', // Purple for < 10
+                  10,
+                  '#7C3AED', // Darker purple for 10-25
+                  25,
+                  '#6D28D9', // Even darker for > 25
+                ],
+                'circle-radius': [
+                  'step',
+                  ['get', 'point_count'],
+                  20, // Small circles for < 10
+                  10,
+                  30, // Medium for 10-25
+                  25,
+                  40, // Large for > 25
+                ],
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#fff',
+              }}
+            />
+
+            {/* Cluster count text */}
+            <Layer
+              id="cluster-count"
+              type="symbol"
+              filter={['has', 'point_count']}
+              layout={{
+                'text-field': '{point_count_abbreviated}',
+                'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+                'text-size': 14,
+              }}
+              paint={{
+                'text-color': '#ffffff',
+              }}
+            />
+
+            {/* Unclustered individual points as small circles */}
+            <Layer
+              id="unclustered-point"
+              type="circle"
+              filter={['!', ['has', 'point_count']]}
+              paint={{
+                'circle-color': '#8B5CF6',
+                'circle-radius': 6,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#fff',
+              }}
+            />
+          </Source>
+        )}
+        
+        {/* Individual property markers - only show when zoomed in enough (no clusters) */}
+        {visiblePropertySources.has('attom') && 
+         viewState.zoom >= 14 && 
+         properties.map((property) => (
           <PropertyMarker
             key={property.id}
             property={property}
