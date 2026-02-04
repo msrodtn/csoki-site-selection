@@ -129,10 +129,18 @@ export function SearchBar() {
           setAllStatesVisible(true);
 
           // Navigate to location (calls map methods directly)
-          navigateTo(lat, lng, 12);
-
-          setSearchQuery('');
-          setSuggestions([]);
+          // Add small delay to ensure map is ready
+          setTimeout(() => {
+            try {
+              navigateTo(lat, lng, 12);
+              setSearchQuery('');
+              setSuggestions([]);
+              setError(null);
+            } catch (err) {
+              console.error('Navigation error:', err);
+              setError('Could not navigate to location');
+            }
+          }, 100);
         } else {
           setError('Could not get location details');
         }

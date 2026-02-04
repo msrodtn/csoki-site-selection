@@ -168,8 +168,14 @@ export const useMapStore = create<MapState>((set, get) => ({
   navigateTo: (lat, lng, zoom) => {
     const map = get().mapInstance;
     if (map) {
-      map.panTo({ lat, lng });
-      map.setZoom(zoom);
+      try {
+        map.panTo({ lat, lng });
+        map.setZoom(zoom);
+      } catch (error) {
+        console.error('Map navigation error:', error);
+      }
+    } else {
+      console.warn('Map navigation attempted before map instance is ready');
     }
   },
 
