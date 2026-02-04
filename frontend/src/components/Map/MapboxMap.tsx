@@ -51,6 +51,7 @@ import { DraggableParcelInfo } from './DraggableParcelInfo';
 import { PropertyInfoCard } from './PropertyInfoCard';
 import { PropertyLegend } from './PropertyLegend';
 import { TeamPropertyForm } from './TeamPropertyForm';
+import MapStyleSwitcher from './MapStyleSwitcher';
 
 // Mapbox access token - try runtime config first (for Docker), then build-time env vars
 const MAPBOX_TOKEN = 
@@ -547,6 +548,7 @@ const parcelLineLayer: LineLayerSpecification = {
 export function MapboxMap() {
   const mapRef = useRef<MapRef>(null);
   const [viewState, setViewState] = useState(INITIAL_VIEW);
+  const [mapStyle, setMapStyle] = useState('mapbox://styles/mapbox/light-v11');
 
   // Map store state
   const {
@@ -975,6 +977,12 @@ export function MapboxMap() {
         error={propertyError}
       />
 
+      {/* Map Style Switcher */}
+      <MapStyleSwitcher 
+        currentStyle={mapStyle}
+        onStyleChange={setMapStyle}
+      />
+
       {/* Property loading indicator */}
       {isLoadingProperties && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
@@ -999,7 +1007,7 @@ export function MapboxMap() {
         onClick={handleMapClick}
         onContextMenu={handleMapRightClick}
         style={{ width: '100%', height: '100%' }}
-        mapStyle="mapbox://styles/mapbox/light-v11"
+        mapStyle={mapStyle}
         mapboxAccessToken={MAPBOX_TOKEN}
       >
         {/* Navigation controls */}
