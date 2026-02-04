@@ -3,14 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 import logging
-from pathlib import Path
 
 from app.core.config import settings
-from app.core.database import Base, get_engine, get_session_local, check_database_connection
 from app.api import api_router
-from app.models.store import Store
-from app.models.team_property import TeamProperty  # Ensure table is created
-from app.models.scraped_listing import ScrapedListing  # Ensure table is created
 
 
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
@@ -34,39 +29,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle manager with graceful error handling."""
+    """Application lifecycle manager - fast startup for Railway health checks."""
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-
-    # Quick startup - test database connection but don't block on failure
-    try:
-        if check_database_connection():
-            logger.info("Database connection verified")
-
-            # Create tables if needed
-            engine = get_engine()
-            Base.metadata.create_all(bind=engine)
-            logger.info("Database tables created/verified")
-
-            # Check store count (quick operation)
-            SessionLocal = get_session_local()
-            db = SessionLocal()
-            try:
-                store_count = db.query(Store).count()
-                if store_count == 0:
-                    logger.info("Database empty - stores will need to be imported")
-                else:
-                    logger.info(f"Database contains {store_count} stores")
-            finally:
-                db.close()
-        else:
-            logger.warning("Database connection failed - some features will be unavailable")
-    except Exception as e:
-        logger.error(f"Startup error (continuing anyway): {e}")
-
     logger.info("Application startup complete")
     yield
-
-    # Shutdown
     logger.info("Shutting down...")
 
 
@@ -107,12 +73,7 @@ def root():
 @app.get("/health")
 def health_check():
     """
-    Health check endpoint - always returns 200 if the app is running.
-    Database status is informational only (Railway just needs to know we're alive).
+    Health check endpoint - instant response for Railway.
+    No database check here - that would slow down the response.
     """
-    db_status = "connected" if check_database_connection() else "disconnected"
-    return {
-        "status": "healthy",
-        "database": db_status,
-        "version": settings.APP_VERSION
-    }
+    return {"status": "healthy", "version": settings.APP_VERSION}
