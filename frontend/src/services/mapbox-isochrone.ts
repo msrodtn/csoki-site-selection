@@ -83,6 +83,6 @@ export function getIsochroneColor(mode: TravelMode): string {
 /**
  * Get opacity for isochrone polygon
  */
-export function getIsochroneOpacity(mode: TravelMode): number {
+export function getIsochroneOpacity(): number {
   return 0.2; // Semi-transparent
 }

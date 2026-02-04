@@ -1201,7 +1201,7 @@ export function MapboxMap() {
               type="fill"
               paint={{
                 'fill-color': getIsochroneColor(isochroneSettings.mode),
-                'fill-opacity': getIsochroneOpacity(isochroneSettings.mode),
+                'fill-opacity': getIsochroneOpacity(),
               }}
             />
             <Layer
