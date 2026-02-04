@@ -8,7 +8,9 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     libgeos-dev \
     libproj-dev \
-    # Playwright/Chromium dependencies
+    curl \
+    wget \
+    # Playwright/Chromium dependencies - COMPLETE SET
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -24,6 +26,23 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxext6 \
+    libdbus-1-3 \
+    libexpat1 \
+    libfontconfig1 \
+    libgcc-s1 \
+    libglib2.0-0 \
+    libstdc++6 \
+    libuuid1 \
+    libxshmfence1 \
+    # Fonts for Chromium
+    fonts-liberation \
+    fonts-dejavu-core \
+    fonts-noto-core \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -31,7 +50,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright browsers (Chromium only to save space)
-RUN playwright install chromium
+# We already installed system deps manually above, so just install the browser binary
+RUN PLAYWRIGHT_BROWSERS_PATH=/app/playwright-browsers playwright install chromium
 
 # Copy application code
 COPY . .

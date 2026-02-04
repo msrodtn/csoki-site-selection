@@ -42,6 +42,7 @@ class CrexiAutomation:
     def __init__(self):
         self.browser: Optional[Browser] = None
         self.page: Optional[Page] = None
+        self.playwright = None  # Store playwright instance for cleanup
         self._temp_dir: Optional[str] = None
         self._download_path: Optional[str] = None
         
@@ -59,8 +60,8 @@ class CrexiAutomation:
         self._temp_dir = tempfile.mkdtemp(prefix="crexi_export_")
         logger.info(f"Created temp directory: {self._temp_dir}")
         
-        playwright = await async_playwright().start()
-        self.browser = await playwright.chromium.launch(
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
             headless=True,
             downloads_path=self._temp_dir
         )
@@ -82,6 +83,8 @@ class CrexiAutomation:
             await self.page.close()
         if self.browser:
             await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
         
         # Clean up temp directory
         if self._temp_dir and os.path.exists(self._temp_dir):
