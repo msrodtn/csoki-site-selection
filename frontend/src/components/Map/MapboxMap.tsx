@@ -1060,39 +1060,51 @@ export function MapboxMap() {
     }
   }, [isochroneSettings]);
 
-  // Fetch traffic data when state is selected
+  // Fetch traffic data when state is selected (ArcGIS mode only)
   useEffect(() => {
     if (!trafficSettings.enabled || !trafficSettings.selectedState) {
       setTrafficData(null);
       return;
     }
 
-    const fetchTrafficData = async () => {
-      setIsLoadingTraffic(true);
-      try {
-        // Fetch directly from Iowa DOT ArcGIS service
-        // TODO: Convert to Mapbox tilesets when we have 5+ states
-        const serviceUrl = 'https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/Traffic_Data_view/FeatureServer/10';
-        
-        const response = await fetch(
-          `${serviceUrl}/query?where=1=1&outFields=AADT,ROUTE_NAME,STATESIGNED&returnGeometry=true&f=geojson&resultRecordCount=2000`
-        );
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch traffic data');
-        }
-
-        const geojson = await response.json();
-        setTrafficData(geojson);
-      } catch (error) {
-        console.error('Error fetching traffic data:', error);
+    // Import traffic sources config
+    import('../../config/traffic-sources').then(({ TRAFFIC_SOURCE_MODE, getTrafficSource }) => {
+      if (TRAFFIC_SOURCE_MODE === 'tileset') {
+        // Tileset mode - no fetch needed, rendered directly as vector layer
         setTrafficData(null);
-      } finally {
         setIsLoadingTraffic(false);
+        return;
       }
-    };
 
-    fetchTrafficData();
+      // ArcGIS mode - fetch GeoJSON
+      const fetchTrafficData = async () => {
+        setIsLoadingTraffic(true);
+        try {
+          const source = getTrafficSource(trafficSettings.selectedState!);
+          if (!source) {
+            throw new Error(`No traffic source for state: ${trafficSettings.selectedState}`);
+          }
+
+          const response = await fetch(
+            `${source.url}/query?where=1=1&outFields=${source.fields}&returnGeometry=true&f=geojson&resultRecordCount=${source.maxRecords}`
+          );
+
+          if (!response.ok) {
+            throw new Error('Failed to fetch traffic data');
+          }
+
+          const geojson = await response.json();
+          setTrafficData(geojson);
+        } catch (error) {
+          console.error('Error fetching traffic data:', error);
+          setTrafficData(null);
+        } finally {
+          setIsLoadingTraffic(false);
+        }
+      };
+
+      fetchTrafficData();
+    });
   }, [trafficSettings]);
 
   // Check for token
@@ -1233,7 +1245,7 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Traffic Count Overlay (State DOT Data) */}
+        {/* Traffic Count Overlay (GeoJSON mode - ArcGIS fetch) */}
         {trafficData && trafficSettings.enabled && (
           <Source id="traffic-counts" type="geojson" data={trafficData}>
             <Layer
@@ -1251,6 +1263,52 @@ export function MapboxMap() {
                 'line-color': [
                   'step',
                   ['get', 'AADT'],
+                  '#00C5FF', // 0-999: Blue
+                  1000,
+                  '#55FF00', // 1000-1999: Green
+                  2000,
+                  '#FFAA00', // 2000-4999: Orange
+                  5000,
+                  '#FF0000', // 5000+: Red
+                ],
+                'line-opacity': 0.8,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Traffic Count Overlay (Tileset mode - Vector tiles) */}
+        {trafficSettings.enabled && trafficSettings.selectedState && !trafficData && (
+          <Source
+            id="traffic-tileset"
+            type="vector"
+            url={(() => {
+              // Dynamically import and get tileset URL
+              try {
+                const { getTrafficSource } = require('../../config/traffic-sources');
+                const source = getTrafficSource(trafficSettings.selectedState);
+                return source?.url || '';
+              } catch {
+                return '';
+              }
+            })()}
+          >
+            <Layer
+              id="traffic-tileset-layer"
+              source-layer="traffic"
+              type="line"
+              paint={{
+                'line-width': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  8, 1,
+                  12, 2,
+                  16, 4,
+                ],
+                'line-color': [
+                  'step',
+                  ['get', 'aadt'],
                   '#00C5FF', // 0-999: Blue
                   1000,
                   '#55FF00', // 1000-1999: Green

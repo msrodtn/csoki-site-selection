@@ -2,11 +2,12 @@
  * Traffic Count Control - State Traffic Data Overlay
  * 
  * Displays annual average daily traffic (AADT) counts from state DOT data.
- * Fetches available states dynamically from backend.
+ * Supports both ArcGIS (direct fetch) and Mapbox tilesets modes.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BarChart3, ChevronDown, X } from 'lucide-react';
+import { getAvailableStates, TRAFFIC_SOURCE_MODE } from '../../config/traffic-sources';
 
 export interface TrafficCountSettings {
   enabled: boolean;
@@ -18,19 +19,9 @@ interface TrafficCountControlProps {
   onSettingsChange: (settings: TrafficCountSettings) => void;
 }
 
-interface AvailableState {
-  code: string;
-  name: string;
-}
-
-// Hardcoded states for now - will convert to Mapbox tilesets later
-const AVAILABLE_STATES: AvailableState[] = [
-  { code: 'IA', name: 'Iowa' },
-  // Future: NE, NV, KS, etc. - will upload as Mapbox tilesets
-];
-
 export default function TrafficCountControl({ settings, onSettingsChange }: TrafficCountControlProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [availableStates] = useState(getAvailableStates());
 
   const selectState = (stateCode: string) => {
     onSettingsChange({
@@ -49,7 +40,7 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
 
   const getSelectedStateName = () => {
     if (!settings.selectedState) return null;
-    const state = AVAILABLE_STATES.find(s => s.code === settings.selectedState);
+    const state = availableStates.find(s => s.code === settings.selectedState);
     return state?.name || settings.selectedState;
   };
 
@@ -110,7 +101,7 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
                 Select State
               </div>
               <div className="space-y-2">
-                {AVAILABLE_STATES.map((state) => (
+                {availableStates.map((state) => (
                   <button
                     key={state.code}
                     onClick={() => selectState(state.code)}
@@ -157,6 +148,16 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
               <p className="text-xs text-orange-800">
                 💡 <strong>Tip:</strong> Traffic data updates monthly from state DOT sources. Click roads for detailed counts.
               </p>
+              {TRAFFIC_SOURCE_MODE === 'arcgis' && (
+                <p className="text-xs text-orange-600 mt-2">
+                  ⚡ Using direct fetch (slower). Run <code className="bg-orange-100 px-1 rounded">./scripts/upload-to-mapbox.sh</code> for 10x faster performance.
+                </p>
+              )}
+              {TRAFFIC_SOURCE_MODE === 'tileset' && (
+                <p className="text-xs text-green-700 mt-2">
+                  ✅ Using Mapbox tilesets (optimized)
+                </p>
+              )}
             </div>
           </div>
         </>
