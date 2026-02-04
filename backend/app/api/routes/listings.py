@@ -444,8 +444,8 @@ async def get_configured_sources():
     """Check which scraping sources are configured."""
     return {
         "crexi": {
-            "configured": bool(settings.CREXI_USERNAME and settings.CREXI_PASSWORD),
-            "username_set": bool(settings.CREXI_USERNAME),
+            "configured": bool(settings.crexi_username and settings.CREXI_PASSWORD),
+            "username_set": bool(settings.crexi_username),
         },
         "loopnet": {
             "configured": bool(settings.LOOPNET_USERNAME and settings.LOOPNET_PASSWORD),
@@ -475,6 +475,7 @@ async def deactivate_listing(
 # ============================================================================
 
 from app.services.url_import import import_from_url, ListingData
+from app.services.crexi_automation import fetch_crexi_area, CrexiAutomationError
 
 
 class URLImportRequest(BaseModel):
@@ -767,3 +768,159 @@ async def import_listings_from_urls_batch(
         failed=failed,
         results=results
     )
+
+
+# ============================================================================
+# Crexi CSV Export Automation (Added by Subagent - Feb 4, 2026)
+# ============================================================================
+
+
+class CrexiAreaRequest(BaseModel):
+    """Request to fetch Crexi listings for an area via automated export."""
+    location: str = Field(..., description="Location to search (e.g., 'Des Moines, IA')")
+    property_types: Optional[List[str]] = Field(
+        default=None,
+        description="Property types to include (default: ['Land', 'Retail', 'Office'])"
+    )
+    force_refresh: bool = Field(
+        default=False,
+        description="Force new export even if cached data exists"
+    )
+
+
+class CrexiAreaResponse(BaseModel):
+    """Response from Crexi area fetch."""
+    success: bool
+    imported: int
+    updated: int
+    total_filtered: int
+    empty_land_count: int
+    small_building_count: int
+    cached: bool
+    cache_age_minutes: Optional[int]
+    timestamp: str
+    expires_at: str
+    location: str
+    message: Optional[str]
+
+
+@router.post("/fetch-crexi-area", response_model=CrexiAreaResponse)
+async def fetch_crexi_area_endpoint(
+    request: CrexiAreaRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch Crexi listings for a location via automated CSV export.
+    
+    This endpoint:
+    1. Checks cache (24hr TTL per location)
+    2. If cached and not force_refresh, returns cached data
+    3. Otherwise, triggers Playwright automation to:
+       - Log into Crexi
+       - Search the location
+       - Apply filters (For Sale + property types)
+       - Download CSV export
+       - Parse and filter opportunities
+       - Import to database
+    
+    **Filtering criteria:**
+    - Empty land: 0.8-2 acres, Type contains "Land"
+    - Small buildings: 2500-6000 sqft, ≤1 unit, Retail/Office/Industrial
+    
+    **Security:** Logs every session, only searches explicitly tasked markets.
+    
+    **Performance:** ~30-90 seconds for fresh export, <1 second for cached.
+    """
+    try:
+        # Check for cached data
+        cache_cutoff = datetime.utcnow() - timedelta(hours=24)
+        
+        # Parse location
+        if "," in request.location:
+            search_city = request.location.split(",")[0].strip()
+            search_state = request.location.split(",")[1].strip()
+        else:
+            search_city = request.location
+            search_state = None
+        
+        if not request.force_refresh:
+            # Check for recent cache
+            cache_query = db.query(ScrapedListing).filter(
+                ScrapedListing.source == "crexi",
+                ScrapedListing.search_city == search_city,
+                ScrapedListing.scraped_at > cache_cutoff
+            )
+            
+            if search_state:
+                cache_query = cache_query.filter(ScrapedListing.search_state == search_state.upper())
+            
+            cached_listings = cache_query.all()
+            
+            if cached_listings:
+                # Return cached data
+                oldest = min(l.scraped_at for l in cached_listings)
+                cache_age = int((datetime.utcnow() - oldest).total_seconds() / 60)
+                
+                # Count by category
+                empty_land = sum(1 for l in cached_listings 
+                               if l.raw_data and l.raw_data.get('match_category') == 'empty_land')
+                small_building = sum(1 for l in cached_listings 
+                                   if l.raw_data and l.raw_data.get('match_category') == 'small_building')
+                
+                expires_at = oldest + timedelta(hours=24)
+                
+                return CrexiAreaResponse(
+                    success=True,
+                    imported=0,
+                    updated=0,
+                    total_filtered=len(cached_listings),
+                    empty_land_count=empty_land,
+                    small_building_count=small_building,
+                    cached=True,
+                    cache_age_minutes=cache_age,
+                    timestamp=oldest.isoformat(),
+                    expires_at=expires_at.isoformat(),
+                    location=request.location,
+                    message=f"Using {len(cached_listings)} cached listings from {cache_age} minutes ago"
+                )
+        
+        # No cache or force refresh - trigger automation
+        logger.info(f"Starting Crexi automation for: {request.location}")
+        
+        # Run automation
+        csv_path, import_result = await fetch_crexi_area(
+            location=request.location,
+            property_types=request.property_types,
+            db=db
+        )
+        
+        # Return result
+        expires_at = import_result.timestamp + timedelta(hours=24)
+        
+        return CrexiAreaResponse(
+            success=True,
+            imported=import_result.total_imported,
+            updated=import_result.total_updated,
+            total_filtered=import_result.total_filtered,
+            empty_land_count=import_result.empty_land_count,
+            small_building_count=import_result.small_building_count,
+            cached=False,
+            cache_age_minutes=0,
+            timestamp=import_result.timestamp.isoformat(),
+            expires_at=expires_at.isoformat(),
+            location=request.location,
+            message=f"Imported {import_result.total_imported} new listings from Crexi"
+        )
+        
+    except CrexiAutomationError as e:
+        logger.error(f"Crexi automation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Crexi automation failed: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in fetch_crexi_area: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch Crexi data: {str(e)}"
+        )

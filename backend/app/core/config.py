@@ -28,10 +28,16 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
 
     # Listing Scraper Credentials (for authenticated browser automation)
-    CREXI_USERNAME: Optional[str] = None
+    CREXI_USERNAME: Optional[str] = None  # Also accepts CREXI_EMAIL
+    CREXI_EMAIL: Optional[str] = None
     CREXI_PASSWORD: Optional[str] = None
     LOOPNET_USERNAME: Optional[str] = None
     LOOPNET_PASSWORD: Optional[str] = None
+    
+    @property
+    def crexi_username(self) -> Optional[str]:
+        """Get Crexi username from either CREXI_USERNAME or CREXI_EMAIL."""
+        return self.CREXI_USERNAME or self.CREXI_EMAIL
 
     # CORS
     CORS_ORIGINS: list[str] = [
