@@ -1070,25 +1070,22 @@ export function MapboxMap() {
     const fetchTrafficData = async () => {
       setIsLoadingTraffic(true);
       try {
-        // Fetch from our backend API (proxies state DOT data)
+        // Fetch directly from Iowa DOT ArcGIS service
+        // TODO: Convert to Mapbox tilesets when we have 5+ states
+        const serviceUrl = 'https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/Traffic_Data_view/FeatureServer/10';
+        
         const response = await fetch(
-          `/api/traffic/${trafficSettings.selectedState}`
+          `${serviceUrl}/query?where=1=1&outFields=AADT,ROUTE_NAME,STATESIGNED&returnGeometry=true&f=geojson&resultRecordCount=2000`
         );
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error('Backend not configured - API returned HTML instead of JSON');
+          throw new Error('Failed to fetch traffic data');
         }
 
         const geojson = await response.json();
         setTrafficData(geojson);
       } catch (error) {
         console.error('Error fetching traffic data:', error);
-        alert('Traffic data unavailable. Please set BACKEND_URL environment variable in Railway.');
         setTrafficData(null);
       } finally {
         setIsLoadingTraffic(false);
