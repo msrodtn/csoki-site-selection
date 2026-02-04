@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
@@ -107,20 +107,12 @@ def root():
 @app.get("/health")
 def health_check():
     """
-    Detailed health check with actual database verification.
-    Returns 200 if healthy, 503 if database is unreachable.
+    Health check endpoint - always returns 200 if the app is running.
+    Database status is informational only (Railway just needs to know we're alive).
     """
-    db_connected = check_database_connection()
-
-    if db_connected:
-        return {
-            "status": "healthy",
-            "database": "connected",
-            "version": settings.APP_VERSION
-        }
-    else:
-        return Response(
-            content='{"status": "unhealthy", "database": "disconnected", "version": "' + settings.APP_VERSION + '"}',
-            status_code=503,
-            media_type="application/json"
-        )
+    db_status = "connected" if check_database_connection() else "disconnected"
+    return {
+        "status": "healthy",
+        "database": db_status,
+        "version": settings.APP_VERSION
+    }
