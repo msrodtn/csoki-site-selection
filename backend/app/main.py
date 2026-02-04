@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from app.core.config import settings
-from app.core.database import engine, Base, SessionLocal
+from app.core.database import Base, get_engine, get_session_local, check_database_connection
 from app.api import api_router
 from app.models.store import Store
 from app.models.team_property import TeamProperty  # Ensure table is created
@@ -23,9 +23,10 @@ class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
             request.scope["scheme"] = "https"
         return await call_next(request)
 
+
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO if settings.DEBUG else logging.WARNING,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
@@ -33,39 +34,36 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle manager."""
-    # Startup
+    """Application lifecycle manager with graceful error handling."""
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
 
-    # Create database tables (in production, use Alembic migrations)
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created/verified")
-
-    # Auto-seed database if empty
-    db = SessionLocal()
+    # Quick startup - test database connection but don't block on failure
     try:
-        store_count = db.query(Store).count()
-        if store_count == 0:
-            logger.info("Database empty, seeding competitor data...")
-            from app.services.data_import import import_all_competitors
+        if check_database_connection():
+            logger.info("Database connection verified")
 
-            # Path to competitor data CSV files
-            data_dir = Path(__file__).parent.parent / "data" / "competitors"
+            # Create tables if needed
+            engine = get_engine()
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created/verified")
 
-            if data_dir.exists():
-                stats = import_all_competitors(db, data_dir, geocode=False)
-                total_imported = sum(s.get('imported', 0) for s in stats.values())
-                total_geocoded = sum(s.get('geocoded', 0) for s in stats.values())
-                logger.info(f"Seeded {total_imported} stores ({total_geocoded} with coordinates)")
-            else:
-                logger.warning(f"Data directory not found: {data_dir}")
+            # Check store count (quick operation)
+            SessionLocal = get_session_local()
+            db = SessionLocal()
+            try:
+                store_count = db.query(Store).count()
+                if store_count == 0:
+                    logger.info("Database empty - stores will need to be imported")
+                else:
+                    logger.info(f"Database contains {store_count} stores")
+            finally:
+                db.close()
         else:
-            logger.info(f"Database already contains {store_count} stores")
+            logger.warning("Database connection failed - some features will be unavailable")
     except Exception as e:
-        logger.error(f"Error during database seeding: {e}")
-    finally:
-        db.close()
+        logger.error(f"Startup error (continuing anyway): {e}")
 
+    logger.info("Application startup complete")
     yield
 
     # Shutdown
@@ -98,19 +96,31 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/")
 def root():
-    """Health check endpoint."""
+    """Root endpoint - quick health check."""
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "status": "healthy"
+        "status": "running"
     }
 
 
 @app.get("/health")
 def health_check():
-    """Detailed health check."""
-    return {
-        "status": "healthy",
-        "database": "connected",  # TODO: Actually check connection
-        "version": settings.APP_VERSION
-    }
+    """
+    Detailed health check with actual database verification.
+    Returns 200 if healthy, 503 if database is unreachable.
+    """
+    db_connected = check_database_connection()
+
+    if db_connected:
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "version": settings.APP_VERSION
+        }
+    else:
+        return Response(
+            content='{"status": "unhealthy", "database": "disconnected", "version": "' + settings.APP_VERSION + '"}',
+            status_code=503,
+            media_type="application/json"
+        )

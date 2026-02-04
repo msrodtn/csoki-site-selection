@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.database import SessionLocal
+from app.core.database import get_session_local
 from app.services.data_import import import_all_competitors, import_csv_to_db, BRAND_FILE_MAPPING
 
 
@@ -35,6 +35,7 @@ def main():
         print(f"Error: Data directory not found: {data_dir}")
         sys.exit(1)
 
+    SessionLocal = get_session_local()
     db = SessionLocal()
 
     try:
