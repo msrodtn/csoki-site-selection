@@ -66,8 +66,3 @@ def check_database_connection() -> bool:
         return False
 
 
-# For backwards compatibility - expose engine property
-# But use lazy initialization
-@property
-def engine():
-    return get_engine()
