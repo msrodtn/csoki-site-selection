@@ -20,11 +20,12 @@ interface GeocodingFeature {
   text: string;
   center: [number, number]; // [lng, lat]
   place_type: string[];
+  // Context can be array (v5) or object (v6)
   context?: Array<{
     id: string;
     text: string;
     short_code?: string;
-  }>;
+  }> | any;
 }
 
 interface MapboxSearchBarProps {
@@ -157,12 +158,22 @@ export function MapboxSearchBar({
     setError(null);
   };
 
-  // Extract state from context
+  // Extract state from context (API v6 format - context is now an object)
   const getStateFromFeature = (feature: GeocodingFeature): string => {
     if (feature.context) {
-      const region = feature.context.find((c) => c.id.startsWith('region'));
-      if (region?.short_code) {
-        return region.short_code.replace('US-', '');
+      // API v6: context is object like { region: {...}, country: {...} }
+      if (Array.isArray(feature.context)) {
+        // Fallback for v5 array format
+        const region = feature.context.find((c) => c.id.startsWith('region'));
+        if (region?.short_code) {
+          return region.short_code.replace('US-', '');
+        }
+      } else {
+        // v6 object format
+        const contextObj = feature.context as any;
+        if (contextObj.region?.region_code) {
+          return contextObj.region.region_code;
+        }
       }
     }
     return '';
