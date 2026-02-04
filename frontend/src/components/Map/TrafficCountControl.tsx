@@ -34,13 +34,18 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
       setIsLoadingStates(true);
       try {
         const response = await fetch('/api/traffic/states');
-        if (response.ok) {
-          const data = await response.json();
-          setAvailableStates(data.states || []);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
         }
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Backend not configured - set BACKEND_URL in Railway');
+        }
+        const data = await response.json();
+        setAvailableStates(data.states || []);
       } catch (error) {
         console.error('Failed to fetch available states:', error);
-        // Fallback to Iowa only
+        // Fallback to Iowa only (hardcoded for now)
         setAvailableStates([{ code: 'IA', name: 'Iowa' }]);
       } finally {
         setIsLoadingStates(false);

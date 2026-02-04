@@ -811,8 +811,8 @@ export function MapboxMap() {
   const handleMapClick = useCallback(async (e: mapboxgl.MapMouseEvent) => {
     const map = mapRef.current?.getMap();
     
-    // Check if click was on a cluster
-    if (map) {
+    // Check if click was on a cluster (only if layer exists)
+    if (map && map.getLayer('clusters')) {
       const features = map.queryRenderedFeatures(e.point, {
         layers: ['clusters']
       });
@@ -891,13 +891,24 @@ export function MapboxMap() {
     if (map) {
       setMapInstance(map);
       
-      // Change cursor on cluster hover
-      map.on('mouseenter', 'clusters', () => {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'clusters', () => {
-        map.getCanvas().style.cursor = '';
-      });
+      // Change cursor on cluster hover (only add if layer exists)
+      const addClusterHoverEffects = () => {
+        if (map.getLayer('clusters')) {
+          map.on('mouseenter', 'clusters', () => {
+            map.getCanvas().style.cursor = 'pointer';
+          });
+          map.on('mouseleave', 'clusters', () => {
+            map.getCanvas().style.cursor = '';
+          });
+        }
+      };
+      
+      // Try to add immediately, or wait for style to load
+      if (map.isStyleLoaded()) {
+        addClusterHoverEffects();
+      } else {
+        map.once('styledata', addClusterHoverEffects);
+      }
     }
   }, [setMapInstance]);
 
@@ -1065,13 +1076,19 @@ export function MapboxMap() {
         );
 
         if (!response.ok) {
-          throw new Error('Failed to fetch traffic data');
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Backend not configured - API returned HTML instead of JSON');
         }
 
         const geojson = await response.json();
         setTrafficData(geojson);
       } catch (error) {
         console.error('Error fetching traffic data:', error);
+        alert('Traffic data unavailable. Please set BACKEND_URL environment variable in Railway.');
         setTrafficData(null);
       } finally {
         setIsLoadingTraffic(false);
