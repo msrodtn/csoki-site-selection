@@ -2,25 +2,52 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install base system dependencies (DON'T clean apt yet - playwright needs it)
+# Install system dependencies including Playwright/Chromium deps
+# Using Debian Trixie compatible packages (NOT Ubuntu packages)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     libgeos-dev \
     libproj-dev \
-    curl
+    curl \
+    # Playwright/Chromium dependencies (Debian Trixie compatible)
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxext6 \
+    libdbus-1-3 \
+    libexpat1 \
+    libfontconfig1 \
+    libgcc-s1 \
+    libglib2.0-0 \
+    libstdc++6 \
+    libuuid1 \
+    libxshmfence1 \
+    # Fonts (Debian Trixie compatible - NOT Ubuntu packages)
+    fonts-liberation \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright system dependencies (needs apt)
-RUN playwright install-deps chromium
-
-# NOW clean up apt to reduce image size
-RUN rm -rf /var/lib/apt/lists/*
-
-# Install Chromium browser
+# Install Chromium browser (skip install-deps since we did it manually)
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN playwright install chromium && chmod -R 755 /opt/playwright
 
