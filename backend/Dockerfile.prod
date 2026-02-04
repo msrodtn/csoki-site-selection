@@ -2,22 +2,23 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install base system dependencies
+# Install base system dependencies (DON'T clean apt yet - playwright needs it)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     libgeos-dev \
     libproj-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    curl
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright system dependencies (official method)
-# This handles all OS-specific dependencies automatically
+# Install Playwright system dependencies (needs apt)
 RUN playwright install-deps chromium
+
+# NOW clean up apt to reduce image size
+RUN rm -rf /var/lib/apt/lists/*
 
 # Install Chromium browser
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
@@ -30,8 +31,5 @@ COPY . .
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port (Railway uses PORT env variable)
 EXPOSE 8000
-
-# Start with uvicorn for production
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
