@@ -652,6 +652,14 @@ export function MapboxMap() {
   const [scrapedListings, setScrapedListings] = useState<ScrapedListing[]>([]);
   const [isLoadingScrapedListings, setIsLoadingScrapedListings] = useState(false);
 
+  // Traffic counts hover state
+  const [hoveredTraffic, setHoveredTraffic] = useState<{
+    longitude: number;
+    latitude: number;
+    aadt: number;
+    route: string;
+  } | null>(null);
+
   // Track analysis center for re-analysis
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
 
@@ -920,6 +928,38 @@ export function MapboxMap() {
     }
   }, []);
 
+  // Handle traffic counts layer hover
+  const handleTrafficMouseMove = useCallback((e: mapboxgl.MapMouseEvent) => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    const features = map.queryRenderedFeatures(e.point, {
+      layers: ['traffic-counts-layer'],
+    });
+
+    if (features && features.length > 0) {
+      const feature = features[0];
+      map.getCanvas().style.cursor = 'pointer';
+      setHoveredTraffic({
+        longitude: e.lngLat.lng,
+        latitude: e.lngLat.lat,
+        aadt: feature.properties?.aadt || 0,
+        route: feature.properties?.route || 'Unknown',
+      });
+    } else {
+      map.getCanvas().style.cursor = '';
+      setHoveredTraffic(null);
+    }
+  }, []);
+
+  const handleTrafficMouseLeave = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (map) {
+      map.getCanvas().style.cursor = '';
+    }
+    setHoveredTraffic(null);
+  }, []);
+
   // Property search when layer is toggled
   useEffect(() => {
     const showProperties = visibleLayersArray.includes('properties_for_sale');
@@ -1140,6 +1180,9 @@ export function MapboxMap() {
         onLoad={onLoad}
         onClick={handleMapClick}
         onContextMenu={handleMapRightClick}
+        onMouseMove={handleTrafficMouseMove}
+        onMouseLeave={handleTrafficMouseLeave}
+        interactiveLayerIds={visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
         mapboxAccessToken={MAPBOX_TOKEN}
@@ -1203,6 +1246,25 @@ export function MapboxMap() {
               }}
             />
           </Source>
+        )}
+
+        {/* Traffic Counts Hover Popup */}
+        {hoveredTraffic && (
+          <Popup
+            longitude={hoveredTraffic.longitude}
+            latitude={hoveredTraffic.latitude}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+          >
+            <div className="text-sm">
+              <div className="font-semibold text-gray-800">
+                {hoveredTraffic.aadt.toLocaleString()} vehicles/day
+              </div>
+              <div className="text-xs text-gray-500">{hoveredTraffic.route}</div>
+            </div>
+          </Popup>
         )}
 
         {/* FEMA Flood Zones Layer */}
