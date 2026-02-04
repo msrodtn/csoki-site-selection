@@ -310,6 +310,86 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
             ))
             score += 5
 
+    # ========== NEW ENHANCED SIGNALS (Added Feb 4, 2026) ==========
+
+    # Check building age (older buildings = renovation/redevelopment opportunity)
+    building = property_data.get("building", {})
+    year_built = building.get("yearBuilt") or summary.get("yearBuilt")
+    if year_built:
+        try:
+            building_age = datetime.now().year - int(year_built)
+            if building_age >= 50:
+                signals.append(OpportunitySignal(
+                    signal_type="aging_building",
+                    description=f"Built {year_built} ({building_age} years old) - renovation opportunity",
+                    strength="medium"
+                ))
+                score += 15
+            elif building_age >= 30:
+                signals.append(OpportunitySignal(
+                    signal_type="mature_building",
+                    description=f"Built {year_built} - potential for updates",
+                    strength="low"
+                ))
+                score += 5
+        except (ValueError, TypeError):
+            pass
+
+    # Check for absentee owner (out-of-state = less attachment, higher likelihood to sell)
+    owner_address = assessment.get("owner", {})
+    owner_state = owner_address.get("state") if isinstance(owner_address, dict) else None
+    property_state = summary.get("state") or property_data.get("address", {}).get("state")
+    
+    if owner_state and property_state and owner_state.upper() != property_state.upper():
+        signals.append(OpportunitySignal(
+            signal_type="absentee_owner",
+            description=f"Out-of-state owner ({owner_state})",
+            strength="medium"
+        ))
+        score += 12
+
+    # Check for recent tax increases (financial pressure indicator)
+    tax_assessment = assessment.get("assessed", {})
+    prior_value = tax_assessment.get("assdPriorYearValue")
+    current_value = tax_assessment.get("assdTtlValue") or assessment.get("assessedValue")
+    
+    if prior_value and current_value and prior_value > 0:
+        tax_increase_pct = ((current_value - prior_value) / prior_value) * 100
+        if tax_increase_pct > 20:  # More than 20% increase
+            signals.append(OpportunitySignal(
+                signal_type="tax_pressure",
+                description=f"Tax assessment increased {tax_increase_pct:.0f}% recently",
+                strength="medium"
+            ))
+            score += 12
+        elif tax_increase_pct > 10:  # 10-20% increase
+            signals.append(OpportunitySignal(
+                signal_type="rising_taxes",
+                description=f"Tax assessment up {tax_increase_pct:.0f}%",
+                strength="low"
+            ))
+            score += 5
+
+    # Check for vacant/unoccupied status
+    occupancy = building.get("occupancyStatus") or summary.get("occupancyStatus")
+    if occupancy and "vacant" in str(occupancy).lower():
+        signals.append(OpportunitySignal(
+            signal_type="vacant_property",
+            description="Property appears vacant",
+            strength="high"
+        ))
+        score += 20
+
+    # Multiple parcels indicator (from lot info)
+    parcel_count = lot.get("parcelCount")
+    if parcel_count and int(parcel_count) > 1:
+        signals.append(OpportunitySignal(
+            signal_type="multiple_parcels",
+            description=f"{parcel_count} parcels - assemblage opportunity",
+            strength="medium"
+        ))
+        score += 10
+
     # ========== FALLBACK SIGNALS (ensure something always shows) ==========
 
     # Property type indicator as baseline signal
@@ -317,30 +397,47 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
     prop_indicator = summary.get("propIndicator")
 
     if not signals:  # Only add fallback if no other signals
-        # Commercial property indicator
+        # Commercial property indicator with better descriptions
         if prop_indicator in ("20", "25", "27", "50", "80"):
-            type_labels = {
-                "20": "Commercial",
-                "25": "Retail",
-                "27": "Office",
-                "50": "Industrial",
-                "80": "Vacant Land"
+            type_descriptions = {
+                "20": "Commercial property - general use",
+                "25": "Retail-zoned property - high visibility location",
+                "27": "Office building - professional space opportunity",
+                "50": "Industrial property - warehouse/manufacturing potential",
+                "80": "Vacant land - development opportunity"
             }
             signals.append(OpportunitySignal(
                 signal_type="commercial_zoning",
-                description=f"Zoned: {type_labels.get(prop_indicator, 'Commercial')}",
+                description=type_descriptions.get(prop_indicator, "Commercial property"),
                 strength="low"
             ))
-            score += 5
+            score += 8
 
-        # If still no signals, add a generic opportunity indicator
-        if not signals and (assessed_value or market_value):
-            signals.append(OpportunitySignal(
-                signal_type="market_listing",
-                description="Commercial property in target market",
-                strength="low"
-            ))
-            score += 5
+        # If still no signals, add context-aware opportunity indicator
+        if not signals:
+            if lot_sqft and float(lot_sqft) > 21780:  # More than 0.5 acres
+                signals.append(OpportunitySignal(
+                    signal_type="land_opportunity",
+                    description="Sizeable commercial parcel in your search area",
+                    strength="low"
+                ))
+                score += 10
+            elif assessed_value or market_value:
+                value = market_value or assessed_value
+                if value and value < 500_000:
+                    signals.append(OpportunitySignal(
+                        signal_type="entry_level",
+                        description="Entry-level commercial property - lower barrier to entry",
+                        strength="low"
+                    ))
+                    score += 8
+                else:
+                    signals.append(OpportunitySignal(
+                        signal_type="market_listing",
+                        description="Commercial property in target market",
+                        strength="low"
+                    ))
+                    score += 5
 
     # Cap score at 100
     score = min(score, 100)

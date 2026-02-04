@@ -39,3 +39,4 @@ frontend/dist/
 
 # Misc
 .claude/
+.env.crexi

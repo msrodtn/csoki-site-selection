@@ -456,3 +456,55 @@ export interface ScrapedSourcesStatus {
 
 // Scraped listing marker color (blue for active listings)
 export const SCRAPED_LISTING_COLOR = '#3B82F6';
+
+// =============================================================================
+// Opportunities (ATTOM-based CSOKi property filtering)
+// =============================================================================
+
+export interface OpportunityRanking {
+  property: PropertyListing;
+  rank: number;  // 1-based ranking (1 = highest priority)
+  priority_signals: string[];  // Which high-priority signals are present
+  signal_count: number;  // Total number of signals
+}
+
+export interface OpportunitySearchRequest {
+  min_lat: number;
+  max_lat: number;
+  min_lng: number;
+  max_lng: number;
+  
+  // Optional overrides for parcel/building size
+  min_parcel_acres?: number;
+  max_parcel_acres?: number;
+  min_building_sqft?: number;
+  max_building_sqft?: number;
+  
+  // Property type preferences
+  include_retail?: boolean;
+  include_office?: boolean;
+  include_land?: boolean;
+  
+  // Opportunity signal filtering
+  require_opportunity_signal?: boolean;
+  min_opportunity_score?: number;
+  
+  limit?: number;
+}
+
+export interface OpportunitySearchResponse {
+  center_latitude: number;
+  center_longitude: number;
+  total_found: number;
+  opportunities: OpportunityRanking[];
+  search_timestamp: string;
+  filters_applied: {
+    parcel_size_acres: string;
+    building_size_sqft: string;
+    property_types: string[];
+    min_opportunity_score: number;
+  };
+}
+
+// Opportunity marker color (distinct from properties)
+export const OPPORTUNITY_COLOR = '#9333EA';  // Purple

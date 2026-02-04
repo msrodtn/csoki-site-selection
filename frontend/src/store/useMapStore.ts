@@ -12,6 +12,8 @@ import type {
   PropertyType,
   PropertyListing,
   ParcelInfo,
+  OpportunitySearchResponse,
+  OpportunityRanking,
 } from '../types/store';
 
 // Target market states
@@ -130,6 +132,17 @@ interface MapState {
   setPropertyParcelError: (error: string | null) => void;
   showPropertyParcelPanel: boolean;
   setShowPropertyParcelPanel: (show: boolean) => void;
+
+  // Opportunities (CSOKi-filtered ATTOM properties)
+  opportunitiesResult: OpportunitySearchResponse | null;
+  setOpportunitiesResult: (result: OpportunitySearchResponse | null) => void;
+  isLoadingOpportunities: boolean;
+  setIsLoadingOpportunities: (loading: boolean) => void;
+  opportunitiesError: string | null;
+  setOpportunitiesError: (error: string | null) => void;
+  selectedOpportunity: OpportunityRanking | null;
+  setSelectedOpportunity: (opportunity: OpportunityRanking | null) => void;
+  clearOpportunities: () => void;
 
   // Clear analysis
   clearAnalysis: () => void;
