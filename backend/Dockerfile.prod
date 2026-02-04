@@ -29,6 +29,9 @@ RUN apt-get update && apt-get install -y \
     libxcb1 \
     libxext6 \
     fonts-liberation \
+    fonts-noto-core \
+    fonts-noto-cjk \
+    fonts-freefont-ttf \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Playwright to install browsers in /opt/playwright (accessible to all users)
@@ -38,8 +41,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers (Chromium only) with system deps
-RUN playwright install chromium --with-deps
+# Install Playwright browsers (Chromium only) - deps already installed above
+RUN playwright install chromium
 
 # Make playwright dir accessible
 RUN chmod -R 755 /opt/playwright
