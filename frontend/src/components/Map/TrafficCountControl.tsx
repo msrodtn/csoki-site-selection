@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { Traffic, ChevronDown, X } from 'lucide-react';
+import { BarChart3, ChevronDown, X } from 'lucide-react';
 
 export interface TrafficCountSettings {
   enabled: boolean;
@@ -61,7 +61,7 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
         `}
         title="Traffic count overlay"
       >
-        <Traffic className={`w-5 h-5 ${settings.enabled ? 'text-orange-600' : 'text-gray-700'}`} />
+        <BarChart3 className={`w-5 h-5 ${settings.enabled ? 'text-orange-600' : 'text-gray-700'}`} />
         <span className={`font-medium ${settings.enabled ? 'text-orange-700' : 'text-gray-700'}`}>
           {settings.enabled ? getSelectedStateName() : 'Traffic Count'}
         </span>
@@ -93,7 +93,7 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
           <div className="absolute top-12 left-0 bg-white rounded-lg shadow-xl border border-gray-200 w-64 overflow-hidden z-10">
             <div className="p-3 bg-gray-50 border-b border-gray-200">
               <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2">
-                <Traffic className="w-4 h-4" />
+                <BarChart3 className="w-4 h-4" />
                 Traffic Count Overlay
               </h3>
               <p className="text-xs text-gray-500 mt-1">
