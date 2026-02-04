@@ -7,7 +7,7 @@
 
 import React, { useState } from 'react';
 import { X, Link as LinkIcon, CheckCircle, AlertCircle, Loader } from 'lucide-react';
-import { api } from '../../services/api';
+import api from '../../services/api';
 
 interface URLImportPanelProps {
   onClose: () => void;

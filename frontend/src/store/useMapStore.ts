@@ -373,6 +373,22 @@ export const useMapStore = create<MapState>((set, get) => ({
   showPropertyParcelPanel: false,
   setShowPropertyParcelPanel: (show) => set({ showPropertyParcelPanel: show }),
 
+  // Opportunities (CSOKi-filtered ATTOM properties)
+  opportunitiesResult: null,
+  setOpportunitiesResult: (result) => set({ opportunitiesResult: result }),
+  isLoadingOpportunities: false,
+  setIsLoadingOpportunities: (loading) => set({ isLoadingOpportunities: loading }),
+  opportunitiesError: null,
+  setOpportunitiesError: (error) => set({ opportunitiesError: error }),
+  selectedOpportunity: null,
+  setSelectedOpportunity: (opportunity) => set({ selectedOpportunity: opportunity }),
+  clearOpportunities: () =>
+    set({
+      opportunitiesResult: null,
+      opportunitiesError: null,
+      selectedOpportunity: null,
+    }),
+
   // Clear all analysis state
   clearAnalysis: () =>
     set({

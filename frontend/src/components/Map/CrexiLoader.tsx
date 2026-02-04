@@ -7,9 +7,9 @@
  * Created by Subagent - Feb 4, 2026
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, Download, CheckCircle, AlertCircle, Loader, RefreshCw, MapPin, Sliders } from 'lucide-react';
-import { api } from '../../services/api';
+import api from '../../services/api';
 
 interface CrexiLoaderProps {
   onClose: () => void;
