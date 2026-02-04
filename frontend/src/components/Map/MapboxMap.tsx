@@ -355,6 +355,14 @@ function StorePopup({
         >
           {isAnalyzing ? 'Analyzing...' : 'Analyze Trade Area'}
         </button>
+        <a
+          href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${store.latitude},${store.longitude}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 w-full flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+        >
+          Street View
+        </a>
       </div>
     </Popup>
   );
@@ -401,6 +409,14 @@ function POIPopup({
             <p className="text-gray-500 text-xs mt-1">{poi.rating} ★</p>
           )}
         </div>
+        <a
+          href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${poi.latitude},${poi.longitude}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 w-full flex items-center justify-center gap-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-2 rounded transition-colors"
+        >
+          Street View
+        </a>
       </div>
     </Popup>
   );
@@ -461,16 +477,26 @@ function TeamPropertyPopup({
             </p>
           )}
         </div>
-        {property.listing_url && (
+        <div className="space-y-2 mt-2">
+          {property.listing_url && (
+            <a
+              href={property.listing_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full text-center bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+            >
+              View Listing
+            </a>
+          )}
           <a
-            href={property.listing_url}
+            href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${property.latitude},${property.longitude}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-2 block w-full text-center bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+            className="block w-full text-center bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
           >
-            View Listing
+            Street View
           </a>
-        )}
+        </div>
       </div>
     </Popup>
   );

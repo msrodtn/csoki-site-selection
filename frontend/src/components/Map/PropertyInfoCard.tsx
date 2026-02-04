@@ -10,7 +10,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2, GripHorizontal } from 'lucide-react';
+import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2, GripHorizontal, Navigation } from 'lucide-react';
 import type { PropertyListing, ParcelInfo } from '../../types/store';
 import { analysisApi } from '../../services/api';
 import { PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS } from '../../types/store';
@@ -340,30 +340,42 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
       </div>
 
       {/* Actions */}
-      <div className="px-4 py-3 border-t bg-gray-50 flex gap-2">
-        <button
-          onClick={handleGetParcelDetails}
-          disabled={isLoadingParcel}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-        >
-          {isLoadingParcel ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Eye className="w-4 h-4" />
-          )}
-          {showParcelDetails ? 'Refresh Parcel' : 'Get Parcel Details'}
-        </button>
-        {property.external_url && (
-          <a
-            href={property.external_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors"
+      <div className="px-4 py-3 border-t bg-gray-50 space-y-2">
+        <div className="flex gap-2">
+          <button
+            onClick={handleGetParcelDetails}
+            disabled={isLoadingParcel}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
-            <ExternalLink className="w-4 h-4" />
-            View Listing
-          </a>
-        )}
+            {isLoadingParcel ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Eye className="w-4 h-4" />
+            )}
+            {showParcelDetails ? 'Refresh Parcel' : 'Get Parcel Details'}
+          </button>
+          {property.external_url && (
+            <a
+              href={property.external_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              View Listing
+            </a>
+          )}
+        </div>
+        {/* Street View Button */}
+        <a
+          href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${property.latitude},${property.longitude}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-green-500 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors"
+        >
+          <Navigation className="w-4 h-4" />
+          View on Street View
+        </a>
       </div>
 
       {/* Error Display */}
