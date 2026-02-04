@@ -2,50 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including Playwright/Chromium dependencies
+# Install minimal system dependencies (no Playwright - scraping disabled in prod)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     libgeos-dev \
     libproj-dev \
-    # Playwright/Chromium dependencies
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxext6 \
-    # Fonts (Debian Trixie compatible)
-    fonts-liberation \
-    fonts-dejavu-core \
-    fonts-unifont \
     && rm -rf /var/lib/apt/lists/*
-
-# Set Playwright to install browsers in /opt/playwright (accessible to all users)
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright browsers (Chromium only) - deps already installed above
-RUN playwright install chromium
-
-# Make playwright dir accessible
-RUN chmod -R 755 /opt/playwright
 
 # Copy application code
 COPY . .
@@ -57,5 +24,5 @@ USER appuser
 # Expose port (Railway uses PORT env variable)
 EXPOSE 8000
 
-# Start with gunicorn for production
+# Start with uvicorn for production
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
