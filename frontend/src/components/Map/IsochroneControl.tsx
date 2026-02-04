@@ -27,13 +27,6 @@ const TIME_OPTIONS = [5, 10, 15, 20, 30];
 export default function IsochroneControl({ settings, onSettingsChange }: IsochroneControlProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const toggleEnabled = () => {
-    onSettingsChange({
-      ...settings,
-      enabled: !settings.enabled,
-    });
-  };
-
   const setMinutes = (minutes: number) => {
     onSettingsChange({
       ...settings,

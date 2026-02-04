@@ -1040,16 +1040,6 @@ export function MapboxMap() {
     }
   }, [isochroneSettings]);
 
-  // Handle marker click to set isochrone center
-  const handleMarkerClickForIsochrone = useCallback((lng: number, lat: number) => {
-    if (isochroneSettings.enabled) {
-      setIsochroneSettings({
-        ...isochroneSettings,
-        coordinates: [lng, lat],
-      });
-    }
-  }, [isochroneSettings]);
-
   // Check for token
   if (!MAPBOX_TOKEN) {
     return (
