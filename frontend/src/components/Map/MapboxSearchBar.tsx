@@ -7,7 +7,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, X, MapPin } from 'lucide-react';
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+// Check both variable names for compatibility
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
 
 interface GeocodingFeature {
   id: string;

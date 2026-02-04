@@ -52,8 +52,8 @@ import { PropertyInfoCard } from './PropertyInfoCard';
 import { PropertyLegend } from './PropertyLegend';
 import { TeamPropertyForm } from './TeamPropertyForm';
 
-// Mapbox access token
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+// Mapbox access token (check both variable names for compatibility)
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
 
 // Initial map view (Iowa/Nebraska region)
 const INITIAL_VIEW = {
