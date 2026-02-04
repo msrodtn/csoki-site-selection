@@ -8,7 +8,7 @@ Crexi, LoopNet, and other CRE platforms.
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
