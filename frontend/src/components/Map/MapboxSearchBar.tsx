@@ -7,8 +7,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, X, MapPin } from 'lucide-react';
 
-// Check both variable names for compatibility
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
+// Try runtime config first (for Docker), then build-time env vars
+const MAPBOX_TOKEN = 
+  (window as any).RUNTIME_CONFIG?.MAPBOX_TOKEN || 
+  import.meta.env.VITE_MAPBOX_TOKEN || 
+  import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || 
+  '';
 
 interface GeocodingFeature {
   id: string;

@@ -52,8 +52,12 @@ import { PropertyInfoCard } from './PropertyInfoCard';
 import { PropertyLegend } from './PropertyLegend';
 import { TeamPropertyForm } from './TeamPropertyForm';
 
-// Mapbox access token (check both variable names for compatibility)
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
+// Mapbox access token - try runtime config first (for Docker), then build-time env vars
+const MAPBOX_TOKEN = 
+  (window as any).RUNTIME_CONFIG?.MAPBOX_TOKEN || 
+  import.meta.env.VITE_MAPBOX_TOKEN || 
+  import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || 
+  '';
 
 // Initial map view (Iowa/Nebraska region)
 const INITIAL_VIEW = {
