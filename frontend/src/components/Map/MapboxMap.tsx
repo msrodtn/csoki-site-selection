@@ -53,6 +53,7 @@ import { PropertyLegend } from './PropertyLegend';
 import { TeamPropertyForm } from './TeamPropertyForm';
 import MapStyleSwitcher from './MapStyleSwitcher';
 import IsochroneControl, { type IsochroneSettings, type TravelMode } from './IsochroneControl';
+import TrafficCountControl, { type TrafficCountSettings } from './TrafficCountControl';
 import { fetchIsochrone, getIsochroneColor, getIsochroneOpacity } from '../../services/mapbox-isochrone';
 
 // Mapbox access token - try runtime config first (for Docker), then build-time env vars
@@ -587,6 +588,14 @@ export function MapboxMap() {
   });
   const [isochronePolygon, setIsochronePolygon] = useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
 
+  // Traffic count state
+  const [trafficSettings, setTrafficSettings] = useState<TrafficCountSettings>({
+    enabled: false,
+    selectedState: null,
+  });
+  const [trafficData, setTrafficData] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [isLoadingTraffic, setIsLoadingTraffic] = useState(false);
+
   // Map store state
   const {
     selectedStore,
@@ -1040,6 +1049,41 @@ export function MapboxMap() {
     }
   }, [isochroneSettings]);
 
+  // Fetch traffic data when state is selected
+  useEffect(() => {
+    if (!trafficSettings.enabled || !trafficSettings.selectedState) {
+      setTrafficData(null);
+      return;
+    }
+
+    const fetchTrafficData = async () => {
+      setIsLoadingTraffic(true);
+      try {
+        // Iowa DOT Traffic Data Service
+        const serviceUrl = 'https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/Traffic_Data_view/FeatureServer/10';
+        
+        // Fetch GeoJSON from ArcGIS REST API
+        const response = await fetch(
+          `${serviceUrl}/query?where=1=1&outFields=AADT,ROUTE_NAME,STATESIGNED&returnGeometry=true&f=geojson&resultRecordCount=2000`
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch traffic data');
+        }
+
+        const geojson = await response.json();
+        setTrafficData(geojson);
+      } catch (error) {
+        console.error('Error fetching traffic data:', error);
+        setTrafficData(null);
+      } finally {
+        setIsLoadingTraffic(false);
+      }
+    };
+
+    fetchTrafficData();
+  }, [trafficSettings]);
+
   // Check for token
   if (!MAPBOX_TOKEN) {
     return (
@@ -1104,11 +1148,25 @@ export function MapboxMap() {
         onSettingsChange={setIsochroneSettings}
       />
 
+      {/* Traffic Count Control */}
+      <TrafficCountControl
+        settings={trafficSettings}
+        onSettingsChange={setTrafficSettings}
+      />
+
       {/* Property loading indicator */}
       {isLoadingProperties && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
           <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
           Searching properties...
+        </div>
+      )}
+
+      {/* Traffic data loading indicator */}
+      {isLoadingTraffic && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-orange-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+          Loading traffic data...
         </div>
       )}
 
@@ -1159,6 +1217,38 @@ export function MapboxMap() {
                   '#666666'
                 ],
                 'line-opacity': 0.7,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Traffic Count Overlay (State DOT Data) */}
+        {trafficData && trafficSettings.enabled && (
+          <Source id="traffic-counts" type="geojson" data={trafficData}>
+            <Layer
+              id="traffic-counts-layer"
+              type="line"
+              paint={{
+                'line-width': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  8, 1,
+                  12, 2,
+                  16, 4,
+                ],
+                'line-color': [
+                  'step',
+                  ['get', 'AADT'],
+                  '#00C5FF', // 0-999: Blue
+                  1000,
+                  '#55FF00', // 1000-1999: Green
+                  2000,
+                  '#FFAA00', // 2000-4999: Orange
+                  5000,
+                  '#FF0000', // 5000+: Red
+                ],
+                'line-opacity': 0.8,
               }}
             />
           </Source>
