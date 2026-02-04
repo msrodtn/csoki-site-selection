@@ -52,6 +52,8 @@ import { PropertyInfoCard } from './PropertyInfoCard';
 import { PropertyLegend } from './PropertyLegend';
 import { TeamPropertyForm } from './TeamPropertyForm';
 import MapStyleSwitcher from './MapStyleSwitcher';
+import IsochroneControl, { type IsochroneSettings, type TravelMode } from './IsochroneControl';
+import { fetchIsochrone, getIsochroneColor, getIsochroneOpacity } from '../../services/mapbox-isochrone';
 
 // Mapbox access token - try runtime config first (for Docker), then build-time env vars
 const MAPBOX_TOKEN = 
@@ -575,6 +577,15 @@ export function MapboxMap() {
   const mapRef = useRef<MapRef>(null);
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   const [mapStyle, setMapStyle] = useState('mapbox://styles/mapbox/standard');
+  
+  // Isochrone state
+  const [isochroneSettings, setIsochroneSettings] = useState<IsochroneSettings>({
+    enabled: false,
+    minutes: 10,
+    mode: 'driving' as TravelMode,
+    coordinates: null,
+  });
+  const [isochronePolygon, setIsochronePolygon] = useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
 
   // Map store state
   const {
@@ -951,6 +962,37 @@ export function MapboxMap() {
     }
   }, [mapBounds, visibleLayersArray]);
 
+  // Fetch isochrone when settings change or coordinates update
+  useEffect(() => {
+    if (isochroneSettings.enabled && isochroneSettings.coordinates && MAPBOX_TOKEN) {
+      fetchIsochrone(
+        {
+          coordinates: isochroneSettings.coordinates,
+          minutes: isochroneSettings.minutes,
+          mode: isochroneSettings.mode,
+        },
+        MAPBOX_TOKEN
+      ).then((polygon) => {
+        setIsochronePolygon(polygon);
+      }).catch((error) => {
+        console.error('Failed to fetch isochrone:', error);
+        setIsochronePolygon(null);
+      });
+    } else {
+      setIsochronePolygon(null);
+    }
+  }, [isochroneSettings]);
+
+  // Handle marker click to set isochrone center
+  const handleMarkerClickForIsochrone = useCallback((lng: number, lat: number) => {
+    if (isochroneSettings.enabled) {
+      setIsochroneSettings({
+        ...isochroneSettings,
+        coordinates: [lng, lat],
+      });
+    }
+  }, [isochroneSettings]);
+
   // Check for token
   if (!MAPBOX_TOKEN) {
     return (
@@ -1007,6 +1049,12 @@ export function MapboxMap() {
       <MapStyleSwitcher 
         currentStyle={mapStyle}
         onStyleChange={setMapStyle}
+      />
+
+      {/* Isochrone Control */}
+      <IsochroneControl
+        settings={isochroneSettings}
+        onSettingsChange={setIsochroneSettings}
       />
 
       {/* Property loading indicator */}
@@ -1088,6 +1136,29 @@ export function MapboxMap() {
           </Source>
         )}
 
+        {/* Isochrone Layer - Drive Time Areas */}
+        {isochronePolygon && (
+          <Source id="isochrone" type="geojson" data={isochronePolygon}>
+            <Layer
+              id="isochrone-fill"
+              type="fill"
+              paint={{
+                'fill-color': getIsochroneColor(isochroneSettings.mode),
+                'fill-opacity': getIsochroneOpacity(isochroneSettings.mode),
+              }}
+            />
+            <Layer
+              id="isochrone-outline"
+              type="line"
+              paint={{
+                'line-color': getIsochroneColor(isochroneSettings.mode),
+                'line-width': 2,
+                'line-opacity': 0.8,
+              }}
+            />
+          </Source>
+        )}
+
         {/* Parcel Boundaries Layer */}
         {visibleLayersArray.includes('parcels') && (
           <Source
@@ -1141,6 +1212,13 @@ export function MapboxMap() {
               setSelectedTeamProperty(null);
               setSelectedStore(null);
               setSelectedPOI(null);
+              // Set isochrone center if enabled
+              if (isochroneSettings.enabled && property.longitude && property.latitude) {
+                setIsochroneSettings({
+                  ...isochroneSettings,
+                  coordinates: [property.longitude, property.latitude],
+                });
+              }
             }}
           />
         ))}
@@ -1209,6 +1287,13 @@ export function MapboxMap() {
               setSelectedPOI(null);
               setSelectedProperty(null);
               setSelectedTeamProperty(null);
+              // Set isochrone center if enabled
+              if (isochroneSettings.enabled && store.longitude && store.latitude) {
+                setIsochroneSettings({
+                  ...isochroneSettings,
+                  coordinates: [store.longitude, store.latitude],
+                });
+              }
             }}
           />
         ))}
