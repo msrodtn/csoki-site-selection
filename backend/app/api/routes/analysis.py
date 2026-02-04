@@ -42,22 +42,61 @@ async def analyze_trade_area(request: TradeAreaRequest):
     Fetches nearby points of interest (POIs) within the specified radius
     and categorizes them into: anchors, quick_service, restaurants, retail.
 
+    Uses Mapbox Search Box API (primary) or Google Places API (fallback).
+
     - **latitude**: Center point latitude
     - **longitude**: Center point longitude
     - **radius_miles**: Search radius in miles (default: 1.0)
     """
-    if not settings.GOOGLE_PLACES_API_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="Google Places API key not configured. Please set GOOGLE_PLACES_API_KEY environment variable."
-        )
-
     # Convert miles to meters (1 mile = 1609.34 meters)
     radius_meters = int(request.radius_miles * 1609.34)
 
-    # Cap at 50km (Google Places API limit)
+    # Cap at 50km
     if radius_meters > 50000:
         radius_meters = 50000
+
+    # Prefer Mapbox if configured
+    if settings.MAPBOX_ACCESS_TOKEN:
+        try:
+            from app.services.mapbox_places import fetch_mapbox_pois
+            mapbox_result = await fetch_mapbox_pois(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                radius_meters=radius_meters,
+            )
+            # Convert Mapbox response to TradeAreaAnalysis format
+            from app.services.places import POI
+            pois = [
+                POI(
+                    place_id=poi.mapbox_id,
+                    name=poi.name,
+                    category=poi.category,
+                    types=[poi.poi_category] if poi.poi_category else [],
+                    latitude=poi.latitude,
+                    longitude=poi.longitude,
+                    address=poi.full_address or poi.address,
+                    rating=None,
+                    user_ratings_total=None,
+                )
+                for poi in mapbox_result.pois
+            ]
+            return TradeAreaAnalysis(
+                center_latitude=mapbox_result.center_latitude,
+                center_longitude=mapbox_result.center_longitude,
+                radius_meters=mapbox_result.radius_meters,
+                pois=pois,
+                summary=mapbox_result.summary,
+            )
+        except Exception as e:
+            # Log and fall back to Google if Mapbox fails
+            print(f"[TradeArea] Mapbox failed, falling back to Google: {e}")
+
+    # Fallback to Google Places
+    if not settings.GOOGLE_PLACES_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="No POI search API configured. Please set MAPBOX_ACCESS_TOKEN or GOOGLE_PLACES_API_KEY."
+        )
 
     try:
         result = await fetch_nearby_pois(
@@ -756,3 +795,70 @@ async def check_attom_api_key_endpoint():
     Check if the ATTOM API key is configured and valid.
     """
     return await check_attom_api_key()
+
+
+# ============================================
+# Mapbox POI Search (Proof of Concept)
+# ============================================
+
+from app.services.mapbox_places import (
+    fetch_mapbox_pois,
+    check_mapbox_token,
+    MapboxTradeAreaAnalysis,
+)
+
+
+class MapboxTradeAreaRequest(BaseModel):
+    """Request model for Mapbox trade area analysis."""
+    latitude: float
+    longitude: float
+    radius_miles: float = 1.0
+    categories: Optional[list[str]] = None  # anchors, quick_service, restaurants, retail
+
+
+@router.post("/mapbox-trade-area/", response_model=MapboxTradeAreaAnalysis)
+async def analyze_trade_area_mapbox(request: MapboxTradeAreaRequest):
+    """
+    [POC] Analyze trade area using Mapbox Search Box API.
+
+    This is a proof-of-concept alternative to Google Places.
+    Key benefits:
+    - Fewer API calls (1-4 vs 28 for Google)
+    - Lower cost per analysis
+    - Session-based pricing
+
+    Parameters:
+    - **latitude**: Center point latitude
+    - **longitude**: Center point longitude
+    - **radius_miles**: Search radius in miles (default: 1.0)
+    - **categories**: Optional filter (anchors, quick_service, restaurants, retail)
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured. Set MAPBOX_ACCESS_TOKEN environment variable."
+        )
+
+    # Convert miles to meters
+    radius_meters = int(request.radius_miles * 1609.34)
+
+    try:
+        result = await fetch_mapbox_pois(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            radius_meters=radius_meters,
+            categories=request.categories,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing trade area: {str(e)}")
+
+
+@router.get("/check-mapbox-token/")
+async def check_mapbox_token_endpoint():
+    """
+    Check if the Mapbox access token is configured and valid.
+    """
+    return await check_mapbox_token()

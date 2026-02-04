@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, Train, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search } from 'lucide-react';
+import { Layers, Droplets, Car, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -16,13 +16,6 @@ export const MAP_LAYERS = {
     icon: Car,
     color: '#EF4444',
     description: 'Real-time traffic conditions',
-  },
-  transit: {
-    id: 'transit',
-    name: 'Transit',
-    icon: Train,
-    color: '#8B5CF6',
-    description: 'Public transit routes',
   },
   parcels: {
     id: 'parcels',

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StoreMap } from './components/Map/StoreMap';
+import { MapboxMap } from './components/Map/MapboxMap';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { PasswordGate } from './components/Auth/PasswordGate';
 import { AnalysisPanel } from './components/Analysis/AnalysisPanel';
@@ -21,7 +21,7 @@ function App() {
         <div className="flex h-screen w-screen overflow-hidden">
           <Sidebar />
           <main className="flex-1 relative">
-            <StoreMap />
+            <MapboxMap />
             <AnalysisPanel />
             <ComparePanel />
           </main>
