@@ -475,7 +475,21 @@ async def deactivate_listing(
 # ============================================================================
 
 from app.services.url_import import import_from_url, ListingData
-from app.services.crexi_automation import fetch_crexi_area, CrexiAutomationError
+
+# Lazy-load Crexi automation to prevent startup failures if Playwright unavailable
+try:
+    from app.services.crexi_automation import fetch_crexi_area, CrexiAutomationError
+    CREXI_AVAILABLE = True
+except Exception as e:
+    logger.warning(f"Crexi automation unavailable (will return 503 on requests): {e}")
+    CREXI_AVAILABLE = False
+    
+    # Stub classes for type safety
+    class CrexiAutomationError(Exception):
+        pass
+    
+    async def fetch_crexi_area(*args, **kwargs):
+        raise CrexiAutomationError("Crexi automation not available in this environment")
 
 
 class URLImportRequest(BaseModel):
@@ -831,6 +845,13 @@ async def fetch_crexi_area_endpoint(
     
     **Performance:** ~30-90 seconds for fresh export, <1 second for cached.
     """
+    # Check if Crexi automation is available
+    if not CREXI_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Crexi automation is temporarily unavailable. The platform may not have Playwright installed."
+        )
+    
     try:
         # Check for cached data
         cache_cutoff = datetime.utcnow() - timedelta(hours=24)
