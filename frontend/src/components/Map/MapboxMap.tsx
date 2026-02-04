@@ -1059,12 +1059,9 @@ export function MapboxMap() {
     const fetchTrafficData = async () => {
       setIsLoadingTraffic(true);
       try {
-        // Iowa DOT Traffic Data Service
-        const serviceUrl = 'https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/Traffic_Data_view/FeatureServer/10';
-        
-        // Fetch GeoJSON from ArcGIS REST API
+        // Fetch from our backend API (proxies state DOT data)
         const response = await fetch(
-          `${serviceUrl}/query?where=1=1&outFields=AADT,ROUTE_NAME,STATESIGNED&returnGeometry=true&f=geojson&resultRecordCount=2000`
+          `/api/traffic/${trafficSettings.selectedState}`
         );
 
         if (!response.ok) {

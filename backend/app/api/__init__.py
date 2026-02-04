@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import locations, analysis, team_properties, listings, opportunities
+from app.api.routes import locations, analysis, team_properties, listings, opportunities, traffic
 
 api_router = APIRouter()
 
@@ -8,3 +8,4 @@ api_router.include_router(analysis.router)
 api_router.include_router(team_properties.router)
 api_router.include_router(listings.router)
 api_router.include_router(opportunities.router)
+api_router.include_router(traffic.router, prefix="/traffic", tags=["traffic"])

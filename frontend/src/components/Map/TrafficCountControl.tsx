@@ -2,10 +2,10 @@
  * Traffic Count Control - State Traffic Data Overlay
  * 
  * Displays annual average daily traffic (AADT) counts from state DOT data.
- * Currently supports Iowa with color-coded road segments.
+ * Fetches available states dynamically from backend.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BarChart3, ChevronDown, X } from 'lucide-react';
 
 export interface TrafficCountSettings {
@@ -18,16 +18,37 @@ interface TrafficCountControlProps {
   onSettingsChange: (settings: TrafficCountSettings) => void;
 }
 
-// Available states (expand as we add more)
-const AVAILABLE_STATES = [
-  { code: 'IA', name: 'Iowa', serviceUrl: 'https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/Traffic_Data_view/FeatureServer/10' },
-  // Future states:
-  // { code: 'NE', name: 'Nebraska', serviceUrl: '...' },
-  // { code: 'NV', name: 'Nevada', serviceUrl: '...' },
-];
+interface AvailableState {
+  code: string;
+  name: string;
+}
 
 export default function TrafficCountControl({ settings, onSettingsChange }: TrafficCountControlProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [availableStates, setAvailableStates] = useState<AvailableState[]>([]);
+  const [isLoadingStates, setIsLoadingStates] = useState(false);
+
+  // Fetch available states from backend
+  useEffect(() => {
+    const fetchStates = async () => {
+      setIsLoadingStates(true);
+      try {
+        const response = await fetch('/api/traffic/states');
+        if (response.ok) {
+          const data = await response.json();
+          setAvailableStates(data.states || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch available states:', error);
+        // Fallback to Iowa only
+        setAvailableStates([{ code: 'IA', name: 'Iowa' }]);
+      } finally {
+        setIsLoadingStates(false);
+      }
+    };
+
+    fetchStates();
+  }, []);
 
   const selectState = (stateCode: string) => {
     onSettingsChange({
@@ -46,7 +67,7 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
 
   const getSelectedStateName = () => {
     if (!settings.selectedState) return null;
-    const state = AVAILABLE_STATES.find(s => s.code === settings.selectedState);
+    const state = availableStates.find(s => s.code === settings.selectedState);
     return state?.name || settings.selectedState;
   };
 
@@ -106,24 +127,35 @@ export default function TrafficCountControl({ settings, onSettingsChange }: Traf
               <div className="text-xs font-medium text-gray-600 mb-2 uppercase tracking-wide">
                 Select State
               </div>
-              <div className="space-y-2">
-                {AVAILABLE_STATES.map((state) => (
-                  <button
-                    key={state.code}
-                    onClick={() => selectState(state.code)}
-                    className={`
-                      w-full text-left px-3 py-2 rounded-lg transition-colors text-sm font-medium
-                      ${
-                        settings.selectedState === state.code
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }
-                    `}
-                  >
-                    {state.name}
-                  </button>
-                ))}
-              </div>
+              {isLoadingStates ? (
+                <div className="flex items-center justify-center py-4 text-gray-500 text-sm">
+                  <div className="animate-spin w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full mr-2" />
+                  Loading states...
+                </div>
+              ) : availableStates.length > 0 ? (
+                <div className="space-y-2">
+                  {availableStates.map((state) => (
+                    <button
+                      key={state.code}
+                      onClick={() => selectState(state.code)}
+                      className={`
+                        w-full text-left px-3 py-2 rounded-lg transition-colors text-sm font-medium
+                        ${
+                          settings.selectedState === state.code
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }
+                      `}
+                    >
+                      {state.name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 py-4 text-center">
+                  No states available
+                </div>
+              )}
             </div>
 
             {/* Legend */}
