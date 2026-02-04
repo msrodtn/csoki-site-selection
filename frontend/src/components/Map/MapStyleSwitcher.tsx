@@ -78,7 +78,7 @@ export default function MapStyleSwitcher({ currentStyle, onStyleChange }: MapSty
   const currentStyleObj = MAP_STYLES.find(s => s.url === currentStyle) || MAP_STYLES[0];
 
   return (
-    <div className="absolute top-4 right-4 z-10">
+    <div className="absolute top-4 left-4 z-10">
       {/* Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -99,7 +99,7 @@ export default function MapStyleSwitcher({ currentStyle, onStyleChange }: MapSty
           />
 
           {/* Menu */}
-          <div className="absolute top-12 right-0 bg-white rounded-lg shadow-xl border border-gray-200 w-64 overflow-hidden z-10">
+          <div className="absolute top-12 left-0 bg-white rounded-lg shadow-xl border border-gray-200 w-64 overflow-hidden z-10">
             <div className="p-2 bg-gray-50 border-b border-gray-200">
               <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2">
                 <Map className="w-4 h-4" />
