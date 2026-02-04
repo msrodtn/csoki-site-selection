@@ -1,10 +1,20 @@
 import { BrandFilter } from './BrandFilter';
 import { StateFilter } from './StateFilter';
-import { SearchBar } from './SearchBar';
+import { MapboxSearchBar } from '../Map/MapboxSearchBar';
 import { MapLayers } from './MapLayers';
 import { MapPin } from 'lucide-react';
+import { useMapStore } from '../../store/useMapStore';
 
 export function Sidebar() {
+  const { navigateTo, setAllStatesVisible } = useMapStore();
+
+  const handleSearchSelect = (lng: number, lat: number, _placeName: string) => {
+    // Enable all states to show stores in searched area
+    setAllStatesVisible(true);
+    // Navigate to location
+    navigateTo(lat, lng, 12);
+  };
+
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden">
       {/* Header */}
@@ -20,7 +30,7 @@ export function Sidebar() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
-        <SearchBar />
+        <MapboxSearchBar onSelect={handleSearchSelect} placeholder="Type a city name..." />
         <BrandFilter />
         <StateFilter />
         <MapLayers />

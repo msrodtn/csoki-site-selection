@@ -11,10 +11,20 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from urllib.parse import quote
 
-from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+# Make playwright import conditional to allow backend to start without it
+PLAYWRIGHT_AVAILABLE = False
+try:
+    from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    # Playwright not installed - scraper features will be disabled
+    async_playwright = None
+    Browser = None
+    Page = None
+    BrowserContext = None
 
 from app.core.config import settings
 
@@ -53,9 +63,13 @@ class BaseScraper(ABC):
     """Base class for listing scrapers."""
 
     def __init__(self):
-        self.browser: Optional[Browser] = None
-        self.context: Optional[BrowserContext] = None
-        self.page: Optional[Page] = None
+        if not PLAYWRIGHT_AVAILABLE:
+            raise RuntimeError(
+                "Playwright is not installed. Install it with: pip install playwright && playwright install chromium"
+            )
+        self.browser = None
+        self.context = None
+        self.page = None
 
     @abstractmethod
     async def login(self) -> bool:
@@ -485,6 +499,11 @@ class ListingScraperService:
     """
 
     def __init__(self):
+        if not PLAYWRIGHT_AVAILABLE:
+            raise RuntimeError(
+                "Playwright is not installed. Scraping features are disabled. "
+                "Install with: pip install playwright && playwright install chromium"
+            )
         self.crexi = CrexiScraper()
         self.loopnet = LoopNetScraper()
 
@@ -574,5 +593,12 @@ async def search_listings(
     Example:
         results = await search_listings("Des Moines", "IA")
     """
+    if not PLAYWRIGHT_AVAILABLE:
+        raise RuntimeError("Playwright is not installed. Scraping features are disabled.")
     service = ListingScraperService()
     return await service.search_all(city, state, property_types, headless=True, sources=sources)
+
+
+def is_scraping_available() -> bool:
+    """Check if scraping features are available (playwright installed)."""
+    return PLAYWRIGHT_AVAILABLE

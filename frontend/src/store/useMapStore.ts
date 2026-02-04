@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { Map as MapboxMap } from 'mapbox-gl';
 import type {
   Store,
   BrandKey,
@@ -17,9 +18,9 @@ import type {
 const TARGET_STATES = ['IA', 'NE', 'NV', 'ID'];
 
 interface MapState {
-  // Google Map instance (for direct navigation)
-  mapInstance: google.maps.Map | null;
-  setMapInstance: (map: google.maps.Map | null) => void;
+  // Mapbox Map instance (for direct navigation)
+  mapInstance: MapboxMap | null;
+  setMapInstance: (map: MapboxMap | null) => void;
 
   // Navigate to a location (calls map methods directly)
   navigateTo: (lat: number, lng: number, zoom: number) => void;
@@ -168,8 +169,11 @@ export const useMapStore = create<MapState>((set, get) => ({
   navigateTo: (lat, lng, zoom) => {
     const map = get().mapInstance;
     if (map) {
-      map.panTo({ lat, lng });
-      map.setZoom(zoom);
+      map.flyTo({
+        center: [lng, lat],
+        zoom,
+        duration: 1500,
+      });
     }
   },
 
