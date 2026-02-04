@@ -574,7 +574,7 @@ const parcelLineLayer: LineLayerSpecification = {
 export function MapboxMap() {
   const mapRef = useRef<MapRef>(null);
   const [viewState, setViewState] = useState(INITIAL_VIEW);
-  const [mapStyle, setMapStyle] = useState('mapbox://styles/mapbox/light-v11');
+  const [mapStyle, setMapStyle] = useState('mapbox://styles/mapbox/standard');
 
   // Map store state
   const {

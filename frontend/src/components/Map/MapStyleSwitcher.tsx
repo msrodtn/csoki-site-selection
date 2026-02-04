@@ -24,6 +24,12 @@ export interface MapStyle {
 
 export const MAP_STYLES: MapStyle[] = [
   {
+    id: 'standard',
+    name: '3D Standard',
+    url: 'mapbox://styles/mapbox/standard',
+    description: '3D buildings with dynamic lighting',
+  },
+  {
     id: 'streets',
     name: 'Streets',
     url: 'mapbox://styles/mapbox/streets-v12',
