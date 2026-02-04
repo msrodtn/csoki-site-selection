@@ -60,6 +60,13 @@ export const MAP_LAYERS = {
     description: 'ATTOM opportunities & team flagged',
     hasSubToggles: true,
   },
+  csoki_opportunities: {
+    id: 'csoki_opportunities',
+    name: 'CSOKi Opportunities',
+    icon: Diamond,
+    color: '#9333EA',
+    description: '0.8-2ac parcels with opportunity signals',
+  },
 } as const;
 
 // Sub-toggle definitions for Properties For Sale layer

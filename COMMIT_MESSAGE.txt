@@ -1,0 +1,47 @@
+feat: Add CSOKi Opportunities filter with ATTOM-based ranking
+
+Implements comprehensive opportunity filtering system that automatically
+identifies and ranks commercial properties matching CSOKi's criteria.
+
+Features:
+- New /opportunities/search API endpoint with smart ranking
+- Property filtering: 0.8-2 acres, 2500-6000 sqft buildings
+- Priority-based ranking (empty parcels → vacant → absentee → tax issues)
+- Purple diamond markers with rank numbers on map
+- PropertyInfoCard shows opportunity context and signals
+- Automatic data refresh when layer toggled
+
+Technical Implementation:
+- Backend: FastAPI endpoint with ATTOM API integration
+- Frontend: React/TypeScript with Google Maps markers
+- Ranking algorithm based on 6 priority signals
+- Reuses existing PropertyInfoCard component
+
+Files Changed:
+Backend:
+- NEW: backend/app/api/routes/opportunities.py (407 lines)
+- MOD: backend/app/api/__init__.py
+
+Frontend:
+- MOD: frontend/src/types/store.ts (OpportunityRanking types)
+- MOD: frontend/src/store/useMapStore.ts (opportunities state)
+- MOD: frontend/src/services/api.ts (opportunitiesApi)
+- MOD: frontend/src/components/Sidebar/MapLayers.tsx (layer toggle)
+- MOD: frontend/src/components/Map/StoreMap.tsx (markers & logic)
+
+Documentation:
+- NEW: OPPORTUNITIES_FEATURE_COMPLETE.md (full technical docs)
+- NEW: SUBAGENT_FINAL_REPORT.md (implementation summary)
+- NEW: MICHAEL_READ_ME_FIRST.md (quick start guide)
+- NEW: test_opportunities.sh (automated testing script)
+- NEW: COMMIT_MESSAGE.txt (this file)
+
+Testing:
+- Python code compiles without errors
+- TypeScript code compiles without errors
+- Test script provided for backend validation
+- Ready for manual frontend testing
+
+Status: READY FOR TESTING & DEPLOYMENT
+
+Closes: CSOKi Opportunities Feature Request

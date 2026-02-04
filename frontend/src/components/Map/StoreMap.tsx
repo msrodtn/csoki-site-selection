@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, CircleF, PolygonF } from '@react-google-maps/api';
 import { useMapStore } from '../../store/useMapStore';
 import { useStores } from '../../hooks/useStores';
-import { analysisApi, teamPropertiesApi, listingsApi } from '../../services/api';
+import { analysisApi, teamPropertiesApi, listingsApi, opportunitiesApi } from '../../services/api';
 import {
   BRAND_COLORS,
   BRAND_LABELS,
@@ -16,6 +16,7 @@ import {
   type POICategory,
   type PropertyListing,
   type TeamProperty,
+  type OpportunityRanking,
 } from '../../types/store';
 import type { Store, ParcelInfo, ScrapedListing } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
@@ -216,6 +217,12 @@ export function StoreMap() {
   const [scrapedListings, setScrapedListings] = useState<ScrapedListing[]>([]);
   const [isLoadingScrapedListings, setIsLoadingScrapedListings] = useState(false);
   const [selectedScrapedListing, setSelectedScrapedListing] = useState<ScrapedListing | null>(null);
+
+  // CSOKi Opportunities state (filtered ATTOM properties)
+  const [opportunities, setOpportunities] = useState<OpportunityRanking[]>([]);
+  const [isLoadingOpportunities, setIsLoadingOpportunities] = useState(false);
+  const [opportunitiesError, setOpportunitiesError] = useState<string | null>(null);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<OpportunityRanking | null>(null);
 
   // Local map reference for internal use
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -703,6 +710,52 @@ export function StoreMap() {
     }
   }, [visiblePropertySources, mapBounds]);
 
+  // Manage CSOKi Opportunities when layer is toggled
+  useEffect(() => {
+    const showOpportunities = visibleLayersArray.includes('csoki_opportunities');
+
+    if (showOpportunities && mapBounds) {
+      const fetchOpportunities = async () => {
+        setIsLoadingOpportunities(true);
+        setOpportunitiesError(null);
+
+        try {
+          const result = await opportunitiesApi.search({
+            min_lat: mapBounds.south,
+            max_lat: mapBounds.north,
+            min_lng: mapBounds.west,
+            max_lng: mapBounds.east,
+            min_parcel_acres: 0.8,
+            max_parcel_acres: 2.0,
+            min_building_sqft: 2500,
+            max_building_sqft: 6000,
+            include_retail: true,
+            include_office: true,
+            include_land: true,
+            require_opportunity_signal: true,
+            min_opportunity_score: 0,
+            limit: 100,
+          });
+
+          setOpportunities(result.opportunities || []);
+        } catch (error: any) {
+          console.error('[Opportunities] Error fetching:', error);
+          setOpportunitiesError(error.response?.data?.detail || 'Failed to load opportunities');
+          setOpportunities([]);
+        } finally {
+          setIsLoadingOpportunities(false);
+        }
+      };
+
+      fetchOpportunities();
+    } else if (!showOpportunities) {
+      // Clear opportunities when layer is disabled
+      setOpportunities([]);
+      setSelectedOpportunity(null);
+      setOpportunitiesError(null);
+    }
+  }, [visibleLayersArray.includes('csoki_opportunities'), mapBounds]);
+
   // Manage heat map layer (separate effect since it depends on visibleStores)
   useEffect(() => {
     const map = mapRef.current;
@@ -846,6 +899,24 @@ export function StoreMap() {
     };
   };
 
+  // Create opportunity marker icon (purple diamond with rank number)
+  const createOpportunityMarkerIcon = (opportunity: OpportunityRanking, isSelected: boolean): google.maps.Icon => {
+    const size = isSelected ? 40 : 32;
+    const color = isSelected ? '#7C3AED' : '#9333EA';
+    const rank = opportunity.rank <= 99 ? opportunity.rank : '!';
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}">
+        <path d="M12 2 L22 12 L12 22 L2 12 Z" fill="${color}" stroke="white" stroke-width="2"/>
+        <text x="12" y="15" text-anchor="middle" fill="white" font-size="10" font-weight="bold">${rank}</text>
+      </svg>
+    `;
+    return {
+      url: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+      scaledSize: new google.maps.Size(size, size),
+      anchor: new google.maps.Point(size / 2, size / 2),
+    };
+  };
+
   // Handle scraped listing marker click
   const handleScrapedListingMarkerClick = useCallback((listing: ScrapedListing) => {
     setSelectedScrapedListing(listing);
@@ -853,6 +924,17 @@ export function StoreMap() {
     setSelectedTeamProperty(null);
     setSelectedStore(null);
     setSelectedPOI(null);
+    setSelectedOpportunity(null);
+  }, [setSelectedStore]);
+
+  // Handle opportunity marker click
+  const handleOpportunityMarkerClick = useCallback((opportunity: OpportunityRanking) => {
+    setSelectedOpportunity(opportunity);
+    setSelectedProperty(null);
+    setSelectedTeamProperty(null);
+    setSelectedStore(null);
+    setSelectedPOI(null);
+    setSelectedScrapedListing(null);
   }, [setSelectedStore]);
 
   // Handle right-click to flag a property
@@ -1130,6 +1212,35 @@ export function StoreMap() {
             />
           ))}
 
+        {/* CSOKi Opportunity markers (filtered ATTOM properties) - shown when csoki_opportunities layer is active */}
+        {visibleLayersArray.includes('csoki_opportunities') && opportunities.map((opportunity) => (
+          <MarkerF
+            key={`opportunity-${opportunity.property.id}`}
+            position={{ lat: opportunity.property.latitude, lng: opportunity.property.longitude }}
+            icon={createOpportunityMarkerIcon(opportunity, selectedOpportunity?.property.id === opportunity.property.id)}
+            onClick={() => handleOpportunityMarkerClick(opportunity)}
+            zIndex={selectedOpportunity?.property.id === opportunity.property.id ? 1800 : 400}
+            title={`Rank #${opportunity.rank}: ${opportunity.property.address} - ${opportunity.signal_count} signals`}
+          />
+        ))}
+
+        {/* Highlight circle around selected opportunity */}
+        {selectedOpportunity && (
+          <CircleF
+            center={{ lat: selectedOpportunity.property.latitude, lng: selectedOpportunity.property.longitude }}
+            radius={50} // meters
+            options={{
+              fillColor: '#9333EA',
+              fillOpacity: 0.15,
+              strokeColor: '#9333EA',
+              strokeWeight: 3,
+              strokeOpacity: 0.8,
+              zIndex: 1750,
+              clickable: false,
+            }}
+          />
+        )}
+
         {/* POI markers */}
         {visiblePOIs.map((poi) => (
           <MarkerF
@@ -1363,6 +1474,33 @@ export function StoreMap() {
         <PropertyInfoCard
           property={selectedProperty}
           onClose={() => setSelectedProperty(null)}
+        />
+      )}
+
+      {/* Opportunity Info Card (for CSOKi opportunity marker clicks) */}
+      {selectedOpportunity && (
+        <PropertyInfoCard
+          property={{
+            ...selectedOpportunity.property,
+            // Enhance property with opportunity ranking context
+            opportunity_signals: [
+              // Add rank as first signal
+              {
+                signal_type: 'opportunity_rank',
+                description: `Rank #${selectedOpportunity.rank} of ${opportunities.length} opportunities`,
+                strength: 'high' as const,
+              },
+              // Add priority signals
+              ...selectedOpportunity.priority_signals.map((signal) => ({
+                signal_type: 'priority',
+                description: signal,
+                strength: 'high' as const,
+              })),
+              // Add original property signals
+              ...selectedOpportunity.property.opportunity_signals,
+            ],
+          }}
+          onClose={() => setSelectedOpportunity(null)}
         />
       )}
 

@@ -19,6 +19,8 @@ import type {
   ScrapeResponse,
   ScrapedListingsResponse,
   ScrapedSourcesStatus,
+  OpportunitySearchRequest,
+  OpportunitySearchResponse,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -314,6 +316,42 @@ export const listingsApi = {
   // Deactivate a listing (mark as sold/removed)
   deactivate: async (listingId: number): Promise<{ message: string }> => {
     const { data } = await api.delete(`/listings/${listingId}`);
+    return data;
+  },
+};
+
+// ============================================
+// Opportunities API (CSOKi-filtered ATTOM properties)
+// ============================================
+
+export const opportunitiesApi = {
+  // Search for CSOKi-qualified property opportunities
+  search: async (request: OpportunitySearchRequest): Promise<OpportunitySearchResponse> => {
+    const { data } = await api.post('/opportunities/search', request);
+    return data;
+  },
+
+  // Get opportunity statistics and metadata
+  getStats: async (): Promise<{
+    priority_order: Array<{
+      rank: number;
+      signal: string;
+      description: string;
+      points: number;
+    }>;
+    bonus_signals: Array<{
+      signal: string;
+      description: string;
+      points: number;
+    }>;
+    criteria: {
+      parcel_size: string;
+      building_size: string;
+      property_types: string[];
+      excludes: string[];
+    };
+  }> => {
+    const { data } = await api.get('/opportunities/stats');
     return data;
   },
 };
