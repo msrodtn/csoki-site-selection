@@ -15,9 +15,8 @@ EOF
 echo "Runtime config created with Mapbox token: ${MAPBOX_TOKEN:0:20}..."
 echo "Backend URL: ${BACKEND_URL}"
 
-# Replace BACKEND_URL in nginx config
-envsubst '${BACKEND_URL}' < /etc/nginx/conf.d/default.conf > /tmp/nginx.conf
-mv /tmp/nginx.conf /etc/nginx/conf.d/default.conf
+# Replace BACKEND_URL placeholder in nginx config
+sed -i "s|BACKEND_URL_PLACEHOLDER|${BACKEND_URL}|g" /etc/nginx/conf.d/default.conf
 
 # Start nginx
 exec nginx -g 'daemon off;'
