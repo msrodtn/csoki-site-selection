@@ -1460,7 +1460,16 @@ STATE_FIPS = {
     "ID": "16",
 }
 
-# ArcGIS Census Tract Feature Server URL
+# Census TIGER boundary service URLs (free)
+TIGER_COUNTIES_URL = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_ACS2021/MapServer/86/query"
+TIGER_PLACES_URL = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_ACS2021/MapServer/24/query"
+TIGER_ZCTAS_URL = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_ACS2021/MapServer/2/query"
+
+# ArcGIS Living Atlas - Census Tracts with ACS 2022 demographic data
+ACS_POPULATION_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Total_Population_Boundaries/FeatureServer/2/query"
+ACS_INCOME_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Median_Household_Income_Variables_Boundaries/FeatureServer/2/query"
+
+# Legacy URL (2020 Census - less detailed)
 ARCGIS_CENSUS_TRACTS_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Census_Tracts/FeatureServer/0/query"
 
 
@@ -1472,25 +1481,25 @@ async def get_demographic_boundaries(
     """
     Fetch Census Tract boundaries with demographic data for choropleth visualization.
 
-    Returns GeoJSON FeatureCollection with tracts colored by the specified metric.
+    Uses ACS 2022 data from ArcGIS Living Atlas for accurate Population and Income.
 
     **Parameters:**
     - `state`: State abbreviation (IA, NE, NV, ID)
     - `metric`: Demographic metric (population, income, density)
 
     **Supported Metrics:**
-    - `population`: Total population per tract
-    - `income`: Median household income
+    - `population`: Total population per tract (ACS 2022)
+    - `income`: Median household income (ACS 2022)
     - `density`: Population density (pop/sq mile)
 
     **Returns:**
     GeoJSON FeatureCollection with properties for each tract including:
     - NAME: Tract name/number
-    - STATE: State FIPS code
-    - COUNTY: County name
-    - TOTAL_POPULATION: Total population
+    - GEOID: Census tract GEOID
+    - TOTAL_POPULATION: Total population (ACS 2022)
+    - MEDIAN_INCOME: Median household income (ACS 2022)
     - POP_DENSITY: Population per square mile (calculated)
-    - The specified metric value for choropleth coloring
+    - metric_value: The selected metric value for choropleth coloring
     """
     state_upper = state.upper()
     if state_upper not in STATE_FIPS:
@@ -1501,24 +1510,29 @@ async def get_demographic_boundaries(
 
     fips_code = STATE_FIPS[state_upper]
 
-    # Define fields to fetch based on metric
-    # ArcGIS Census Tract fields available:
-    # NAME, STATE, COUNTY, TRACT, GEOID, ALAND (land area in sq meters),
-    # AWATER, POP100 (2020 census pop), HU100 (housing units)
-    out_fields = "NAME,STATE,COUNTY,TRACT,GEOID,ALAND,POP100"
+    # Choose ArcGIS service based on metric
+    # Income uses a different service with B19013_001E (Median Household Income)
+    if metric == "income":
+        url = ACS_INCOME_URL
+        # ACS Income service fields: NAME, GEOID, B19013_001E (median HH income), Shape_Area
+        out_fields = "NAME,GEOID,B19013_001E,Shape_Area"
+    else:
+        url = ACS_POPULATION_URL
+        # ACS Population service fields: NAME, GEOID, B01001_001E (total pop), Shape_Area
+        out_fields = "NAME,GEOID,B01001_001E,Shape_Area"
 
-    # Build query parameters
+    # Build query parameters - filter by state FIPS (first 2 chars of GEOID)
     params = {
-        "where": f"STATE = '{fips_code}'",
+        "where": f"GEOID LIKE '{fips_code}%'",
         "outFields": out_fields,
         "f": "geojson",
         "returnGeometry": "true",
         "outSR": "4326",
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=90.0) as client:
         try:
-            response = await client.get(ARCGIS_CENSUS_TRACTS_URL, params=params)
+            response = await client.get(url, params=params)
             response.raise_for_status()
             geojson = response.json()
 
@@ -1527,30 +1541,30 @@ async def get_demographic_boundaries(
                 for feature in geojson["features"]:
                     props = feature.get("properties", {})
 
-                    # Get raw values
-                    pop = props.get("POP100") or 0
-                    land_area_sqm = props.get("ALAND") or 0
+                    # Get raw values from ACS data
+                    # B01001_001E = Total Population, B19013_001E = Median Household Income
+                    pop = props.get("B01001_001E") or 0
+                    income = props.get("B19013_001E") or 0
+                    shape_area = props.get("Shape_Area") or 0  # in square meters
 
                     # Calculate density (pop per sq mile)
                     # 1 sq mile = 2,589,988 sq meters
-                    land_area_sqmi = land_area_sqm / 2589988 if land_area_sqm > 0 else 0
+                    land_area_sqmi = shape_area / 2589988 if shape_area > 0 else 0
                     density = pop / land_area_sqmi if land_area_sqmi > 0 else 0
 
-                    # Add calculated fields
+                    # Add standardized fields
                     props["TOTAL_POPULATION"] = pop
+                    props["MEDIAN_INCOME"] = income
                     props["POP_DENSITY"] = round(density, 2)
                     props["LAND_AREA_SQMI"] = round(land_area_sqmi, 2)
 
-                    # Add the selected metric as a standardized field
+                    # Add the selected metric as a standardized field for choropleth
                     if metric == "population":
                         props["metric_value"] = pop
                     elif metric == "density":
                         props["metric_value"] = round(density, 2)
                     elif metric == "income":
-                        # Note: Income data requires ArcGIS GeoEnrichment API
-                        # For now, use population as placeholder
-                        props["metric_value"] = pop
-                        props["income_note"] = "Income data requires GeoEnrichment API"
+                        props["metric_value"] = income
 
             return geojson
 
@@ -1568,4 +1582,156 @@ async def get_demographic_boundaries(
             raise HTTPException(
                 status_code=500,
                 detail=f"Error fetching demographic boundaries: {str(e)}"
+            )
+
+
+# =============================================================================
+# Census TIGER Boundary Endpoints (Counties, Cities, ZIP Codes)
+# =============================================================================
+
+@router.get("/boundaries/counties/")
+async def get_county_boundaries(
+    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+):
+    """
+    Fetch county boundaries for a state from Census TIGER.
+
+    Returns GeoJSON FeatureCollection with county polygons.
+    """
+    state_upper = state.upper()
+    if state_upper not in STATE_FIPS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid state: {state}. Supported states: {', '.join(STATE_FIPS.keys())}"
+        )
+
+    fips_code = STATE_FIPS[state_upper]
+
+    params = {
+        "where": f"STATE = '{fips_code}'",
+        "outFields": "NAME,BASENAME,GEOID,STATE,COUNTY,AREALAND",
+        "f": "geojson",
+        "returnGeometry": "true",
+        "outSR": "4326",
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.get(TIGER_COUNTIES_URL, params=params)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Census TIGER API error: {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to connect to Census TIGER API: {str(e)}"
+            )
+
+
+@router.get("/boundaries/cities/")
+async def get_city_boundaries(
+    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+):
+    """
+    Fetch city/place boundaries for a state from Census TIGER.
+
+    Returns GeoJSON FeatureCollection with city/place polygons.
+    """
+    state_upper = state.upper()
+    if state_upper not in STATE_FIPS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid state: {state}. Supported states: {', '.join(STATE_FIPS.keys())}"
+        )
+
+    fips_code = STATE_FIPS[state_upper]
+
+    params = {
+        "where": f"STATE = '{fips_code}'",
+        "outFields": "NAME,BASENAME,GEOID,STATE,AREALAND,FUNCSTAT",
+        "f": "geojson",
+        "returnGeometry": "true",
+        "outSR": "4326",
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.get(TIGER_PLACES_URL, params=params)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Census TIGER API error: {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to connect to Census TIGER API: {str(e)}"
+            )
+
+
+@router.get("/boundaries/zipcodes/")
+async def get_zipcode_boundaries(
+    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+):
+    """
+    Fetch ZIP Code (ZCTA) boundaries for a state from Census TIGER.
+
+    Returns GeoJSON FeatureCollection with ZCTA polygons.
+    Note: ZCTAs (ZIP Code Tabulation Areas) approximate ZIP codes for census purposes.
+    """
+    state_upper = state.upper()
+    if state_upper not in STATE_FIPS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid state: {state}. Supported states: {', '.join(STATE_FIPS.keys())}"
+        )
+
+    fips_code = STATE_FIPS[state_upper]
+
+    # ZCTAs don't have a STATE field, so we need to filter by GEOID prefix
+    # ZCTA GEOIDs start with the first 3 digits of ZIP codes
+    # We'll need to get all and filter, or use a bounding box
+    # For now, we use the INTPTLAT/INTPTLON to filter approximately
+
+    # Alternative: Query by state bounding box
+    state_bounds = {
+        "IA": {"minX": -96.7, "minY": 40.3, "maxX": -90.1, "maxY": 43.6},
+        "NE": {"minX": -104.1, "minY": 39.9, "maxX": -95.3, "maxY": 43.1},
+        "NV": {"minX": -120.1, "minY": 35.0, "maxX": -114.0, "maxY": 42.1},
+        "ID": {"minX": -117.3, "minY": 41.9, "maxX": -111.0, "maxY": 49.1},
+    }
+
+    bounds = state_bounds[state_upper]
+
+    params = {
+        "where": "1=1",
+        "geometry": f"{bounds['minX']},{bounds['minY']},{bounds['maxX']},{bounds['maxY']}",
+        "geometryType": "esriGeometryEnvelope",
+        "spatialRel": "esriSpatialRelIntersects",
+        "outFields": "NAME,BASENAME,GEOID,AREALAND,ZCTA5CE20",
+        "f": "geojson",
+        "returnGeometry": "true",
+        "outSR": "4326",
+    }
+
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        try:
+            response = await client.get(TIGER_ZCTAS_URL, params=params)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Census TIGER API error: {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to connect to Census TIGER API: {str(e)}"
             )

@@ -699,9 +699,16 @@ export function MapboxMap() {
   const [hoveredTractInfo, setHoveredTractInfo] = useState<{
     name: string;
     population: number;
+    income: number;
     density: number;
     lngLat: [number, number];
   } | null>(null);
+
+  // Census TIGER boundary state (counties, cities, zipcodes)
+  const [countyBoundaries, setCountyBoundaries] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [cityBoundaries, setCityBoundaries] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [zipcodeBoundaries, setZipcodeBoundaries] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [isLoadingBoundaries, setIsLoadingBoundaries] = useState(false);
 
   // Track analysis center for re-analysis
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -1026,6 +1033,7 @@ export function MapboxMap() {
         setHoveredTractInfo({
           name: feature.properties?.NAME || 'Unknown Tract',
           population: feature.properties?.TOTAL_POPULATION || 0,
+          income: feature.properties?.MEDIAN_INCOME || 0,
           density: feature.properties?.POP_DENSITY || 0,
           lngLat: [e.lngLat.lng, e.lngLat.lat],
         });
@@ -1332,6 +1340,42 @@ export function MapboxMap() {
     fetchCensusTracts();
   }, [visibleLayersArray, visibleBoundaryTypes, visibleStates, demographicMetric]);
 
+  // Fetch County, City, and ZIP Code boundaries when enabled
+  useEffect(() => {
+    const boundariesEnabled = visibleLayersArray.includes('boundaries');
+    const statesToFetch = Array.from(visibleStates).filter(s => ['IA', 'NE', 'NV', 'ID'].includes(s));
+    const primaryState = statesToFetch[0] || 'IA';
+
+    // Fetch counties
+    if (boundariesEnabled && visibleBoundaryTypes.has('counties') && !countyBoundaries) {
+      setIsLoadingBoundaries(true);
+      analysisApi.getCountyBoundaries(primaryState)
+        .then(data => setCountyBoundaries(data))
+        .catch(err => console.error('Failed to fetch county boundaries:', err))
+        .finally(() => setIsLoadingBoundaries(false));
+    } else if (!boundariesEnabled || !visibleBoundaryTypes.has('counties')) {
+      setCountyBoundaries(null);
+    }
+
+    // Fetch cities
+    if (boundariesEnabled && visibleBoundaryTypes.has('cities') && !cityBoundaries) {
+      analysisApi.getCityBoundaries(primaryState)
+        .then(data => setCityBoundaries(data))
+        .catch(err => console.error('Failed to fetch city boundaries:', err));
+    } else if (!boundariesEnabled || !visibleBoundaryTypes.has('cities')) {
+      setCityBoundaries(null);
+    }
+
+    // Fetch ZIP codes
+    if (boundariesEnabled && visibleBoundaryTypes.has('zipcodes') && !zipcodeBoundaries) {
+      analysisApi.getZipCodeBoundaries(primaryState)
+        .then(data => setZipcodeBoundaries(data))
+        .catch(err => console.error('Failed to fetch ZIP code boundaries:', err));
+    } else if (!boundariesEnabled || !visibleBoundaryTypes.has('zipcodes')) {
+      setZipcodeBoundaries(null);
+    }
+  }, [visibleLayersArray, visibleBoundaryTypes, visibleStates]);
+
   // Check for token
   if (!MAPBOX_TOKEN) {
     return (
@@ -1410,6 +1454,14 @@ export function MapboxMap() {
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
           <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
           Loading census tracts...
+        </div>
+      )}
+
+      {/* Boundaries loading indicator */}
+      {isLoadingBoundaries && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+          Loading boundaries...
         </div>
       )}
 
@@ -1528,16 +1580,21 @@ export function MapboxMap() {
             anchor="bottom"
             offset={10}
           >
-            <div className="text-sm min-w-[140px]">
+            <div className="text-sm min-w-[160px]">
               <div className="font-semibold text-purple-700 mb-1">
                 Census Tract
               </div>
-              <div className="text-xs text-gray-700 mb-0.5">
+              <div className="text-xs text-gray-700 mb-1">
                 {hoveredTractInfo.name}
               </div>
               <div className="text-xs text-gray-600">
                 Pop: {hoveredTractInfo.population.toLocaleString()}
               </div>
+              {hoveredTractInfo.income > 0 && (
+                <div className="text-xs text-green-700">
+                  Income: ${hoveredTractInfo.income.toLocaleString()}
+                </div>
+              )}
               <div className="text-xs text-gray-600">
                 Density: {hoveredTractInfo.density.toLocaleString()}/sq mi
               </div>
@@ -1606,76 +1663,66 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Boundaries Explorer Layer - Mapbox Boundaries v4 */}
-        {visibleLayersArray.includes('boundaries') && (
-          <Source
-            id="mapbox-boundaries"
-            type="vector"
-            url="mapbox://mapbox.boundaries-adm-v4"
-          >
-            {/* County boundaries (admin level 2) */}
-            {visibleBoundaryTypes.has('counties') && (
-              <Layer
-                id="county-boundaries"
-                type="line"
-                source-layer="boundaries_admin_2"
-                minzoom={6}
-                paint={{
-                  'line-color': '#3B82F6',
-                  'line-width': [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    6,
-                    1,
-                    10,
-                    2,
-                    14,
-                    2.5,
-                  ],
-                  'line-opacity': 0.8,
-                }}
-              />
-            )}
-            {/* City boundaries (admin level 3) - show at higher zoom */}
-            {visibleBoundaryTypes.has('cities') && (
-              <Layer
-                id="city-boundaries"
-                type="line"
-                source-layer="boundaries_admin_3"
-                minzoom={9}
-                paint={{
-                  'line-color': '#22C55E',
-                  'line-width': [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    9,
-                    0.5,
-                    12,
-                    1.5,
-                    16,
-                    2,
-                  ],
-                  'line-opacity': 0.6,
-                }}
-              />
-            )}
-            {/* Postal code boundaries (ZIP codes) - show when zoomed in */}
-            {visibleBoundaryTypes.has('zipcodes') && (
-              <Layer
-                id="postal-boundaries"
-                type="line"
-                source-layer="boundaries_postal_code"
-                minzoom={10}
-                paint={{
-                  'line-color': '#F97316',
-                  'line-width': 1,
-                  'line-dasharray': [2, 2],
-                  'line-opacity': 0.5,
-                }}
-              />
-            )}
+        {/* County Boundaries - Census TIGER GeoJSON */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyBoundaries && (
+          <Source id="county-boundaries-source" type="geojson" data={countyBoundaries}>
+            <Layer
+              id="county-boundaries"
+              type="line"
+              minzoom={6}
+              paint={{
+                'line-color': '#3B82F6',
+                'line-width': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  6, 1,
+                  10, 2,
+                  14, 2.5,
+                ],
+                'line-opacity': 0.8,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* City Boundaries - Census TIGER GeoJSON */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') && cityBoundaries && (
+          <Source id="city-boundaries-source" type="geojson" data={cityBoundaries}>
+            <Layer
+              id="city-boundaries"
+              type="line"
+              minzoom={9}
+              paint={{
+                'line-color': '#22C55E',
+                'line-width': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  9, 0.5,
+                  12, 1.5,
+                  16, 2,
+                ],
+                'line-opacity': 0.6,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* ZIP Code Boundaries - Census TIGER GeoJSON */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') && zipcodeBoundaries && (
+          <Source id="zipcode-boundaries-source" type="geojson" data={zipcodeBoundaries}>
+            <Layer
+              id="zipcode-boundaries"
+              type="line"
+              minzoom={10}
+              paint={{
+                'line-color': '#F97316',
+                'line-width': 1,
+                'line-dasharray': [2, 2],
+                'line-opacity': 0.5,
+              }}
+            />
           </Source>
         )}
 
@@ -1691,7 +1738,18 @@ export function MapboxMap() {
               id="census-tract-fill"
               type="fill"
               paint={{
-                'fill-color': demographicMetric === 'density' ? [
+                'fill-color': demographicMetric === 'income' ? [
+                  // Green scale for income ($0 → $100k+)
+                  'interpolate',
+                  ['linear'],
+                  ['coalesce', ['get', 'metric_value'], 0],
+                  0, '#f7fcf5',
+                  30000, '#c7e9c0',
+                  50000, '#74c476',
+                  75000, '#31a354',
+                  100000, '#006d2c',
+                ] : demographicMetric === 'density' ? [
+                  // Orange scale for density (0 → 5k+/sq mi)
                   'interpolate',
                   ['linear'],
                   ['coalesce', ['get', 'metric_value'], 0],
@@ -1702,16 +1760,15 @@ export function MapboxMap() {
                   5000, '#e34a33',
                   10000, '#7f2704',
                 ] : [
+                  // Blue scale for population (0 → 30k+)
                   'interpolate',
                   ['linear'],
                   ['coalesce', ['get', 'metric_value'], 0],
                   0, '#f7fbff',
                   1000, '#deebf7',
-                  2500, '#c6dbef',
                   5000, '#9ecae1',
-                  10000, '#6baed6',
-                  25000, '#3182bd',
-                  50000, '#08519c',
+                  15000, '#4292c6',
+                  30000, '#08519c',
                 ],
                 'fill-opacity': [
                   'case',

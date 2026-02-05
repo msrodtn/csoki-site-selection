@@ -3,15 +3,55 @@ import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned
 import { useMapStore } from '../../store/useMapStore';
 import { listingsApi } from '../../services/api';
 
-// Layer definitions
+// Layer definitions - ordered with interactive layers at top for visibility
 export const MAP_LAYERS = {
-  fema_flood: {
-    id: 'fema_flood',
-    name: 'FEMA Flood Zones',
-    icon: Droplets,
-    color: '#3B82F6',
-    description: 'Requires zoom 12+ to display',
+  // === Primary layers with inline controls (most used) ===
+  csoki_opportunities: {
+    id: 'csoki_opportunities',
+    name: 'CSOKi Opportunities',
+    icon: Diamond,
+    color: '#9333EA',
+    description: 'Filtered: 0.8-2ac or 2.5-6k sqft with signals',
   },
+  properties_for_sale: {
+    id: 'properties_for_sale',
+    name: 'Active Listings',
+    icon: DollarSign,
+    color: '#22C55E',
+    description: 'Crexi, LoopNet & team-flagged properties',
+    hasSubToggles: true,
+  },
+  boundaries: {
+    id: 'boundaries',
+    name: 'Boundaries Explorer',
+    icon: Grid,
+    color: '#627BC1',
+    description: 'Counties, cities, ZIP codes + demographics',
+    hasSubToggles: true,
+  },
+  // === Analysis layers ===
+  competition_heat: {
+    id: 'competition_heat',
+    name: 'Competition Heat Map',
+    icon: Flame,
+    color: '#F97316',
+    description: 'Store density visualization',
+  },
+  parcels: {
+    id: 'parcels',
+    name: 'Parcel Boundaries',
+    icon: LandPlot,
+    color: '#A16207',
+    description: 'Property parcel lines (zoom 14+)',
+  },
+  zoning: {
+    id: 'zoning',
+    name: 'Zoning Colors',
+    icon: MapPinned,
+    color: '#059669',
+    description: 'Color-code parcels by zoning type',
+  },
+  // === Reference layers ===
   traffic: {
     id: 'traffic',
     name: 'Traffic',
@@ -26,19 +66,12 @@ export const MAP_LAYERS = {
     color: '#8B5CF6',
     description: 'Annual Avg Daily Traffic (Iowa)',
   },
-  parcels: {
-    id: 'parcels',
-    name: 'Parcel Boundaries',
-    icon: LandPlot,
-    color: '#A16207',
-    description: 'Property parcel lines (zoom 14+)',
-  },
-  competition_heat: {
-    id: 'competition_heat',
-    name: 'Competition Heat Map',
-    icon: Flame,
-    color: '#F97316',
-    description: 'Store density visualization',
+  fema_flood: {
+    id: 'fema_flood',
+    name: 'FEMA Flood Zones',
+    icon: Droplets,
+    color: '#3B82F6',
+    description: 'Requires zoom 12+ to display',
   },
   business_labels: {
     id: 'business_labels',
@@ -46,36 +79,6 @@ export const MAP_LAYERS = {
     icon: Building2,
     color: '#6366F1',
     description: 'Show business names on map',
-  },
-  zoning: {
-    id: 'zoning',
-    name: 'Zoning Colors',
-    icon: MapPinned,
-    color: '#059669',
-    description: 'Color-code parcels by zoning type',
-  },
-  properties_for_sale: {
-    id: 'properties_for_sale',
-    name: 'Active Listings',
-    icon: DollarSign,
-    color: '#22C55E',
-    description: 'Crexi, LoopNet & team-flagged properties',
-    hasSubToggles: true,
-  },
-  csoki_opportunities: {
-    id: 'csoki_opportunities',
-    name: 'CSOKi Opportunities',
-    icon: Diamond,
-    color: '#9333EA',
-    description: 'Filtered: 0.8-2ac or 2.5-6k sqft with signals',
-  },
-  boundaries: {
-    id: 'boundaries',
-    name: 'Boundaries Explorer',
-    icon: Grid,
-    color: '#627BC1',
-    description: 'Counties, cities, ZIP codes + demographics',
-    hasSubToggles: true,
   },
 } as const;
 
@@ -332,22 +335,22 @@ function InlineDemographicMetricSelector() {
     <div className="ml-6 mt-2 p-3 bg-purple-50 rounded-lg border-l-2 border-purple-300">
       <div className="flex items-center gap-2 mb-2">
         <BarChart2 className="w-3 h-3 text-purple-600" />
-        <span className="text-xs font-medium text-purple-800">Choropleth Metric</span>
+        <span className="text-xs font-medium text-purple-800">Color Census Tracts By:</span>
       </div>
 
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1.5">
         {[
-          { id: 'population' as const, label: 'Population' },
-          { id: 'density' as const, label: 'Density' },
-          { id: 'income' as const, label: 'Income' },
+          { id: 'population' as const, label: 'Population', color: 'bg-blue-600' },
+          { id: 'income' as const, label: 'Median Income', color: 'bg-green-600' },
+          { id: 'density' as const, label: 'Density', color: 'bg-orange-600' },
         ].map((metric) => (
           <button
             key={metric.id}
             onClick={() => setDemographicMetric(metric.id)}
-            className={`px-2 py-1 text-xs rounded-md transition-colors ${
+            className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
               demographicMetric === metric.id
-                ? 'bg-purple-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-purple-100'
+                ? `${metric.color} text-white`
+                : 'bg-white text-gray-700 border hover:bg-gray-50'
             }`}
           >
             {metric.label}
@@ -355,10 +358,10 @@ function InlineDemographicMetricSelector() {
         ))}
       </div>
 
-      <p className="text-xs text-purple-600 mt-2">
-        {demographicMetric === 'population' && 'Census 2020 total population'}
-        {demographicMetric === 'density' && 'Population per square mile'}
-        {demographicMetric === 'income' && 'Coming soon - requires GeoEnrichment'}
+      <p className="text-xs text-gray-500 mt-2">
+        {demographicMetric === 'population' && '🔵 ACS 2022 total population by tract'}
+        {demographicMetric === 'income' && '🟢 ACS 2022 median household income'}
+        {demographicMetric === 'density' && '🟠 Population per square mile'}
       </p>
     </div>
   );

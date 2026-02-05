@@ -255,6 +255,34 @@ export const analysisApi = {
     });
     return data;
   },
+
+  // ============================================
+  // Census TIGER Boundaries (Counties, Cities, ZIP Codes)
+  // ============================================
+
+  // Get county boundaries for a state
+  getCountyBoundaries: async (state: string): Promise<GeoJSON.FeatureCollection> => {
+    const { data } = await api.get('/analysis/boundaries/counties/', {
+      params: { state },
+    });
+    return data;
+  },
+
+  // Get city/place boundaries for a state
+  getCityBoundaries: async (state: string): Promise<GeoJSON.FeatureCollection> => {
+    const { data } = await api.get('/analysis/boundaries/cities/', {
+      params: { state },
+    });
+    return data;
+  },
+
+  // Get ZIP Code (ZCTA) boundaries for a state
+  getZipCodeBoundaries: async (state: string): Promise<GeoJSON.FeatureCollection> => {
+    const { data } = await api.get('/analysis/boundaries/zipcodes/', {
+      params: { state },
+    });
+    return data;
+  },
 };
 
 // ============================================
