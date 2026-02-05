@@ -10,10 +10,13 @@ Key differences from Google Places:
 - Different category taxonomy
 """
 import httpx
+import logging
 from typing import Optional
 from pydantic import BaseModel
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # Mapbox category mapping to match our existing POI categories
@@ -111,7 +114,10 @@ async def fetch_mapbox_pois(
     # Use Mapbox token from settings
     token = getattr(settings, 'MAPBOX_ACCESS_TOKEN', None)
     if not token:
+        logger.error("Mapbox access token not configured")
         raise ValueError("Mapbox access token not configured. Set MAPBOX_ACCESS_TOKEN environment variable.")
+    
+    logger.info(f"Fetching Mapbox POIs for ({latitude}, {longitude}) within {radius_meters}m")
 
     # Determine which categories to search
     search_categories = categories or list(MAPBOX_CATEGORIES.keys())
@@ -153,6 +159,7 @@ async def fetch_mapbox_pois(
                 )
 
                 if response.status_code != 200:
+                    logger.warning(f"Mapbox category search failed for {our_category}, status {response.status_code}, trying forward geocoding")
                     # Try alternative: forward geocoding with type filter
                     params = {
                         "q": our_category.replace("_", " "),
@@ -170,6 +177,7 @@ async def fetch_mapbox_pois(
                     )
 
                     if response.status_code != 200:
+                        logger.warning(f"Mapbox forward geocoding also failed for {our_category}, status {response.status_code}")
                         continue
 
                 data = response.json()
@@ -218,7 +226,10 @@ async def fetch_mapbox_pois(
                         all_pois.append(poi)
 
             except httpx.HTTPError as e:
-                print(f"Mapbox API error for {our_category}: {e}")
+                logger.error(f"Mapbox HTTP error for {our_category}: {e}", exc_info=True)
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error fetching Mapbox POIs for {our_category}: {e}", exc_info=True)
                 continue
 
     # Calculate summary
@@ -226,6 +237,8 @@ async def fetch_mapbox_pois(
     for poi in all_pois:
         if poi.category in summary:
             summary[poi.category] += 1
+
+    logger.info(f"Mapbox POI fetch complete: {len(all_pois)} total POIs, summary: {summary}")
 
     return MapboxTradeAreaAnalysis(
         center_latitude=latitude,

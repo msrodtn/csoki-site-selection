@@ -3,6 +3,7 @@ Analysis API endpoints for trade area analysis and POI lookup.
 """
 import asyncio
 import httpx
+import logging
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
@@ -13,6 +14,8 @@ from app.services.arcgis import fetch_demographics, DemographicsResponse
 from app.services.property_search import search_properties, PropertySearchResult, MapBounds, check_api_keys as check_property_api_keys
 from app.core.config import settings
 from app.core.database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -55,9 +58,10 @@ async def analyze_trade_area(request: TradeAreaRequest):
     if radius_meters > 50000:
         radius_meters = 50000
 
-    # Prefer Mapbox if configured
+    # Prefer Mapbox if configured (8x cheaper: ~$0.004 vs $0.032 per analysis)
     if settings.MAPBOX_ACCESS_TOKEN:
         try:
+            logger.info(f"Attempting Mapbox POI search for ({request.latitude}, {request.longitude})")
             from app.services.mapbox_places import fetch_mapbox_pois
             mapbox_result = await fetch_mapbox_pois(
                 latitude=request.latitude,
@@ -80,22 +84,48 @@ async def analyze_trade_area(request: TradeAreaRequest):
                 )
                 for poi in mapbox_result.pois
             ]
-            return TradeAreaAnalysis(
+            
+            result = TradeAreaAnalysis(
                 center_latitude=mapbox_result.center_latitude,
                 center_longitude=mapbox_result.center_longitude,
                 radius_meters=mapbox_result.radius_meters,
                 pois=pois,
                 summary=mapbox_result.summary,
             )
+            
+            logger.info(f"✅ Mapbox POI search succeeded: {len(pois)} POIs found")
+            return result
+            
+        except ValueError as e:
+            # Token not configured or invalid
+            logger.warning(f"Mapbox POI search failed (configuration issue): {e}")
         except Exception as e:
-            # Log and fall back to Google if Mapbox fails
-            print(f"[TradeArea] Mapbox failed, falling back to Google: {e}")
+            # API error, network issue, or other failure
+            logger.warning(f"Mapbox POI search failed, falling back to Google Places: {e}", exc_info=True)
 
-    # Fallback to Google Places
+    # Fallback to Google Places (more expensive but reliable)
     if not settings.GOOGLE_PLACES_API_KEY:
+        logger.error("No POI API configured: Both Mapbox and Google Places unavailable")
         raise HTTPException(
             status_code=503,
-            detail="No POI search API configured. Please set MAPBOX_ACCESS_TOKEN or GOOGLE_PLACES_API_KEY."
+            detail="No POI search API configured. Please set MAPBOX_ACCESS_TOKEN or GOOGLE_PLACES_API_KEY in Railway environment variables."
+        )
+    
+    logger.info(f"Using Google Places API fallback for ({request.latitude}, {request.longitude})")
+    
+    try:
+        result = await fetch_nearby_pois(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            radius_meters=radius_meters,
+        )
+        logger.info(f"✅ Google Places search succeeded: {len(result.pois)} POIs found")
+        return result
+    except Exception as e:
+        logger.error(f"Google Places API also failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail=f"POI search failed: {str(e)}"
         )
 
     try:

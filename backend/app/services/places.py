@@ -3,9 +3,12 @@ Google Places API service for trade area analysis.
 Fetches nearby points of interest (POIs) within a radius of a location.
 """
 import httpx
+import logging
 from typing import Optional
 from pydantic import BaseModel
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # POI Category mapping to Google Places types
@@ -97,8 +100,11 @@ async def fetch_nearby_pois(
     """
     key = api_key or settings.GOOGLE_PLACES_API_KEY
     if not key:
+        logger.error("Google Places API key not configured")
         raise ValueError("Google Places API key not configured")
 
+    logger.info(f"Fetching Google Places POIs for ({latitude}, {longitude}) within {radius_meters}m")
+    
     base_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 
     all_pois: list[POI] = []
@@ -121,6 +127,7 @@ async def fetch_nearby_pois(
                     data = response.json()
 
                     if data.get("status") not in ["OK", "ZERO_RESULTS"]:
+                        logger.warning(f"Google Places API returned status {data.get('status')} for type {place_type}")
                         continue
 
                     for place in data.get("results", []):
@@ -152,8 +159,11 @@ async def fetch_nearby_pois(
                         )
                         all_pois.append(poi)
 
-                except httpx.HTTPError:
-                    # Continue on errors for individual type queries
+                except httpx.HTTPError as e:
+                    logger.error(f"Google Places HTTP error for type {place_type}: {e}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Unexpected error fetching Google Places for type {place_type}: {e}", exc_info=True)
                     continue
 
     # Calculate summary
@@ -161,6 +171,8 @@ async def fetch_nearby_pois(
     for poi in all_pois:
         if poi.category in summary:
             summary[poi.category] += 1
+
+    logger.info(f"Google Places fetch complete: {len(all_pois)} total POIs, summary: {summary}")
 
     return TradeAreaAnalysis(
         center_latitude=latitude,
