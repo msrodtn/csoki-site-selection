@@ -20,6 +20,8 @@ interface PropertyInfoCardProps {
   onClose: () => void;
   initialPosition?: { x: number; y: number };
   onPositionChange?: (position: { x: number; y: number }) => void;
+  opportunityRank?: number;
+  opportunitySignals?: string[];
 }
 
 const SIGNAL_STRENGTH_COLORS = {
@@ -35,7 +37,7 @@ const SOURCE_LABELS: Record<string, string> = {
   team_contributed: 'Team Contributed',
 };
 
-export function PropertyInfoCard({ property, onClose, initialPosition, onPositionChange }: PropertyInfoCardProps) {
+export function PropertyInfoCard({ property, onClose, initialPosition, onPositionChange, opportunityRank, opportunitySignals }: PropertyInfoCardProps) {
   const [parcelInfo, setParcelInfo] = useState<ParcelInfo | null>(null);
   const [isLoadingParcel, setIsLoadingParcel] = useState(false);
   const [parcelError, setParcelError] = useState<string | null>(null);
@@ -194,11 +196,20 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
         <div className="px-4 py-3 border-b">
           <div className="flex items-start gap-2">
             <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-            <div>
+            <div className="flex-1">
               <div className="font-medium text-gray-900">{property.address}</div>
               <div className="text-sm text-gray-600">
                 {property.city}, {property.state} {property.zip_code}
               </div>
+              {/* CSOKi Opportunity Badge */}
+              {opportunityRank && (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2 L22 12 L12 22 L2 12 Z" />
+                  </svg>
+                  Priority #{opportunityRank}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -234,7 +245,7 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
         </div>
 
         {/* Opportunity Signals (if any) */}
-        {isOpportunity && property.opportunity_signals && property.opportunity_signals.length > 0 && (
+        {((isOpportunity && property.opportunity_signals && property.opportunity_signals.length > 0) || (opportunitySignals && opportunitySignals.length > 0)) && (
           <div className="px-4 py-3 border-b">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="w-4 h-4 text-purple-600" />
@@ -248,14 +259,27 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
               )}
             </div>
             <div className="space-y-1.5">
-              {property.opportunity_signals.map((signal, index) => (
-                <div
-                  key={index}
-                  className={`text-xs px-2 py-1.5 rounded border ${SIGNAL_STRENGTH_COLORS[signal.strength]}`}
-                >
-                  <span className="font-medium">{signal.description}</span>
-                </div>
-              ))}
+              {/* Show priority signals if passed directly (CSOKi Opportunities) */}
+              {opportunitySignals && opportunitySignals.length > 0 ? (
+                opportunitySignals.map((signal, index) => (
+                  <div
+                    key={index}
+                    className="text-xs px-2 py-1.5 rounded border bg-amber-100 text-amber-800 border-amber-200"
+                  >
+                    <span className="font-medium">{signal}</span>
+                  </div>
+                ))
+              ) : (
+                /* Otherwise show property signals */
+                property.opportunity_signals?.map((signal, index) => (
+                  <div
+                    key={index}
+                    className={`text-xs px-2 py-1.5 rounded border ${SIGNAL_STRENGTH_COLORS[signal.strength]}`}
+                  >
+                    <span className="font-medium">{signal.description}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
