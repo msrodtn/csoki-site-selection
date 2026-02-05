@@ -108,28 +108,30 @@ function parseWKTToGeoJSON(wkt: string): GeoJSON.Geometry | null {
 }
 
 // Calculate zoom-based marker size for competitor/brand markers
-// Follows the zoomBasedMarkerSize expression pattern from mapbox-expressions.ts
+// MUST be significantly larger than POI markers at all zoom levels
 function getZoomBasedSize(zoom: number, isSelected: boolean): number {
-  // Base size interpolation: zoom 6 → 8px, zoom 10 → 12px, zoom 14 → 18px, zoom 18 → 24px
+  // Base size: zoom 6 → 24px, zoom 10 → 32px, zoom 14 → 40px, zoom 18 → 48px
+  // These are large enough to be clearly visible as primary markers
   let baseSize: number;
   if (zoom <= 6) {
-    baseSize = 8;
+    baseSize = 24;
   } else if (zoom <= 10) {
-    baseSize = 8 + ((zoom - 6) / 4) * 4; // 8 to 12
+    baseSize = 24 + ((zoom - 6) / 4) * 8; // 24 to 32
   } else if (zoom <= 14) {
-    baseSize = 12 + ((zoom - 10) / 4) * 6; // 12 to 18
+    baseSize = 32 + ((zoom - 10) / 4) * 8; // 32 to 40
   } else {
-    baseSize = 18 + ((zoom - 14) / 4) * 6; // 18 to 24
+    baseSize = 40 + ((zoom - 14) / 4) * 8; // 40 to 48
   }
-  // Selected markers are 40% larger
-  return isSelected ? Math.round(baseSize * 1.4) : Math.round(baseSize);
+  // Selected markers are 25% larger
+  return isSelected ? Math.round(baseSize * 1.25) : Math.round(baseSize);
 }
 
 // Calculate zoom-based marker size for POI markers
-// Always smaller than brand markers to maintain visual hierarchy
+// Always MUCH smaller than brand markers - these are secondary indicators
 function getPOIZoomBasedSize(zoom: number, isSelected: boolean): number {
-  // POI: 6px at zoom 6, scaling up to max 12px at zoom 18
-  // Always smaller than brand markers (8-24px)
+  // POI SVG uses size*2 for width/height, so actual sizes will be:
+  // zoom 6 → 12px, zoom 10 → 16px, zoom 14 → 20px, zoom 18 → 24px
+  // Half or less of brand marker sizes
   let baseSize: number;
   if (zoom <= 6) {
     baseSize = 6;
