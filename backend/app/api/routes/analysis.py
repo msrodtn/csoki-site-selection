@@ -1465,9 +1465,20 @@ TIGER_COUNTIES_URL = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGER
 TIGER_PLACES_URL = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_ACS2021/MapServer/24/query"
 TIGER_ZCTAS_URL = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_ACS2021/MapServer/2/query"
 
-# ArcGIS Living Atlas - Census Tracts with ACS 2022 demographic data
-ACS_POPULATION_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Total_Population_Boundaries/FeatureServer/2/query"
-ACS_INCOME_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Median_Household_Income_Variables_Boundaries/FeatureServer/2/query"
+# ArcGIS Living Atlas - ACS 2022 demographic data URLs
+# Layer 0 = State, Layer 1 = County, Layer 2 = Tract
+ACS_POPULATION_BASE = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Total_Population_Boundaries/FeatureServer"
+ACS_INCOME_BASE = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Median_Household_Income_Variables_Boundaries/FeatureServer"
+
+# Layer indices for different geographies
+ACS_LAYERS = {
+    "county": 1,
+    "tract": 2,
+}
+
+# Legacy URLs for backwards compatibility
+ACS_POPULATION_URL = f"{ACS_POPULATION_BASE}/2/query"  # Tract level
+ACS_INCOME_URL = f"{ACS_INCOME_BASE}/2/query"  # Tract level
 
 # Legacy URL (2020 Census - less detailed)
 ARCGIS_CENSUS_TRACTS_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Census_Tracts/FeatureServer/0/query"
@@ -1477,25 +1488,27 @@ ARCGIS_CENSUS_TRACTS_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/
 async def get_demographic_boundaries(
     state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
     metric: str = Query("population", description="Metric to include: population, income, density"),
+    geography: str = Query("tract", description="Geography level: tract, county"),
 ):
     """
-    Fetch Census Tract boundaries with demographic data for choropleth visualization.
+    Fetch boundaries with demographic data for choropleth visualization.
 
     Uses ACS 2022 data from ArcGIS Living Atlas for accurate Population and Income.
 
     **Parameters:**
     - `state`: State abbreviation (IA, NE, NV, ID)
     - `metric`: Demographic metric (population, income, density)
+    - `geography`: Geographic level (tract for Census Tracts, county for Counties)
 
     **Supported Metrics:**
-    - `population`: Total population per tract (ACS 2022)
+    - `population`: Total population (ACS 2022)
     - `income`: Median household income (ACS 2022)
     - `density`: Population density (pop/sq mile)
 
     **Returns:**
-    GeoJSON FeatureCollection with properties for each tract including:
-    - NAME: Tract name/number
-    - GEOID: Census tract GEOID
+    GeoJSON FeatureCollection with properties including:
+    - NAME: Boundary name
+    - GEOID: Census GEOID
     - TOTAL_POPULATION: Total population (ACS 2022)
     - MEDIAN_INCOME: Median household income (ACS 2022)
     - POP_DENSITY: Population per square mile (calculated)
@@ -1508,16 +1521,24 @@ async def get_demographic_boundaries(
             detail=f"Invalid state: {state}. Supported states: {', '.join(STATE_FIPS.keys())}"
         )
 
+    geography_lower = geography.lower()
+    if geography_lower not in ACS_LAYERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid geography: {geography}. Supported: tract, county"
+        )
+
     fips_code = STATE_FIPS[state_upper]
+    layer_index = ACS_LAYERS[geography_lower]
 
     # Choose ArcGIS service based on metric
     # Income uses a different service with B19013_001E (Median Household Income)
     if metric == "income":
-        url = ACS_INCOME_URL
+        url = f"{ACS_INCOME_BASE}/{layer_index}/query"
         # ACS Income service fields: NAME, GEOID, B19013_001E (median HH income), Shape_Area
         out_fields = "NAME,GEOID,B19013_001E,Shape_Area"
     else:
-        url = ACS_POPULATION_URL
+        url = f"{ACS_POPULATION_BASE}/{layer_index}/query"
         # ACS Population service fields: NAME, GEOID, B01001_001E (total pop), Shape_Area
         out_fields = "NAME,GEOID,B01001_001E,Shape_Area"
 

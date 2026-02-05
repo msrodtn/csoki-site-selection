@@ -239,18 +239,20 @@ export const analysisApi = {
   },
 
   // ============================================
-  // Demographic Boundaries (Census Tracts Choropleth)
+  // Demographic Boundaries (Census Tracts & Counties Choropleth)
   // ============================================
 
-  // Get Census Tract boundaries with demographic data for choropleth visualization
+  // Get boundaries with demographic data for choropleth visualization
   getDemographicBoundaries: async (request: {
     state: string;
     metric?: 'population' | 'income' | 'density';
+    geography?: 'tract' | 'county';
   }): Promise<GeoJSON.FeatureCollection> => {
     const { data } = await api.get('/analysis/demographic-boundaries/', {
       params: {
         state: request.state,
         metric: request.metric || 'population',
+        geography: request.geography || 'tract',
       },
     });
     return data;

@@ -84,11 +84,11 @@ const INITIAL_VIEW = {
 // These are based on the Census shapefile names preserved by mapshaper
 const BOUNDARY_TILESETS = {
   counties: {
-    id: 'msrodtn.9jpdhu14',
+    id: 'msrodtn.05vjtaqc',              // CORRECTED: was swapped with cities
     sourceLayer: 'cb_2023_us_county_5m',  // Census shapefile layer name
   },
   cities: {
-    id: 'msrodtn.05vjtaqc',
+    id: 'msrodtn.9jpdhu14',               // CORRECTED: was swapped with counties
     sourceLayer: 'cb_2023_us_place_5m',   // Census shapefile layer name
   },
   zctas: {
@@ -722,7 +722,18 @@ export function MapboxMap() {
     lngLat: [number, number];
   } | null>(null);
 
-  // Note: Counties, cities, and ZIP codes now use Mapbox tilesets (no GeoJSON state needed)
+  // Note: Counties, cities, and ZIP codes now use Mapbox tilesets for simple boundary lines
+  // For demographic choropleth (Population/Income), we fetch GeoJSON with ACS data
+  const [countyDemographicsData, setCountyDemographicsData] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [_isLoadingCountyDemographics, setIsLoadingCountyDemographics] = useState(false);
+  const [hoveredCountyId, setHoveredCountyId] = useState<string | number | null>(null);
+  const [hoveredCountyInfo, setHoveredCountyInfo] = useState<{
+    name: string;
+    population: number;
+    income: number;
+    density: number;
+    lngLat: [number, number];
+  } | null>(null);
 
   // Track analysis center for re-analysis
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -1058,6 +1069,30 @@ export function MapboxMap() {
       }
     }
 
+    // Handle county demographics layer
+    if (map.getLayer('county-demographics-fill')) {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['county-demographics-fill'],
+      });
+
+      if (features && features.length > 0) {
+        const feature = features[0];
+        map.getCanvas().style.cursor = 'pointer';
+        setHoveredCountyId(feature.properties?.GEOID || null);
+        setHoveredCountyInfo({
+          name: feature.properties?.NAME || 'Unknown County',
+          population: feature.properties?.TOTAL_POPULATION || 0,
+          income: feature.properties?.MEDIAN_INCOME || 0,
+          density: feature.properties?.POP_DENSITY || 0,
+          lngLat: [e.lngLat.lng, e.lngLat.lat],
+        });
+        return;
+      } else {
+        setHoveredCountyId(null);
+        setHoveredCountyInfo(null);
+      }
+    }
+
     map.getCanvas().style.cursor = '';
   }, []);
 
@@ -1068,6 +1103,8 @@ export function MapboxMap() {
     }
     setHoveredTractId(null);
     setHoveredTractInfo(null);
+    setHoveredCountyId(null);
+    setHoveredCountyInfo(null);
     setHoveredTraffic(null);
   }, []);
 
@@ -1354,8 +1391,42 @@ export function MapboxMap() {
     fetchCensusTracts();
   }, [visibleLayersArray, visibleBoundaryTypes, visibleStates, demographicMetric]);
 
-  // Note: Counties, cities, and ZIP codes now use Mapbox tilesets
-  // No API fetching needed - data is loaded directly from Mapbox tiles
+  // Fetch County demographic data when counties boundary type is enabled
+  // This enables Population/Income choropleth visualization for counties
+  useEffect(() => {
+    const shouldFetch = visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties');
+
+    if (!shouldFetch) {
+      setCountyDemographicsData(null);
+      return;
+    }
+
+    const fetchCountyDemographics = async () => {
+      setIsLoadingCountyDemographics(true);
+      try {
+        // Fetch data for target states based on visible states
+        const statesToFetch = Array.from(visibleStates).filter(s => ['IA', 'NE', 'NV', 'ID'].includes(s));
+        const primaryState = statesToFetch[0] || 'IA';
+
+        const data = await analysisApi.getDemographicBoundaries({
+          state: primaryState,
+          metric: demographicMetric,
+          geography: 'county',
+        });
+        setCountyDemographicsData(data);
+      } catch (error) {
+        console.error('Failed to fetch county demographics:', error);
+        setCountyDemographicsData(null);
+      } finally {
+        setIsLoadingCountyDemographics(false);
+      }
+    };
+
+    fetchCountyDemographics();
+  }, [visibleLayersArray, visibleBoundaryTypes, visibleStates, demographicMetric]);
+
+  // Note: Cities and ZIP codes still use Mapbox tilesets for boundary lines only
+  // Demographic choropleth is available for Counties and Census Tracts
 
   // Check for token
   if (!MAPBOX_TOKEN) {
@@ -1460,6 +1531,7 @@ export function MapboxMap() {
         interactiveLayerIds={[
           ...(visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') ? ['census-tract-fill'] : []),
+          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyDemographicsData ? ['county-demographics-fill'] : []),
         ]}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
@@ -1577,6 +1649,35 @@ export function MapboxMap() {
           </Popup>
         )}
 
+        {/* County Demographics Tooltip */}
+        {hoveredCountyInfo && (
+          <Popup
+            longitude={hoveredCountyInfo.lngLat[0]}
+            latitude={hoveredCountyInfo.lngLat[1]}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+          >
+            <div className="text-sm min-w-[160px]">
+              <div className="font-semibold text-blue-700 mb-1">
+                {hoveredCountyInfo.name}
+              </div>
+              <div className="text-xs text-gray-600">
+                Pop: {hoveredCountyInfo.population.toLocaleString()}
+              </div>
+              {hoveredCountyInfo.income > 0 && (
+                <div className="text-xs text-green-700">
+                  Income: ${hoveredCountyInfo.income.toLocaleString()}
+                </div>
+              )}
+              <div className="text-xs text-gray-600">
+                Density: {hoveredCountyInfo.density.toLocaleString()}/sq mi
+              </div>
+            </div>
+          </Popup>
+        )}
+
         {/* FEMA Flood Zones Layer */}
         {visibleLayersArray.includes('fema_flood') && (
           <Source
@@ -1638,8 +1739,83 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* County Boundaries - Mapbox Tileset */}
-        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && (
+        {/* County Demographics Choropleth - GeoJSON with ACS data */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyDemographicsData && (
+          <Source
+            id="county-demographics"
+            type="geojson"
+            data={countyDemographicsData}
+          >
+            {/* Colored fill based on demographic metric */}
+            <Layer
+              id="county-demographics-fill"
+              type="fill"
+              paint={{
+                'fill-color': demographicMetric === 'income' ? [
+                  // Green scale for income ($0 → $100k+)
+                  'interpolate',
+                  ['linear'],
+                  ['coalesce', ['get', 'metric_value'], 0],
+                  0, '#f7fcf5',
+                  30000, '#c7e9c0',
+                  50000, '#74c476',
+                  75000, '#31a354',
+                  100000, '#006d2c',
+                ] : demographicMetric === 'density' ? [
+                  // Orange scale for density (0 → 500+ per sq mi for counties)
+                  'interpolate',
+                  ['linear'],
+                  ['coalesce', ['get', 'metric_value'], 0],
+                  0, '#fff7ec',
+                  25, '#fee8c8',
+                  50, '#fdbb84',
+                  100, '#fc8d59',
+                  250, '#e34a33',
+                  500, '#7f2704',
+                ] : [
+                  // Blue scale for population (0 → 500k+ for counties)
+                  'interpolate',
+                  ['linear'],
+                  ['coalesce', ['get', 'metric_value'], 0],
+                  0, '#f7fbff',
+                  10000, '#deebf7',
+                  50000, '#9ecae1',
+                  100000, '#4292c6',
+                  250000, '#2171b5',
+                  500000, '#08519c',
+                ],
+                'fill-opacity': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredCountyId],
+                  0.8,
+                  0.5,
+                ],
+              }}
+            />
+            {/* Outline with hover highlight */}
+            <Layer
+              id="county-demographics-outline"
+              type="line"
+              paint={{
+                'line-color': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredCountyId],
+                  '#3B82F6',
+                  '#666',
+                ],
+                'line-width': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredCountyId],
+                  3,
+                  1,
+                ],
+              }}
+            />
+          </Source>
+        )}
+
+        {/* County Boundaries - Mapbox Tileset (shown when NO demographic data) */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && !countyDemographicsData && (
           <Source
             id="county-boundaries-source"
             type="vector"
