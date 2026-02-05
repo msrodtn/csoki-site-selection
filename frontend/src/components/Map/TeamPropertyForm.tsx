@@ -6,9 +6,14 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { X, MapPin, Building2, DollarSign, FileText, User, Link, Loader2 } from 'lucide-react';
+import { X, MapPin, Building2, DollarSign, FileText, User, Link, Loader2, Navigation } from 'lucide-react';
 import { teamPropertiesApi } from '../../services/api';
 import type { TeamPropertyCreate, PropertyType, TeamPropertySourceType } from '../../types/store';
+
+const MAPBOX_TOKEN =
+  import.meta.env.VITE_MAPBOX_TOKEN ||
+  import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ||
+  '';
 
 interface TeamPropertyFormProps {
   isOpen: boolean;
@@ -42,6 +47,7 @@ export function TeamPropertyForm({
   initialLongitude,
 }: TeamPropertyFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Form state
@@ -59,13 +65,71 @@ export function TeamPropertyForm({
   const [notes, setNotes] = useState('');
   const [contributorName, setContributorName] = useState('');
 
-  // Update coordinates if initial values change
+  // Update coordinates and reverse geocode if initial values change
   useEffect(() => {
     if (initialLatitude !== undefined) {
       setLatitude(initialLatitude.toString());
     }
     if (initialLongitude !== undefined) {
       setLongitude(initialLongitude.toString());
+    }
+
+    // Reverse geocode to auto-fill address fields
+    if (initialLatitude !== undefined && initialLongitude !== undefined && MAPBOX_TOKEN) {
+      const reverseGeocode = async () => {
+        setIsReverseGeocoding(true);
+        try {
+          const response = await fetch(
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${initialLongitude},${initialLatitude}.json?access_token=${MAPBOX_TOKEN}&types=address,place`
+          );
+          const data = await response.json();
+
+          if (data.features && data.features.length > 0) {
+            const feature = data.features[0];
+
+            // Extract address components from context
+            const context = feature.context || [];
+            const placeContext = context.find((c: any) => c.id.startsWith('place'));
+            const regionContext = context.find((c: any) => c.id.startsWith('region'));
+            const postcodeContext = context.find((c: any) => c.id.startsWith('postcode'));
+
+            // Set address - use the feature text for street address
+            if (feature.place_type.includes('address')) {
+              setAddress(feature.text + (feature.address ? ` ${feature.address}` : ''));
+            } else if (feature.place_name) {
+              // For non-address results, take first part before comma
+              const parts = feature.place_name.split(',');
+              setAddress(parts[0].trim());
+            }
+
+            // Set city from place context
+            if (placeContext) {
+              setCity(placeContext.text);
+            }
+
+            // Set state from region context (short_code is like "US-IA")
+            if (regionContext) {
+              const shortCode = regionContext.short_code || '';
+              const stateCode = shortCode.replace('US-', '');
+              if (stateCode.length === 2) {
+                setState(stateCode);
+              }
+            }
+
+            // Set postal code
+            if (postcodeContext) {
+              setPostalCode(postcodeContext.text);
+            }
+          }
+        } catch (err) {
+          console.error('Reverse geocoding failed:', err);
+          // Silently fail - user can still enter manually
+        } finally {
+          setIsReverseGeocoding(false);
+        }
+      };
+
+      reverseGeocode();
     }
   }, [initialLatitude, initialLongitude]);
 
@@ -192,12 +256,18 @@ export function TeamPropertyForm({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Street Address *
+                {isReverseGeocoding && (
+                  <span className="ml-2 text-xs text-orange-600 inline-flex items-center gap-1">
+                    <Navigation className="w-3 h-3 animate-pulse" />
+                    Looking up address...
+                  </span>
+                )}
               </label>
               <input
                 type="text"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="123 Main St"
+                placeholder={isReverseGeocoding ? 'Loading...' : '123 Main St'}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 required
               />

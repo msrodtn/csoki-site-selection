@@ -454,6 +454,66 @@ async def get_configured_sources():
     }
 
 
+@router.get("/diagnostics")
+async def get_diagnostics():
+    """
+    Check Crexi automation status and dependencies.
+
+    Use this endpoint to debug Playwright/Crexi issues.
+    Returns detailed status about:
+    - Playwright availability
+    - Crexi credentials configuration
+    - Crexi automation module status
+    """
+    diagnostics = {
+        "playwright": {
+            "available": PLAYWRIGHT_AVAILABLE,
+            "error": PLAYWRIGHT_ERROR,
+        },
+        "crexi": {
+            "automation_loaded": CREXI_AVAILABLE,
+            "error": CREXI_ERROR_MESSAGE,
+            "credentials": {
+                "username_set": bool(settings.crexi_username),
+                "password_set": bool(settings.CREXI_PASSWORD),
+            }
+        },
+        "loopnet": {
+            "credentials": {
+                "username_set": bool(settings.LOOPNET_USERNAME),
+                "password_set": bool(settings.LOOPNET_PASSWORD),
+            }
+        },
+        "recommendations": []
+    }
+
+    # Generate recommendations
+    if not PLAYWRIGHT_AVAILABLE:
+        diagnostics["recommendations"].append(
+            "Install Playwright: pip install playwright && playwright install chromium"
+        )
+
+    if not settings.crexi_username:
+        diagnostics["recommendations"].append(
+            "Set CREXI_USERNAME or CREXI_EMAIL environment variable"
+        )
+
+    if not settings.CREXI_PASSWORD:
+        diagnostics["recommendations"].append(
+            "Set CREXI_PASSWORD environment variable"
+        )
+
+    if PLAYWRIGHT_AVAILABLE and settings.crexi_username and settings.CREXI_PASSWORD and not CREXI_AVAILABLE:
+        diagnostics["recommendations"].append(
+            f"Crexi module failed to load despite dependencies being present. Error: {CREXI_ERROR_MESSAGE}"
+        )
+
+    if not diagnostics["recommendations"]:
+        diagnostics["recommendations"].append("All systems operational!")
+
+    return diagnostics
+
+
 @router.delete("/{listing_id}")
 async def deactivate_listing(
     listing_id: int,
@@ -477,19 +537,43 @@ async def deactivate_listing(
 from app.services.url_import import import_from_url, ListingData
 
 # Lazy-load Crexi automation to prevent startup failures if Playwright unavailable
+CREXI_AVAILABLE = False
+CREXI_ERROR_MESSAGE = None
+PLAYWRIGHT_AVAILABLE = False
+PLAYWRIGHT_ERROR = None
+
+# Check Playwright first
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+    logger.info("Playwright async API available")
+except ImportError as e:
+    PLAYWRIGHT_ERROR = f"Playwright not installed: {e}"
+    logger.warning(PLAYWRIGHT_ERROR)
+except Exception as e:
+    PLAYWRIGHT_ERROR = f"Playwright import error: {type(e).__name__}: {e}"
+    logger.warning(PLAYWRIGHT_ERROR)
+
+# Then check Crexi automation
 try:
     from app.services.crexi_automation import fetch_crexi_area, CrexiAutomationError
     CREXI_AVAILABLE = True
+    logger.info("Crexi automation module loaded successfully")
+except ImportError as e:
+    CREXI_ERROR_MESSAGE = f"Crexi module import failed: {e}"
+    logger.error(CREXI_ERROR_MESSAGE)
 except Exception as e:
-    logger.warning(f"Crexi automation unavailable (will return 503 on requests): {e}")
-    CREXI_AVAILABLE = False
-    
-    # Stub classes for type safety
+    CREXI_ERROR_MESSAGE = f"Crexi automation error: {type(e).__name__}: {e}"
+    logger.error(CREXI_ERROR_MESSAGE)
+
+# Stub classes for type safety when not available
+if not CREXI_AVAILABLE:
     class CrexiAutomationError(Exception):
         pass
-    
+
     async def fetch_crexi_area(*args, **kwargs):
-        raise CrexiAutomationError("Crexi automation not available in this environment")
+        error_msg = CREXI_ERROR_MESSAGE or "Crexi automation not available"
+        raise CrexiAutomationError(error_msg)
 
 
 class URLImportRequest(BaseModel):

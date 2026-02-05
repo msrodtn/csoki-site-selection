@@ -2,11 +2,13 @@ import { BrandFilter } from './BrandFilter';
 import { StateFilter } from './StateFilter';
 import { MapboxSearchBar } from '../Map/MapboxSearchBar';
 import { MapLayers } from './MapLayers';
+import { OpportunitiesFilter } from './OpportunitiesFilter';
+import { CrexiSearch } from './CrexiSearch';
 import { MapPin } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 export function Sidebar() {
-  const { navigateTo, setAllStatesVisible } = useMapStore();
+  const { navigateTo, setAllStatesVisible, visibleLayers } = useMapStore();
 
   const handleSearchSelect = (lng: number, lat: number, _placeName: string) => {
     // Enable all states to show stores in searched area
@@ -34,6 +36,8 @@ export function Sidebar() {
         <BrandFilter />
         <StateFilter />
         <MapLayers />
+        <OpportunitiesFilter isVisible={visibleLayers.has('csoki_opportunities')} />
+        <CrexiSearch isVisible={visibleLayers.has('properties_for_sale')} />
       </div>
 
       {/* Footer */}

@@ -360,6 +360,55 @@ export const listingsApi = {
     const { data } = await api.delete(`/listings/${listingId}`);
     return data;
   },
+
+  // Get diagnostics for Crexi/Playwright status
+  getDiagnostics: async (): Promise<{
+    playwright: {
+      available: boolean;
+      error: string | null;
+    };
+    crexi: {
+      automation_loaded: boolean;
+      error: string | null;
+      credentials: {
+        username_set: boolean;
+        password_set: boolean;
+      };
+    };
+    loopnet: {
+      credentials: {
+        username_set: boolean;
+        password_set: boolean;
+      };
+    };
+    recommendations: string[];
+  }> => {
+    const { data } = await api.get('/listings/diagnostics');
+    return data;
+  },
+
+  // Fetch Crexi listings for an area via automated CSV export
+  fetchCrexiArea: async (request: {
+    location: string;
+    property_types?: string[];
+    force_refresh?: boolean;
+  }): Promise<{
+    success: boolean;
+    imported: number;
+    updated: number;
+    total_filtered: number;
+    empty_land_count: number;
+    small_building_count: number;
+    cached: boolean;
+    cache_age_minutes: number | null;
+    timestamp: string;
+    expires_at: string;
+    location: string;
+    message: string | null;
+  }> => {
+    const { data } = await api.post('/listings/fetch-crexi-area', request);
+    return data;
+  },
 };
 
 // ============================================

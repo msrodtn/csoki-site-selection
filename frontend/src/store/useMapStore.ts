@@ -144,6 +144,18 @@ interface MapState {
   setSelectedOpportunity: (opportunity: OpportunityRanking | null) => void;
   clearOpportunities: () => void;
 
+  // Opportunity Filters (CSOKi criteria)
+  opportunityFilters: {
+    minParcelAcres: number;
+    maxParcelAcres: number;
+    minBuildingSqft: number;
+    maxBuildingSqft: number;
+    includeLand: boolean;
+    includeRetail: boolean;
+    includeOffice: boolean;
+  };
+  setOpportunityFilters: (filters: Partial<MapState['opportunityFilters']>) => void;
+
   // Clear analysis
   clearAnalysis: () => void;
 
@@ -430,6 +442,21 @@ export const useMapStore = create<MapState>((set, get) => ({
       opportunitiesError: null,
       selectedOpportunity: null,
     }),
+
+  // Opportunity Filters (CSOKi criteria - defaults match store requirements)
+  opportunityFilters: {
+    minParcelAcres: 0.8,
+    maxParcelAcres: 2.0,
+    minBuildingSqft: 2500,
+    maxBuildingSqft: 6000,
+    includeLand: true,
+    includeRetail: true,
+    includeOffice: true,
+  },
+  setOpportunityFilters: (filters) =>
+    set((state) => ({
+      opportunityFilters: { ...state.opportunityFilters, ...filters },
+    })),
 
   // Clear all analysis state
   clearAnalysis: () =>

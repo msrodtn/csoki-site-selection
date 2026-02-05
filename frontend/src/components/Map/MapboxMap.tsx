@@ -629,6 +629,8 @@ export function MapboxMap() {
     competitorAccessResult,
     showCompetitorAccessPanel,
     setShowCompetitorAccessPanel,
+    // Opportunity filters
+    opportunityFilters,
   } = useMapStore();
 
   // Local state
@@ -1103,7 +1105,7 @@ export function MapboxMap() {
     }
   }, [visiblePropertySources, mapBounds]);
 
-  // CSOKi Opportunities when layer is toggled
+  // CSOKi Opportunities when layer is toggled or filters change
   useEffect(() => {
     const showOpportunities = visibleLayersArray.includes('csoki_opportunities');
 
@@ -1116,18 +1118,19 @@ export function MapboxMap() {
             max_lat: mapBounds.north,
             min_lng: mapBounds.west,
             max_lng: mapBounds.east,
-            min_parcel_acres: 0.8,
-            max_parcel_acres: 2.0,
-            min_building_sqft: 2500,
-            max_building_sqft: 6000,
-            include_retail: true,
-            include_office: true,
-            include_land: true,
+            // Use filter values from store instead of hardcoded defaults
+            min_parcel_acres: opportunityFilters.minParcelAcres,
+            max_parcel_acres: opportunityFilters.maxParcelAcres,
+            min_building_sqft: opportunityFilters.minBuildingSqft,
+            max_building_sqft: opportunityFilters.maxBuildingSqft,
+            include_retail: opportunityFilters.includeRetail,
+            include_office: opportunityFilters.includeOffice,
+            include_land: opportunityFilters.includeLand,
             require_opportunity_signal: true,
             limit: 100,
           });
           setOpportunities(result.opportunities || []);
-          console.log('[CSOKi Opportunities] Fetched:', result.opportunities?.length || 0, 'opportunities');
+          console.log('[CSOKi Opportunities] Fetched:', result.opportunities?.length || 0, 'opportunities with filters:', opportunityFilters);
         } catch (error: any) {
           console.error('[CSOKi Opportunities] Error fetching:', error);
           setOpportunities([]);
@@ -1141,7 +1144,7 @@ export function MapboxMap() {
       setOpportunities([]);
       setSelectedOpportunity(null);
     }
-  }, [visibleLayersArray, mapBounds]);
+  }, [visibleLayersArray, mapBounds, opportunityFilters]);
 
   // Handle team property form success
   const handleTeamPropertySuccess = useCallback(() => {
