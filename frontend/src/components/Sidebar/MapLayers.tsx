@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, AlertCircle, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import { listingsApi } from '../../services/api';
 
