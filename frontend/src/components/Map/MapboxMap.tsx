@@ -1738,56 +1738,24 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* County Demographics Choropleth - GeoJSON with ACS data */}
+        {/* County Demographics - GeoJSON with ACS data */}
         {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyDemographicsData && (
           <Source
             id="county-demographics"
             type="geojson"
             data={countyDemographicsData}
           >
-            {/* Colored fill based on demographic metric */}
+            {/* Solid blue fill matching line color, low opacity to see base map */}
             <Layer
               id="county-demographics-fill"
               type="fill"
               paint={{
-                'fill-color': demographicMetric === 'income' ? [
-                  // Green scale for income ($0 → $100k+)
-                  'interpolate',
-                  ['linear'],
-                  ['coalesce', ['get', 'metric_value'], 0],
-                  0, '#f7fcf5',
-                  30000, '#c7e9c0',
-                  50000, '#74c476',
-                  75000, '#31a354',
-                  100000, '#006d2c',
-                ] : demographicMetric === 'density' ? [
-                  // Orange scale for density (0 → 500+ per sq mi for counties)
-                  'interpolate',
-                  ['linear'],
-                  ['coalesce', ['get', 'metric_value'], 0],
-                  0, '#fff7ec',
-                  25, '#fee8c8',
-                  50, '#fdbb84',
-                  100, '#fc8d59',
-                  250, '#e34a33',
-                  500, '#7f2704',
-                ] : [
-                  // Blue scale for population (0 → 500k+ for counties)
-                  'interpolate',
-                  ['linear'],
-                  ['coalesce', ['get', 'metric_value'], 0],
-                  0, '#f7fbff',
-                  10000, '#deebf7',
-                  50000, '#9ecae1',
-                  100000, '#4292c6',
-                  250000, '#2171b5',
-                  500000, '#08519c',
-                ],
+                'fill-color': '#3B82F6',  // Blue - matches county line color
                 'fill-opacity': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredCountyId],
-                  0.8,
-                  0.5,
+                  0.35,  // Slightly higher on hover
+                  0.12,  // Very low opacity to see city names
                 ],
               }}
             />
@@ -1796,17 +1764,18 @@ export function MapboxMap() {
               id="county-demographics-outline"
               type="line"
               paint={{
-                'line-color': [
-                  'case',
-                  ['==', ['get', 'GEOID'], hoveredCountyId],
-                  '#3B82F6',
-                  '#666',
-                ],
+                'line-color': '#3B82F6',  // Blue
                 'line-width': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredCountyId],
                   3,
+                  1.5,
+                ],
+                'line-opacity': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredCountyId],
                   1,
+                  0.7,
                 ],
               }}
             />
@@ -1820,13 +1789,24 @@ export function MapboxMap() {
             type="vector"
             url={`mapbox://${BOUNDARY_TILESETS.counties.id}`}
           >
+            {/* Blue fill with low opacity */}
+            <Layer
+              id="county-boundaries-fill"
+              type="fill"
+              source-layer={BOUNDARY_TILESETS.counties.sourceLayer}
+              minzoom={6}
+              paint={{
+                'fill-color': '#3B82F6',  // Blue
+                'fill-opacity': 0.1,  // Very low opacity
+              }}
+            />
             <Layer
               id="county-boundaries"
               type="line"
               source-layer={BOUNDARY_TILESETS.counties.sourceLayer}
               minzoom={6}
               paint={{
-                'line-color': '#3B82F6',
+                'line-color': '#3B82F6',  // Blue
                 'line-width': [
                   'interpolate',
                   ['linear'],
@@ -1848,13 +1828,24 @@ export function MapboxMap() {
             type="vector"
             url={`mapbox://${BOUNDARY_TILESETS.cities.id}`}
           >
+            {/* Green fill with low opacity */}
+            <Layer
+              id="city-boundaries-fill"
+              type="fill"
+              source-layer={BOUNDARY_TILESETS.cities.sourceLayer}
+              minzoom={9}
+              paint={{
+                'fill-color': '#22C55E',  // Green
+                'fill-opacity': 0.1,  // Very low opacity
+              }}
+            />
             <Layer
               id="city-boundaries"
               type="line"
               source-layer={BOUNDARY_TILESETS.cities.sourceLayer}
               minzoom={9}
               paint={{
-                'line-color': '#22C55E',
+                'line-color': '#22C55E',  // Green
                 'line-width': [
                   'interpolate',
                   ['linear'],
@@ -1863,7 +1854,7 @@ export function MapboxMap() {
                   12, 1.5,
                   16, 2,
                 ],
-                'line-opacity': 0.6,
+                'line-opacity': 0.7,
               }}
             />
           </Source>
@@ -1876,70 +1867,50 @@ export function MapboxMap() {
             type="vector"
             url={`mapbox://${BOUNDARY_TILESETS.zctas.id}`}
           >
+            {/* Orange fill with low opacity */}
+            <Layer
+              id="zipcode-boundaries-fill"
+              type="fill"
+              source-layer={BOUNDARY_TILESETS.zctas.sourceLayer}
+              minzoom={10}
+              paint={{
+                'fill-color': '#F97316',  // Orange
+                'fill-opacity': 0.08,  // Very low opacity
+              }}
+            />
             <Layer
               id="zipcode-boundaries"
               type="line"
               source-layer={BOUNDARY_TILESETS.zctas.sourceLayer}
               minzoom={10}
               paint={{
-                'line-color': '#F97316',
+                'line-color': '#F97316',  // Orange
                 'line-width': 1,
                 'line-dasharray': [2, 2],
-                'line-opacity': 0.5,
+                'line-opacity': 0.6,
               }}
             />
           </Source>
         )}
 
-        {/* Census Tracts Choropleth Layer */}
+        {/* Census Tracts Layer - Purple fill with demographics data */}
         {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') && censusTractsData && (
           <Source
             id="census-tracts"
             type="geojson"
             data={censusTractsData}
           >
-            {/* Colored fill based on demographic metric */}
+            {/* Solid purple fill matching tract color, low opacity to see base map */}
             <Layer
               id="census-tract-fill"
               type="fill"
               paint={{
-                'fill-color': demographicMetric === 'income' ? [
-                  // Green scale for income ($0 → $100k+)
-                  'interpolate',
-                  ['linear'],
-                  ['coalesce', ['get', 'metric_value'], 0],
-                  0, '#f7fcf5',
-                  30000, '#c7e9c0',
-                  50000, '#74c476',
-                  75000, '#31a354',
-                  100000, '#006d2c',
-                ] : demographicMetric === 'density' ? [
-                  // Orange scale for density (0 → 5k+/sq mi)
-                  'interpolate',
-                  ['linear'],
-                  ['coalesce', ['get', 'metric_value'], 0],
-                  0, '#fff7ec',
-                  500, '#fee8c8',
-                  1000, '#fdbb84',
-                  2500, '#fc8d59',
-                  5000, '#e34a33',
-                  10000, '#7f2704',
-                ] : [
-                  // Blue scale for population (0 → 30k+)
-                  'interpolate',
-                  ['linear'],
-                  ['coalesce', ['get', 'metric_value'], 0],
-                  0, '#f7fbff',
-                  1000, '#deebf7',
-                  5000, '#9ecae1',
-                  15000, '#4292c6',
-                  30000, '#08519c',
-                ],
+                'fill-color': '#8B5CF6',  // Purple - matches tract line color
                 'fill-opacity': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredTractId],
-                  0.8,
-                  0.5,
+                  0.35,  // Slightly higher on hover
+                  0.12,  // Very low opacity to see city names
                 ],
               }}
             />
@@ -1948,17 +1919,18 @@ export function MapboxMap() {
               id="census-tract-outline"
               type="line"
               paint={{
-                'line-color': [
-                  'case',
-                  ['==', ['get', 'GEOID'], hoveredTractId],
-                  '#8B5CF6',
-                  '#666',
-                ],
+                'line-color': '#8B5CF6',  // Purple
                 'line-width': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredTractId],
                   3,
                   0.5,
+                ],
+                'line-opacity': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredTractId],
+                  1,
+                  0.6,
                 ],
               }}
             />

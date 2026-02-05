@@ -1467,8 +1467,8 @@ TIGER_ZCTAS_URL = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb
 
 # ArcGIS Living Atlas - ACS 2022 demographic data URLs
 # Layer 0 = State, Layer 1 = County, Layer 2 = Tract
-ACS_POPULATION_BASE = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Total_Population_Boundaries/FeatureServer"
-ACS_INCOME_BASE = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/ACS_Median_Household_Income_Variables_Boundaries/FeatureServer"
+ACS_POPULATION_BASE = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/ACS_Total_Population_Boundaries/FeatureServer"
+ACS_INCOME_BASE = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/ACS_Median_Income_by_Race_and_Age_Selp_Emp_Boundaries/FeatureServer"
 
 # Layer indices for different geographies
 ACS_LAYERS = {
@@ -1532,11 +1532,11 @@ async def get_demographic_boundaries(
     layer_index = ACS_LAYERS[geography_lower]
 
     # Choose ArcGIS service based on metric
-    # Income uses a different service with B19013_001E (Median Household Income)
+    # Income uses a different service with B19049_001E (Median Household Income)
     if metric == "income":
         url = f"{ACS_INCOME_BASE}/{layer_index}/query"
-        # ACS Income service fields: NAME, GEOID, B19013_001E (median HH income), Shape_Area
-        out_fields = "NAME,GEOID,B19013_001E,Shape_Area"
+        # ACS Income service fields: NAME, GEOID, B19049_001E (median HH income), Shape__Area
+        out_fields = "NAME,GEOID,B19049_001E,Shape__Area"
     else:
         url = f"{ACS_POPULATION_BASE}/{layer_index}/query"
         # ACS Population service fields: NAME, GEOID, B01001_001E (total pop), Shape_Area
@@ -1563,10 +1563,11 @@ async def get_demographic_boundaries(
                     props = feature.get("properties", {})
 
                     # Get raw values from ACS data
-                    # B01001_001E = Total Population, B19013_001E = Median Household Income
+                    # B01001_001E = Total Population, B19049_001E = Median Household Income
                     pop = props.get("B01001_001E") or 0
-                    income = props.get("B19013_001E") or 0
-                    shape_area = props.get("Shape_Area") or 0  # in square meters
+                    income = props.get("B19049_001E") or 0
+                    # Shape field name varies: Shape_Area (population) vs Shape__Area (income)
+                    shape_area = props.get("Shape_Area") or props.get("Shape__Area") or 0  # in square meters
 
                     # Calculate density (pop per sq mile)
                     # 1 sq mile = 2,589,988 sq meters
