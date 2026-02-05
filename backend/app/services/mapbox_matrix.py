@@ -188,8 +188,6 @@ async def calculate_matrix(
         "annotations": "duration,distance",
         # Approach waypoints from curb side (better for retail locations)
         "approaches": ";".join(["curb"] * len(all_coords)),
-        # Fallback speed (km/h) when route cannot be found - prevents 422 errors
-        "fallback_speed": 10,
     }
 
     async with httpx.AsyncClient() as client:
