@@ -1221,7 +1221,7 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
         )
 
     # Try with requested number of competitors, retry with fewer if Mapbox fails
-    max_retries = 3
+    max_retries = 5
     current_max = request.max_competitors
     last_error = None
 
@@ -1241,9 +1241,9 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
             last_error = e
             if e.response.status_code == 422 and attempt < max_retries - 1:
                 # Mapbox 422 often means routing issues with specific coords
-                # Retry with fewer competitors
+                # Retry with fewer competitors (halve each time, min 3)
                 old_max = current_max
-                current_max = max(3, current_max - 5)  # Reduce by 5, min 3
+                current_max = max(3, current_max // 2)
                 logger.warning(f"Mapbox 422 error, retrying with {current_max} competitors (was {old_max})")
                 continue
             # Final attempt or non-422 error
