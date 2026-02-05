@@ -186,6 +186,10 @@ async def calculate_matrix(
         "sources": sources_str,
         "destinations": destinations_str,
         "annotations": "duration,distance",
+        # Approach waypoints from curb side (better for retail locations)
+        "approaches": ";".join(["curb"] * len(all_coords)),
+        # Fallback speed (km/h) when route cannot be found - prevents 422 errors
+        "fallback_speed": 10,
     }
 
     async with httpx.AsyncClient() as client:
@@ -193,18 +197,20 @@ async def calculate_matrix(
         response.raise_for_status()
         data = response.json()
 
-    # Parse response
+    # Parse response (handle None values gracefully with fallback_speed)
     elements = []
-    durations = data.get("durations", [])
-    distances = data.get("distances", [])
+    durations = data.get("durations") or []
+    distances = data.get("distances") or []
 
     for origin_idx, (dur_row, dist_row) in enumerate(zip(durations, distances)):
+        dur_row = dur_row or []
+        dist_row = dist_row or []
         for dest_idx, (duration, distance) in enumerate(zip(dur_row, dist_row)):
             elements.append(MatrixElement(
                 origin_index=origin_idx,
                 destination_index=dest_idx,
-                duration_seconds=duration,
-                distance_meters=distance,
+                duration_seconds=duration,  # May be None if fallback couldn't calculate
+                distance_meters=distance,   # May be None if fallback couldn't calculate
             ))
 
     # Cache the result
