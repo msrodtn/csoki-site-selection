@@ -9,7 +9,7 @@
  * - Contextual data (nearby competitors, demographics)
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTriangle, Eye, Loader2, GripHorizontal, Navigation } from 'lucide-react';
 import type { PropertyListing, ParcelInfo } from '../../types/store';
 import { analysisApi } from '../../services/api';
@@ -43,13 +43,25 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
   const [parcelError, setParcelError] = useState<string | null>(null);
   const [showParcelDetails, setShowParcelDetails] = useState(false);
 
-  // Draggable state
-  const [position, setPosition] = useState(initialPosition || { x: window.innerWidth - 420, y: 80 });
+  // Draggable state - start at a safe default, will be adjusted on mount
+  const [position, setPosition] = useState(initialPosition || { x: 20, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const isOpportunity = property.listing_type === 'opportunity';
+
+  // Calculate initial position based on container size on mount
+  useEffect(() => {
+    if (!initialPosition && containerRef.current && panelRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const panelWidth = panelRef.current.offsetWidth || 384;
+      // Position card at right side of container with some padding
+      const initialX = Math.max(20, containerRect.width - panelWidth - 20);
+      setPosition({ x: initialX, y: 80 });
+    }
+  }, [initialPosition]);
 
   // Drag handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -65,13 +77,14 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isDragging && panelRef.current) {
-      const newX = e.clientX - dragOffset.current.x;
-      const newY = e.clientY - dragOffset.current.y;
+    if (isDragging && panelRef.current && containerRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newX = e.clientX - containerRect.left - dragOffset.current.x;
+      const newY = e.clientY - containerRect.top - dragOffset.current.y;
 
-      // Keep panel within viewport bounds
-      const maxX = window.innerWidth - (panelRef.current.offsetWidth || 384);
-      const maxY = window.innerHeight - 100; // Leave some room at bottom
+      // Keep panel within container bounds
+      const maxX = containerRect.width - (panelRef.current.offsetWidth || 384);
+      const maxY = containerRect.height - 100; // Leave some room at bottom
 
       const boundedPosition = {
         x: Math.max(0, Math.min(newX, maxX)),
@@ -140,18 +153,22 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
 
   return (
     <div
-      ref={panelRef}
-      className="bg-white rounded-lg shadow-xl border border-gray-200 w-96 max-h-[80vh] overflow-hidden flex flex-col"
-      style={{
-        position: 'absolute',
-        left: position.x,
-        top: position.y,
-        zIndex: 1000,
-      }}
+      ref={containerRef}
+      className="absolute inset-0 pointer-events-none"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
+      <div
+        ref={panelRef}
+        className="bg-white rounded-lg shadow-xl border border-gray-200 w-96 max-h-[80vh] overflow-hidden flex flex-col pointer-events-auto"
+        style={{
+          position: 'absolute',
+          left: position.x,
+          top: position.y,
+          zIndex: 1000,
+        }}
+      >
       {/* Header - Draggable */}
       <div
         className="px-4 py-3 border-b flex items-center justify-between cursor-move select-none"
@@ -408,6 +425,7 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
           {parcelError}
         </div>
       )}
+      </div>
     </div>
   );
 }
