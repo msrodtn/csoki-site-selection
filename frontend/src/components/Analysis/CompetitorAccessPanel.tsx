@@ -226,7 +226,7 @@ export function CompetitorAccessPanel({
   };
 
   return (
-    <div className="absolute top-4 right-4 w-96 bg-white rounded-lg shadow-xl z-50 max-h-[calc(100vh-8rem)] flex flex-col">
+    <div className="absolute top-24 left-4 w-80 sm:w-96 bg-white rounded-lg shadow-xl z-50 max-h-[calc(100vh-10rem)] flex flex-col border border-gray-200">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center gap-2">
