@@ -79,6 +79,13 @@ const INITIAL_VIEW = {
   zoom: 6,
 };
 
+// Mapbox Tileset IDs for administrative boundaries (Census TIGER data)
+const BOUNDARY_TILESETS = {
+  counties: 'msrodtn.9jpdhu14',  // Counties for IA, NE, NV, ID
+  cities: 'msrodtn.05vjtaqc',    // Cities/Places for IA, NE, NV, ID
+  zctas: 'msrodtn.917bnr7e',     // ZIP Code areas for IA, NE, NV, ID
+};
+
 // Helper to parse WKT to GeoJSON
 function parseWKTToGeoJSON(wkt: string): GeoJSON.Geometry | null {
   if (!wkt) return null;
@@ -704,11 +711,7 @@ export function MapboxMap() {
     lngLat: [number, number];
   } | null>(null);
 
-  // Census TIGER boundary state (counties, cities, zipcodes)
-  const [countyBoundaries, setCountyBoundaries] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [cityBoundaries, setCityBoundaries] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [zipcodeBoundaries, setZipcodeBoundaries] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [isLoadingBoundaries, setIsLoadingBoundaries] = useState(false);
+  // Note: Counties, cities, and ZIP codes now use Mapbox tilesets (no GeoJSON state needed)
 
   // Track analysis center for re-analysis
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -1340,41 +1343,8 @@ export function MapboxMap() {
     fetchCensusTracts();
   }, [visibleLayersArray, visibleBoundaryTypes, visibleStates, demographicMetric]);
 
-  // Fetch County, City, and ZIP Code boundaries when enabled
-  useEffect(() => {
-    const boundariesEnabled = visibleLayersArray.includes('boundaries');
-    const statesToFetch = Array.from(visibleStates).filter(s => ['IA', 'NE', 'NV', 'ID'].includes(s));
-    const primaryState = statesToFetch[0] || 'IA';
-
-    // Fetch counties
-    if (boundariesEnabled && visibleBoundaryTypes.has('counties') && !countyBoundaries) {
-      setIsLoadingBoundaries(true);
-      analysisApi.getCountyBoundaries(primaryState)
-        .then(data => setCountyBoundaries(data))
-        .catch(err => console.error('Failed to fetch county boundaries:', err))
-        .finally(() => setIsLoadingBoundaries(false));
-    } else if (!boundariesEnabled || !visibleBoundaryTypes.has('counties')) {
-      setCountyBoundaries(null);
-    }
-
-    // Fetch cities
-    if (boundariesEnabled && visibleBoundaryTypes.has('cities') && !cityBoundaries) {
-      analysisApi.getCityBoundaries(primaryState)
-        .then(data => setCityBoundaries(data))
-        .catch(err => console.error('Failed to fetch city boundaries:', err));
-    } else if (!boundariesEnabled || !visibleBoundaryTypes.has('cities')) {
-      setCityBoundaries(null);
-    }
-
-    // Fetch ZIP codes
-    if (boundariesEnabled && visibleBoundaryTypes.has('zipcodes') && !zipcodeBoundaries) {
-      analysisApi.getZipCodeBoundaries(primaryState)
-        .then(data => setZipcodeBoundaries(data))
-        .catch(err => console.error('Failed to fetch ZIP code boundaries:', err));
-    } else if (!boundariesEnabled || !visibleBoundaryTypes.has('zipcodes')) {
-      setZipcodeBoundaries(null);
-    }
-  }, [visibleLayersArray, visibleBoundaryTypes, visibleStates]);
+  // Note: Counties, cities, and ZIP codes now use Mapbox tilesets
+  // No API fetching needed - data is loaded directly from Mapbox tiles
 
   // Check for token
   if (!MAPBOX_TOKEN) {
@@ -1457,13 +1427,7 @@ export function MapboxMap() {
         </div>
       )}
 
-      {/* Boundaries loading indicator */}
-      {isLoadingBoundaries && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
-          <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-          Loading boundaries...
-        </div>
-      )}
+      {/* Note: Boundaries now load from Mapbox tilesets - no loading indicator needed */}
 
       {/* Property error display */}
       {propertyError && visibleLayersArray.includes('properties_for_sale') && (
@@ -1663,12 +1627,17 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* County Boundaries - Census TIGER GeoJSON */}
-        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyBoundaries && (
-          <Source id="county-boundaries-source" type="geojson" data={countyBoundaries}>
+        {/* County Boundaries - Mapbox Tileset */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && (
+          <Source
+            id="county-boundaries-source"
+            type="vector"
+            url={`mapbox://${BOUNDARY_TILESETS.counties}`}
+          >
             <Layer
               id="county-boundaries"
               type="line"
+              source-layer="counties"
               minzoom={6}
               paint={{
                 'line-color': '#3B82F6',
@@ -1686,12 +1655,17 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* City Boundaries - Census TIGER GeoJSON */}
-        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') && cityBoundaries && (
-          <Source id="city-boundaries-source" type="geojson" data={cityBoundaries}>
+        {/* City Boundaries - Mapbox Tileset */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') && (
+          <Source
+            id="city-boundaries-source"
+            type="vector"
+            url={`mapbox://${BOUNDARY_TILESETS.cities}`}
+          >
             <Layer
               id="city-boundaries"
               type="line"
+              source-layer="cities"
               minzoom={9}
               paint={{
                 'line-color': '#22C55E',
@@ -1709,12 +1683,17 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* ZIP Code Boundaries - Census TIGER GeoJSON */}
-        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') && zipcodeBoundaries && (
-          <Source id="zipcode-boundaries-source" type="geojson" data={zipcodeBoundaries}>
+        {/* ZIP Code Boundaries - Mapbox Tileset */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') && (
+          <Source
+            id="zipcode-boundaries-source"
+            type="vector"
+            url={`mapbox://${BOUNDARY_TILESETS.zctas}`}
+          >
             <Layer
               id="zipcode-boundaries"
               type="line"
+              source-layer="zctas"
               minzoom={10}
               paint={{
                 'line-color': '#F97316',
