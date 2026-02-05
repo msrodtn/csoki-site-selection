@@ -11,6 +11,12 @@ from sqlalchemy import text
 
 from app.services.places import fetch_nearby_pois, TradeAreaAnalysis
 from app.services.arcgis import fetch_demographics, DemographicsResponse
+from app.services.streetlight import (
+    fetch_traffic_counts,
+    TrafficAnalysis,
+    StreetlightClient,
+    SegmentCountEstimate,
+)
 from app.services.property_search import search_properties, PropertySearchResult, MapBounds, check_api_keys as check_property_api_keys
 from app.core.config import settings
 from app.core.database import get_db
@@ -196,6 +202,123 @@ async def check_arcgis_api_key():
     return {
         "configured": settings.ARCGIS_API_KEY is not None,
         "message": "ArcGIS API key configured" if settings.ARCGIS_API_KEY else "ArcGIS API key not set"
+    }
+
+
+# =============================================================================
+# Streetlight Traffic Counts Endpoints
+# =============================================================================
+
+class TrafficCountsRequest(BaseModel):
+    """Request model for traffic counts analysis."""
+    latitude: float
+    longitude: float
+    radius_miles: float = 1.0
+    include_demographics: bool = True
+    include_vehicle_attributes: bool = False
+    year: Optional[int] = None
+    month: Optional[int] = None
+
+
+class SegmentCountRequest(BaseModel):
+    """Request model for segment count estimation."""
+    latitude: float
+    longitude: float
+    radius_miles: float = 1.0
+
+
+@router.post("/traffic-counts/", response_model=TrafficAnalysis)
+async def get_traffic_counts(request: TrafficCountsRequest):
+    """
+    Get traffic count data from Streetlight Advanced Traffic Counts API.
+
+    Returns AADT (Annual Average Daily Traffic), speed metrics, and optionally
+    traveler demographics (income, trip purpose) and vehicle attributes
+    (body class, power train) for road segments within the specified radius.
+
+    **IMPORTANT:** This is a billable endpoint. Quota is charged based on:
+    - Number of road segments in the radius
+    - Number of date periods requested (months)
+
+    Use the /traffic-counts/estimate/ endpoint first to preview quota usage.
+
+    - **latitude**: Center point latitude
+    - **longitude**: Center point longitude
+    - **radius_miles**: Search radius in miles (0.25-5.0, default: 1.0)
+    - **include_demographics**: Include traveler income/trip purpose data
+    - **include_vehicle_attributes**: Include vehicle class/powertrain data
+    - **year**: Optional year filter (defaults to most recent available)
+    - **month**: Optional month filter (1-12)
+    """
+    if not settings.STREETLIGHT_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Streetlight API key not configured. Please set STREETLIGHT_API_KEY environment variable."
+        )
+
+    try:
+        result = await fetch_traffic_counts(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            radius_miles=request.radius_miles,
+            include_demographics=request.include_demographics,
+            include_vehicle_attributes=request.include_vehicle_attributes,
+            year=request.year,
+            month=request.month,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.exception("Error fetching traffic counts")
+        raise HTTPException(status_code=500, detail=f"Error fetching traffic counts: {str(e)}")
+
+
+@router.post("/traffic-counts/estimate/", response_model=SegmentCountEstimate)
+async def estimate_traffic_segments(request: SegmentCountRequest):
+    """
+    Estimate the number of road segments in a radius (for quota planning).
+
+    This is a non-billable endpoint. Use it before calling /traffic-counts/
+    to understand the quota impact of your query.
+
+    - **latitude**: Center point latitude
+    - **longitude**: Center point longitude
+    - **radius_miles**: Search radius in miles (0.25-5.0, default: 1.0)
+
+    Returns:
+    - **segment_count**: Number of Streetlight road segments in the area
+    - **geometry_type**: Type of geometry used (radius)
+    """
+    if not settings.STREETLIGHT_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Streetlight API key not configured. Please set STREETLIGHT_API_KEY environment variable."
+        )
+
+    try:
+        client = StreetlightClient()
+        result = await client.estimate_segment_count(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            radius_miles=request.radius_miles,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.exception("Error estimating traffic segments")
+        raise HTTPException(status_code=500, detail=f"Error estimating segments: {str(e)}")
+
+
+@router.get("/check-streetlight-key/")
+async def check_streetlight_api_key():
+    """
+    Check if the Streetlight API key is configured.
+    """
+    return {
+        "configured": settings.STREETLIGHT_API_KEY is not None,
+        "message": "Streetlight API key configured" if settings.STREETLIGHT_API_KEY else "Streetlight API key not set"
     }
 
 
@@ -1074,15 +1197,18 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
             """)
             result = db.execute(query, {"ids": request.competitor_ids})
         else:
-            # Fetch nearest competitors using simple distance calculation
-            # This approach works even without PostGIS spatial index
+            # Fetch nearest competitors using Haversine formula
+            # LEAST/GREATEST clamps the acos input to [-1, 1] to prevent floating-point errors
+            # This can happen when two points are at nearly identical locations
             query = text("""
                 SELECT id, brand, street, city, state, postal_code, latitude, longitude,
                        (
                            3959 * acos(
-                               cos(radians(:lat)) * cos(radians(latitude)) *
-                               cos(radians(longitude) - radians(:lng)) +
-                               sin(radians(:lat)) * sin(radians(latitude))
+                               LEAST(1.0, GREATEST(-1.0,
+                                   cos(radians(:lat)) * cos(radians(latitude)) *
+                                   cos(radians(longitude) - radians(:lng)) +
+                                   sin(radians(:lat)) * sin(radians(latitude))
+                               ))
                            )
                        ) as distance_miles
                 FROM stores
@@ -1112,7 +1238,6 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
         ]
     except Exception as db_error:
         logger.error(f"Database error in competitor-access: {db_error}", exc_info=True)
-        db.close()
         raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
     finally:
         db.close()
@@ -1133,7 +1258,26 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
             max_competitors=request.max_competitors,
         )
         return access_result
+    except httpx.HTTPStatusError as e:
+        # Mapbox API returned an error
+        logger.error(f"Mapbox Matrix API error: {e.response.status_code} - {e.response.text}", exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Travel time service error: {e.response.status_code}. Please try again."
+        )
+    except httpx.RequestError as e:
+        # Network or connection error
+        logger.error(f"Mapbox Matrix API connection error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to connect to travel time service. Please try again."
+        )
+    except ValueError as e:
+        # Invalid parameters or configuration
+        logger.error(f"Competitor access validation error: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Competitor access error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Competitor access error: {str(e)}")
 
 

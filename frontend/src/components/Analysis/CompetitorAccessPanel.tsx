@@ -150,9 +150,19 @@ export function CompetitorAccessPanel({
         response.competitors.map((c) => c.brand)
       );
       setExpandedBrands(brandsWithCompetitors);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error fetching competitor access:', err);
-      setError(err instanceof Error ? err.message : 'Failed to analyze competitor access');
+      // Extract error message from axios response if available
+      let errorMessage = 'Failed to analyze competitor access';
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosError = err as { response?: { data?: { detail?: string } } };
+        if (axiosError.response?.data?.detail) {
+          errorMessage = axiosError.response.data.detail;
+        }
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

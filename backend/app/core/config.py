@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     ATTOM_API_KEY: Optional[str] = None
     CREXI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
+    STREETLIGHT_API_KEY: Optional[str] = None
 
     # Listing Scraper Credentials (for authenticated browser automation)
     CREXI_USERNAME: Optional[str] = None  # Also accepts CREXI_EMAIL
