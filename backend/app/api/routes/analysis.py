@@ -1220,35 +1220,59 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
             profile=request.profile,
         )
 
-    try:
-        access_result = await analyze_competitor_access(
-            site_location=(request.site_longitude, request.site_latitude),
-            competitor_locations=competitors,
-            profile=profile,
-            max_competitors=request.max_competitors,
-        )
-        return access_result
-    except httpx.HTTPStatusError as e:
-        # Mapbox API returned an error
-        logger.error(f"Mapbox Matrix API error: {e.response.status_code} - {e.response.text}", exc_info=True)
+    # Try with requested number of competitors, retry with fewer if Mapbox fails
+    max_retries = 3
+    current_max = request.max_competitors
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            # Limit competitors for this attempt
+            limited_competitors = competitors[:current_max]
+
+            access_result = await analyze_competitor_access(
+                site_location=(request.site_longitude, request.site_latitude),
+                competitor_locations=limited_competitors,
+                profile=profile,
+                max_competitors=current_max,
+            )
+            return access_result
+        except httpx.HTTPStatusError as e:
+            last_error = e
+            if e.response.status_code == 422 and attempt < max_retries - 1:
+                # Mapbox 422 often means routing issues with specific coords
+                # Retry with fewer competitors
+                old_max = current_max
+                current_max = max(3, current_max - 5)  # Reduce by 5, min 3
+                logger.warning(f"Mapbox 422 error, retrying with {current_max} competitors (was {old_max})")
+                continue
+            # Final attempt or non-422 error
+            logger.error(f"Mapbox Matrix API error: {e.response.status_code} - {e.response.text}", exc_info=True)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Travel time service error: {e.response.status_code}. Please try again."
+            )
+        except httpx.RequestError as e:
+            # Network or connection error
+            logger.error(f"Mapbox Matrix API connection error: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to connect to travel time service. Please try again."
+            )
+        except ValueError as e:
+            # Invalid parameters or configuration
+            logger.error(f"Competitor access validation error: {e}", exc_info=True)
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Competitor access error: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Competitor access error: {str(e)}")
+
+    # All retries exhausted
+    if last_error:
         raise HTTPException(
             status_code=502,
-            detail=f"Travel time service error: {e.response.status_code}. Please try again."
+            detail=f"Travel time service error after {max_retries} attempts. Please try again."
         )
-    except httpx.RequestError as e:
-        # Network or connection error
-        logger.error(f"Mapbox Matrix API connection error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail="Unable to connect to travel time service. Please try again."
-        )
-    except ValueError as e:
-        # Invalid parameters or configuration
-        logger.error(f"Competitor access validation error: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Competitor access error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Competitor access error: {str(e)}")
 
 
 @router.get("/matrix/cache-stats/")

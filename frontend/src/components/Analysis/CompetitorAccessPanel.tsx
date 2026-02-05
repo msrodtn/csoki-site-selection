@@ -86,7 +86,7 @@ export function CompetitorAccessPanel({
   const [result, setResult] = useState<CompetitorAccessResponse | null>(null);
   const [profile, setProfile] = useState<TravelProfile>('driving-traffic');
   const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set());
-  const [maxCompetitors] = useState(25);
+  const [maxCompetitors] = useState(9);
 
   // Filter and sort state
   const [maxTravelTime, setMaxTravelTime] = useState<number>(60); // minutes
