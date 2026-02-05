@@ -1,5 +1,7 @@
-import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, AlertCircle, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
+import { listingsApi } from '../../services/api';
 
 // Layer definitions
 export const MAP_LAYERS = {
@@ -102,6 +104,187 @@ const PROPERTY_SUB_TOGGLES = [
 ];
 
 export type MapLayerId = keyof typeof MAP_LAYERS;
+
+// Inline Opportunities Filter Component
+function InlineOpportunitiesFilter() {
+  const { opportunityFilters, setOpportunityFilters } = useMapStore();
+
+  return (
+    <div className="ml-6 mt-2 p-3 bg-purple-50 rounded-lg border-l-2 border-purple-300">
+      <div className="flex items-center gap-2 mb-2">
+        <SlidersHorizontal className="w-3 h-3 text-purple-600" />
+        <span className="text-xs font-medium text-purple-800">Filter Criteria</span>
+      </div>
+
+      {/* Parcel Size */}
+      <div className="mb-2">
+        <label className="text-xs text-gray-600">Parcel (acres)</label>
+        <div className="flex items-center gap-1 mt-0.5">
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={opportunityFilters.minParcelAcres}
+            onChange={(e) => {
+              const num = parseFloat(e.target.value);
+              if (!isNaN(num) && num >= 0) setOpportunityFilters({ minParcelAcres: num });
+            }}
+            className="w-16 px-1.5 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500"
+          />
+          <span className="text-xs text-gray-400">-</span>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={opportunityFilters.maxParcelAcres}
+            onChange={(e) => {
+              const num = parseFloat(e.target.value);
+              if (!isNaN(num) && num >= 0) setOpportunityFilters({ maxParcelAcres: num });
+            }}
+            className="w-16 px-1.5 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500"
+          />
+        </div>
+      </div>
+
+      {/* Building Size */}
+      <div className="mb-2">
+        <label className="text-xs text-gray-600">Building (sqft)</label>
+        <div className="flex items-center gap-1 mt-0.5">
+          <input
+            type="number"
+            step="100"
+            min="0"
+            value={opportunityFilters.minBuildingSqft}
+            onChange={(e) => {
+              const num = parseInt(e.target.value, 10);
+              if (!isNaN(num) && num >= 0) setOpportunityFilters({ minBuildingSqft: num });
+            }}
+            className="w-16 px-1.5 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500"
+          />
+          <span className="text-xs text-gray-400">-</span>
+          <input
+            type="number"
+            step="100"
+            min="0"
+            value={opportunityFilters.maxBuildingSqft}
+            onChange={(e) => {
+              const num = parseInt(e.target.value, 10);
+              if (!isNaN(num) && num >= 0) setOpportunityFilters({ maxBuildingSqft: num });
+            }}
+            className="w-16 px-1.5 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500"
+          />
+        </div>
+      </div>
+
+      {/* Property Types */}
+      <div className="flex flex-wrap gap-1">
+        {['Land', 'Retail', 'Office'].map((type) => {
+          const key = `include${type}` as 'includeLand' | 'includeRetail' | 'includeOffice';
+          const isActive = opportunityFilters[key];
+          return (
+            <button
+              key={type}
+              onClick={() => setOpportunityFilters({ [key]: !isActive })}
+              className={`px-2 py-0.5 text-xs rounded-full ${
+                isActive ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-600'
+              }`}
+            >
+              {type}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Inline Crexi Search Component
+function InlineCrexiSearch() {
+  const [location, setLocation] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [result, setResult] = useState<{ total_filtered: number; cached: boolean } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<{
+    playwrightAvailable: boolean;
+    crexiLoaded: boolean;
+    credentialsSet: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    listingsApi.getDiagnostics().then((data) => {
+      setDiagnostics({
+        playwrightAvailable: data.playwright.available,
+        crexiLoaded: data.crexi.automation_loaded,
+        credentialsSet: data.crexi.credentials.username_set && data.crexi.credentials.password_set,
+      });
+    }).catch(() => {
+      setDiagnostics({ playwrightAvailable: false, crexiLoaded: false, credentialsSet: false });
+    });
+  }, []);
+
+  const isReady = diagnostics?.playwrightAvailable && diagnostics?.crexiLoaded && diagnostics?.credentialsSet;
+
+  const handleSearch = async () => {
+    if (!location.trim()) return;
+    setIsSearching(true);
+    setError(null);
+    try {
+      const response = await listingsApi.fetchCrexiArea({ location: location.trim() });
+      setResult({ total_filtered: response.total_filtered, cached: response.cached });
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Search failed');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  return (
+    <div className="ml-6 mt-2 p-3 bg-blue-50 rounded-lg border-l-2 border-blue-300">
+      <div className="flex items-center gap-2 mb-2">
+        <Search className="w-3 h-3 text-blue-600" />
+        <span className="text-xs font-medium text-blue-800">Crexi Search</span>
+        {diagnostics && (
+          <span className={`ml-auto ${isReady ? 'text-green-600' : 'text-amber-600'}`}>
+            {isReady ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+          </span>
+        )}
+      </div>
+
+      {isReady ? (
+        <>
+          <div className="flex gap-1 mb-2">
+            <input
+              type="text"
+              placeholder="Des Moines, IA"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              disabled={isSearching}
+              className="flex-1 px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-blue-500"
+            />
+            <button
+              onClick={handleSearch}
+              disabled={isSearching || !location.trim()}
+              className="px-2 py-1 bg-blue-600 text-white rounded text-xs disabled:bg-gray-400"
+            >
+              {isSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Go'}
+            </button>
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          {result && (
+            <p className="text-xs text-gray-600">
+              Found {result.total_filtered} opportunities {result.cached && '(cached)'}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="text-xs text-gray-500">
+          {!diagnostics?.playwrightAvailable ? 'Playwright unavailable' : 'Crexi credentials not set'}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function MapLayers() {
   const {
@@ -211,6 +394,12 @@ export function MapLayers() {
                   })}
                 </div>
               )}
+
+              {/* Inline Crexi Search for Active Listings layer */}
+              {layer.id === 'properties_for_sale' && isActive && <InlineCrexiSearch />}
+
+              {/* Inline Opportunities Filter for CSOKi Opportunities layer */}
+              {layer.id === 'csoki_opportunities' && isActive && <InlineOpportunitiesFilter />}
             </div>
           );
         })}
