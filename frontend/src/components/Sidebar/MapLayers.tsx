@@ -73,13 +73,6 @@ export const MAP_LAYERS = {
     color: '#3B82F6',
     description: 'Requires zoom 12+ to display',
   },
-  business_labels: {
-    id: 'business_labels',
-    name: 'Business Labels',
-    icon: Building2,
-    color: '#6366F1',
-    description: 'Show business names on map',
-  },
 } as const;
 
 // Sub-toggle definitions for Properties For Sale layer
