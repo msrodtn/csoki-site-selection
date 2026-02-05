@@ -1494,6 +1494,73 @@ export function MapboxMap() {
           </Source>
         )}
 
+        {/* Administrative Boundaries Layer - Mapbox Boundaries v4 */}
+        {visibleLayersArray.includes('boundaries') && (
+          <Source
+            id="mapbox-boundaries"
+            type="vector"
+            url="mapbox://mapbox.boundaries-adm-v4"
+          >
+            {/* County boundaries (admin level 2) */}
+            <Layer
+              id="county-boundaries"
+              type="line"
+              source-layer="boundaries_admin_2"
+              minzoom={6}
+              paint={{
+                'line-color': '#627BC1',
+                'line-width': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  6,
+                  1,
+                  10,
+                  2,
+                  14,
+                  2.5,
+                ],
+                'line-opacity': 0.8,
+              }}
+            />
+            {/* City boundaries (admin level 3) - show at higher zoom */}
+            <Layer
+              id="city-boundaries"
+              type="line"
+              source-layer="boundaries_admin_3"
+              minzoom={9}
+              paint={{
+                'line-color': '#4CAF50',
+                'line-width': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  9,
+                  0.5,
+                  12,
+                  1.5,
+                  16,
+                  2,
+                ],
+                'line-opacity': 0.6,
+              }}
+            />
+            {/* Postal code boundaries (ZIP codes) - show when zoomed in */}
+            <Layer
+              id="postal-boundaries"
+              type="line"
+              source-layer="boundaries_postal_code"
+              minzoom={10}
+              paint={{
+                'line-color': '#FF9800',
+                'line-width': 1,
+                'line-dasharray': [2, 2],
+                'line-opacity': 0.5,
+              }}
+            />
+          </Source>
+        )}
+
         {/* Heatmap Layer */}
         {visibleLayersArray.includes('competition_heat') && (
           <Source id="stores" type="geojson" data={storesGeoJSON}>

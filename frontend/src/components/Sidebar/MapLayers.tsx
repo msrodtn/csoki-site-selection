@@ -1,4 +1,4 @@
-import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search } from 'lucide-react';
+import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
 // Layer definitions
@@ -66,6 +66,13 @@ export const MAP_LAYERS = {
     icon: Diamond,
     color: '#9333EA',
     description: 'Filtered: 0.8-2ac or 2.5-6k sqft with signals',
+  },
+  boundaries: {
+    id: 'boundaries',
+    name: 'Administrative Boundaries',
+    icon: Grid,
+    color: '#627BC1',
+    description: 'Counties, cities, ZIP codes',
   },
 } as const;
 
