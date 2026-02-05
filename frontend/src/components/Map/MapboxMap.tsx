@@ -2483,26 +2483,6 @@ export function MapboxMap() {
           />
         )}
 
-        {/* Analysis Pin Marker - shows where user clicked to analyze */}
-        {arcSettings.siteLocation && (
-          <Marker
-            longitude={arcSettings.siteLocation[0]}
-            latitude={arcSettings.siteLocation[1]}
-            anchor="bottom"
-          >
-            <div className="relative">
-              {/* Pin */}
-              <div className="w-8 h-8 bg-purple-600 rounded-full border-3 border-white shadow-lg flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 8v8M8 12h8" />
-                </svg>
-              </div>
-              {/* Pulse animation */}
-              <div className="absolute inset-0 w-8 h-8 bg-purple-400 rounded-full animate-ping opacity-40" />
-            </div>
-          </Marker>
-        )}
       </Map>
 
       {/* Draggable Parcel Info Panel */}
