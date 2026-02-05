@@ -1,21 +1,14 @@
-import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Box, Hexagon, GitBranch } from 'lucide-react';
+import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Box, GitBranch } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 
-// 3D Visualization sub-toggles
+// 3D Visualization sub-toggles (arcs only - hexagons removed as not useful for site selection)
 const DECK_LAYER_TOGGLES = [
-  {
-    id: 'opportunityHexagons' as const,
-    name: '3D Hexagons',
-    icon: Hexagon,
-    color: '#9333EA', // Purple
-    description: 'Opportunity density aggregation',
-  },
   {
     id: 'competitorArcs' as const,
     name: 'Competitor Arcs',
     icon: GitBranch,
     color: '#3B82F6', // Blue
-    description: 'Travel-time connections',
+    description: 'Travel-time connections to competitors',
   },
 ];
 

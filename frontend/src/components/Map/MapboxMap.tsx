@@ -58,8 +58,10 @@ import { fetchIsochrone, getIsochroneColor, getIsochroneOpacity } from '../../se
 import {
   buildHeatmapPaint,
 } from '../../utils/mapbox-expressions';
+import CompetitorAccessPanel from '../Analysis/CompetitorAccessPanel';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { createOpportunityHexagonLayer } from './layers/OpportunityHexagonLayer';
+// Hexagon layer removed - not useful for site selection workflow
+// import { createOpportunityHexagonLayer } from './layers/OpportunityHexagonLayer';
 import { createCompetitorArcLayer } from './layers/CompetitorArcLayer';
 
 // Mapbox access token - try runtime config first (for Docker), then build-time env vars
@@ -621,9 +623,11 @@ export function MapboxMap() {
     // deck.gl 3D visualization state
     show3DVisualization,
     deckLayerVisibility,
-    hexagonSettings,
     arcSettings,
+    setArcSettings,
     competitorAccessResult,
+    showCompetitorAccessPanel,
+    setShowCompetitorAccessPanel,
   } = useMapStore();
 
   // Local state
@@ -860,13 +864,29 @@ export function MapboxMap() {
     setSelectedProperty(null);
     setSelectedTeamProperty(null);
 
+    // Get click coordinates
+    if (!e.lngLat) return;
+    const lat = e.lngLat.lat;
+    const lng = e.lngLat.lng;
+
+    // Set analysis pin location for competitor access & isochrone
+    setArcSettings({ siteLocation: [lng, lat] });
+
+    // Update isochrone center if drive time is enabled
+    if (isochroneSettings.enabled) {
+      setIsochroneSettings({
+        ...isochroneSettings,
+        coordinates: [lng, lat],
+      });
+    }
+
+    // Show competitor access panel
+    setShowCompetitorAccessPanel(true);
+
     const isParcelLayerVisible = visibleLayersArray.includes('parcels');
     const currentZoom = viewState.zoom;
 
-    if (isParcelLayerVisible && currentZoom >= 14 && e.lngLat) {
-      const lat = e.lngLat.lat;
-      const lng = e.lngLat.lng;
-
+    if (isParcelLayerVisible && currentZoom >= 14) {
       setParcelClickPosition({ lat, lng });
       setIsLoadingParcel(true);
       setParcelError(null);
@@ -890,7 +910,7 @@ export function MapboxMap() {
       setParcelError(null);
       setParcelClickPosition(null);
     }
-  }, [setSelectedStore, visibleLayersArray, viewState.zoom]);
+  }, [setSelectedStore, visibleLayersArray, viewState.zoom, isochroneSettings, setArcSettings, setShowCompetitorAccessPanel]);
 
   // Handle right-click for flagging property
   const handleMapRightClick = useCallback((e: mapboxgl.MapMouseEvent) => {
@@ -1089,6 +1109,16 @@ export function MapboxMap() {
     }
   }, [mapBounds, visibleLayersArray]);
 
+  // Auto-set isochrone coordinates when Drive Time is enabled and there's a site location
+  useEffect(() => {
+    if (isochroneSettings.enabled && !isochroneSettings.coordinates && arcSettings.siteLocation) {
+      setIsochroneSettings({
+        ...isochroneSettings,
+        coordinates: arcSettings.siteLocation,
+      });
+    }
+  }, [isochroneSettings.enabled, arcSettings.siteLocation]);
+
   // Fetch isochrone when settings change or coordinates update
   useEffect(() => {
     if (isochroneSettings.enabled && isochroneSettings.coordinates && MAPBOX_TOKEN) {
@@ -1135,19 +1165,6 @@ export function MapboxMap() {
 
     const layers: any[] = [];
 
-    // Add opportunity hexagon layer if enabled and we have property data
-    if (deckLayerVisibility.opportunityHexagons && properties.length > 0) {
-      layers.push(
-        createOpportunityHexagonLayer({
-          data: properties,
-          visible: true,
-          radius: hexagonSettings.radius,
-          elevationScale: hexagonSettings.elevationScale,
-          colorMode: hexagonSettings.colorMode,
-        })
-      );
-    }
-
     // Add competitor arc layer if enabled and we have analysis data
     if (deckLayerVisibility.competitorArcs && arcSettings.siteLocation && competitorAccessResult?.competitors) {
       layers.push(
@@ -1185,7 +1202,6 @@ export function MapboxMap() {
     show3DVisualization,
     deckLayerVisibility,
     properties,
-    hexagonSettings,
     arcSettings,
     competitorAccessResult,
   ]);
@@ -1643,6 +1659,27 @@ export function MapboxMap() {
             onClose={() => setSelectedTeamProperty(null)}
           />
         )}
+
+        {/* Analysis Pin Marker - shows where user clicked to analyze */}
+        {arcSettings.siteLocation && (
+          <Marker
+            longitude={arcSettings.siteLocation[0]}
+            latitude={arcSettings.siteLocation[1]}
+            anchor="bottom"
+          >
+            <div className="relative">
+              {/* Pin */}
+              <div className="w-8 h-8 bg-purple-600 rounded-full border-3 border-white shadow-lg flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 8v8M8 12h8" />
+                </svg>
+              </div>
+              {/* Pulse animation */}
+              <div className="absolute inset-0 w-8 h-8 bg-purple-400 rounded-full animate-ping opacity-40" />
+            </div>
+          </Marker>
+        )}
       </Map>
 
       {/* Draggable Parcel Info Panel */}
@@ -1664,6 +1701,29 @@ export function MapboxMap() {
         <PropertyInfoCard
           property={selectedProperty}
           onClose={() => setSelectedProperty(null)}
+        />
+      )}
+
+      {/* Competitor Access Panel - Drive time analysis to competitors */}
+      {showCompetitorAccessPanel && arcSettings.siteLocation && (
+        <CompetitorAccessPanel
+          latitude={arcSettings.siteLocation[1]}
+          longitude={arcSettings.siteLocation[0]}
+          onClose={() => {
+            setShowCompetitorAccessPanel(false);
+            setArcSettings({ siteLocation: null });
+            setIsochroneSettings({
+              ...isochroneSettings,
+              coordinates: null,
+            });
+          }}
+          onNavigateToCompetitor={(lat, lng) => {
+            mapRef.current?.getMap()?.flyTo({
+              center: [lng, lat],
+              zoom: 15,
+              duration: 1000,
+            });
+          }}
         />
       )}
 
