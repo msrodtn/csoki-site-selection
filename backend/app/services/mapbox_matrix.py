@@ -186,8 +186,6 @@ async def calculate_matrix(
         "sources": sources_str,
         "destinations": destinations_str,
         "annotations": "duration,distance",
-        # Approach waypoints from curb side (better for retail locations)
-        "approaches": ";".join(["curb"] * len(all_coords)),
     }
 
     async with httpx.AsyncClient() as client:
