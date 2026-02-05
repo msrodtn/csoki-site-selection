@@ -1,10 +1,11 @@
 /**
- * deck.gl Layer Components
+ * Map Layer Components
  *
- * Custom WebGL layers for advanced 3D visualizations.
- * Uses deck.gl's MapboxLayer for integration with Mapbox GL JS.
+ * Custom layers for map visualizations.
+ * Includes deck.gl WebGL layers and native Mapbox GL layers.
  */
 
+// deck.gl 3D visualization layers
 export {
   createOpportunityHexagonLayer,
   createDeckOverlay,
@@ -20,3 +21,15 @@ export {
   getArcStats,
   type CompetitorArcLayerProps,
 } from './CompetitorArcLayer';
+
+// Native Mapbox GL layers with feature state support
+export {
+  InteractiveMapLayer,
+  FEATURE_STATE_HOVER,
+  FEATURE_STATE_SELECTED,
+  FEATURE_STATE_HIDDEN,
+  type LayerStyle,
+  type InteractiveMapLayerProps,
+} from './InteractiveMapLayer';
+
+export { POILayer, type POILayerProps } from './POILayer';

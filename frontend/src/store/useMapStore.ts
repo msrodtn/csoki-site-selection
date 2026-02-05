@@ -77,6 +77,12 @@ interface MapState {
   expandedPOICategories: Set<POICategory>;
   togglePOICategoryExpanded: (category: POICategory) => void;
 
+  // POI selection state (for native layer feature state)
+  selectedPOIId: string | null;
+  setSelectedPOIId: (id: string | null) => void;
+  hoveredPOIId: string | null;
+  setHoveredPOIId: (id: string | null) => void;
+
   // Analysis panel visibility
   showAnalysisPanel: boolean;
   setShowAnalysisPanel: (show: boolean) => void;
@@ -380,6 +386,12 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { expandedPOICategories: newExpanded };
     }),
 
+  // POI selection state (for native layer feature state)
+  selectedPOIId: null,
+  setSelectedPOIId: (id) => set({ selectedPOIId: id }),
+  hoveredPOIId: null,
+  setHoveredPOIId: (id) => set({ hoveredPOIId: id }),
+
   // Analysis panel
   showAnalysisPanel: false,
   setShowAnalysisPanel: (show) => set({ showAnalysisPanel: show }),
@@ -564,6 +576,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       nearestCompetitors: null,
       hiddenPOIs: new Set<string>(),
       expandedPOICategories: new Set<POICategory>(),
+      selectedPOIId: null,
+      hoveredPOIId: null,
     }),
 
   // ============================================

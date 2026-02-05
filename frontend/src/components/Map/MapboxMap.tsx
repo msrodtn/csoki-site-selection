@@ -64,6 +64,10 @@ import { MapboxOverlay } from '@deck.gl/mapbox';
 // Hexagon layer removed - not useful for site selection workflow
 // import { createOpportunityHexagonLayer } from './layers/OpportunityHexagonLayer';
 import { createCompetitorArcLayer } from './layers/CompetitorArcLayer';
+import { POILayer } from './layers/POILayer';
+
+// Feature flag for native POI layers (set to true to use new performant layers)
+const USE_NATIVE_POI_LAYERS = true;
 
 // Mapbox access token - try runtime config first (for Docker), then build-time env vars
 const MAPBOX_TOKEN = 
@@ -674,6 +678,7 @@ export function MapboxMap() {
     setAnalysisError,
     visiblePOICategories,
     hiddenPOIs,
+    setSelectedPOIId,
     setShowAnalysisPanel,
     analysisRadius,
     setMapInstance,
@@ -2471,8 +2476,31 @@ export function MapboxMap() {
           </Marker>
         ))}
 
-        {/* POI markers with zoom-responsive sizing (shown when zoomed in) */}
-        {!showPOIClusters && visiblePOIs.map((poi) => (
+        {/* POI Layer - Native Mapbox GL layer for better performance */}
+        {USE_NATIVE_POI_LAYERS && analysisResult?.pois && (
+          <POILayer
+            map={mapRef.current}
+            pois={analysisResult.pois}
+            onPOIClick={(poi) => {
+              setSelectedPOI({
+                place_id: poi.place_id,
+                name: poi.name,
+                category: poi.category,
+                latitude: poi.latitude,
+                longitude: poi.longitude,
+                address: poi.address,
+                rating: poi.rating,
+              });
+              setSelectedPOIId(poi.place_id);
+            }}
+            onPOIHover={() => {
+              // Hover state is handled by feature state in the layer
+            }}
+          />
+        )}
+
+        {/* Legacy POI markers (fallback when native layers disabled) */}
+        {!USE_NATIVE_POI_LAYERS && !showPOIClusters && visiblePOIs.map((poi) => (
           <POIMarker
             key={poi.place_id}
             poi={{
@@ -2508,6 +2536,7 @@ export function MapboxMap() {
             onClick={() => {
               setSelectedStore(store);
               setSelectedPOI(null);
+              setSelectedPOIId(null);
               setSelectedProperty(null);
               setSelectedTeamProperty(null);
               // Set isochrone center if enabled
@@ -2535,7 +2564,10 @@ export function MapboxMap() {
         {selectedPOI && (
           <POIPopup
             poi={selectedPOI}
-            onClose={() => setSelectedPOI(null)}
+            onClose={() => {
+              setSelectedPOI(null);
+              setSelectedPOIId(null);
+            }}
           />
         )}
 
