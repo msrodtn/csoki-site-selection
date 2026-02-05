@@ -10,6 +10,11 @@ html, body, #root {
 }
 
 /* Mapbox overrides */
+/* Ensure popups always appear above markers (markers have z-index up to 2000) */
+.mapboxgl-popup {
+  z-index: 5000 !important;
+}
+
 .mapboxgl-popup-content {
   padding: 12px;
   border-radius: 8px;
