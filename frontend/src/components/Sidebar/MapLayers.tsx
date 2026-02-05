@@ -322,51 +322,6 @@ function InlineCrexiSearch() {
   );
 }
 
-// Inline Demographic Metric Selector Component
-function InlineDemographicMetricSelector() {
-  const { demographicMetric, setDemographicMetric, visibleBoundaryTypes } = useMapStore();
-
-  // Only show if census tracts is enabled
-  if (!visibleBoundaryTypes.has('census_tracts')) {
-    return null;
-  }
-
-  return (
-    <div className="ml-6 mt-2 p-3 bg-purple-50 rounded-lg border-l-2 border-purple-300">
-      <div className="flex items-center gap-2 mb-2">
-        <BarChart2 className="w-3 h-3 text-purple-600" />
-        <span className="text-xs font-medium text-purple-800">Color Census Tracts By:</span>
-      </div>
-
-      <div className="flex flex-wrap gap-1.5">
-        {[
-          { id: 'population' as const, label: 'Population', color: 'bg-blue-600' },
-          { id: 'income' as const, label: 'Median Income', color: 'bg-green-600' },
-          { id: 'density' as const, label: 'Density', color: 'bg-orange-600' },
-        ].map((metric) => (
-          <button
-            key={metric.id}
-            onClick={() => setDemographicMetric(metric.id)}
-            className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
-              demographicMetric === metric.id
-                ? `${metric.color} text-white`
-                : 'bg-white text-gray-700 border hover:bg-gray-50'
-            }`}
-          >
-            {metric.label}
-          </button>
-        ))}
-      </div>
-
-      <p className="text-xs text-gray-500 mt-2">
-        {demographicMetric === 'population' && '🔵 ACS 2022 total population by tract'}
-        {demographicMetric === 'income' && '🟢 ACS 2022 median household income'}
-        {demographicMetric === 'density' && '🟠 Population per square mile'}
-      </p>
-    </div>
-  );
-}
-
 export function MapLayers() {
   const {
     visibleLayers,
@@ -520,9 +475,6 @@ export function MapLayers() {
                   })}
                 </div>
               )}
-
-              {/* Inline Demographic Metric Selector for Boundaries Explorer */}
-              {layer.id === 'boundaries' && isActive && <InlineDemographicMetricSelector />}
 
               {/* Inline Crexi Search for Active Listings layer */}
               {layer.id === 'properties_for_sale' && isActive && <InlineCrexiSearch />}
