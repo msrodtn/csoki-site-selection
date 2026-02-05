@@ -67,6 +67,16 @@ interface MapState {
   togglePOICategory: (category: POICategory) => void;
   setAllPOICategoriesVisible: (visible: boolean) => void;
 
+  // Individual POI visibility (for hierarchical toggles)
+  hiddenPOIs: Set<string>; // Set of place_ids to hide
+  togglePOI: (placeId: string) => void;
+  showAllPOIsInCategory: (category: POICategory, pois: Array<{ place_id: string; category: POICategory }>) => void;
+  hideAllPOIsInCategory: (category: POICategory, pois: Array<{ place_id: string; category: POICategory }>) => void;
+
+  // Expanded POI categories in panel (for hierarchical UI)
+  expandedPOICategories: Set<POICategory>;
+  togglePOICategoryExpanded: (category: POICategory) => void;
+
   // Analysis panel visibility
   showAnalysisPanel: boolean;
   setShowAnalysisPanel: (show: boolean) => void;
@@ -332,6 +342,44 @@ export const useMapStore = create<MapState>((set, get) => ({
   setAllPOICategoriesVisible: (visible) =>
     set({ visiblePOICategories: visible ? new Set(ALL_POI_CATEGORIES) : new Set() }),
 
+  // Individual POI visibility (for hierarchical toggles)
+  hiddenPOIs: new Set<string>(),
+  togglePOI: (placeId) =>
+    set((state) => {
+      const newHidden = new Set(state.hiddenPOIs);
+      if (newHidden.has(placeId)) {
+        newHidden.delete(placeId);
+      } else {
+        newHidden.add(placeId);
+      }
+      return { hiddenPOIs: newHidden };
+    }),
+  showAllPOIsInCategory: (category, pois) =>
+    set((state) => {
+      const newHidden = new Set(state.hiddenPOIs);
+      pois.filter((p) => p.category === category).forEach((p) => newHidden.delete(p.place_id));
+      return { hiddenPOIs: newHidden };
+    }),
+  hideAllPOIsInCategory: (category, pois) =>
+    set((state) => {
+      const newHidden = new Set(state.hiddenPOIs);
+      pois.filter((p) => p.category === category).forEach((p) => newHidden.add(p.place_id));
+      return { hiddenPOIs: newHidden };
+    }),
+
+  // Expanded POI categories in panel (for hierarchical UI)
+  expandedPOICategories: new Set<POICategory>(),
+  togglePOICategoryExpanded: (category) =>
+    set((state) => {
+      const newExpanded = new Set(state.expandedPOICategories);
+      if (newExpanded.has(category)) {
+        newExpanded.delete(category);
+      } else {
+        newExpanded.add(category);
+      }
+      return { expandedPOICategories: newExpanded };
+    }),
+
   // Analysis panel
   showAnalysisPanel: false,
   setShowAnalysisPanel: (show) => set({ showAnalysisPanel: show }),
@@ -514,6 +562,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       trafficData: null,
       trafficError: null,
       nearestCompetitors: null,
+      hiddenPOIs: new Set<string>(),
+      expandedPOICategories: new Set<POICategory>(),
     }),
 
   // ============================================

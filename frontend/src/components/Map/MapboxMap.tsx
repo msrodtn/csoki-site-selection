@@ -107,7 +107,7 @@ function parseWKTToGeoJSON(wkt: string): GeoJSON.Geometry | null {
   }
 }
 
-// Calculate zoom-based marker size
+// Calculate zoom-based marker size for competitor/brand markers
 // Follows the zoomBasedMarkerSize expression pattern from mapbox-expressions.ts
 function getZoomBasedSize(zoom: number, isSelected: boolean): number {
   // Base size interpolation: zoom 6 → 8px, zoom 10 → 12px, zoom 14 → 18px, zoom 18 → 24px
@@ -123,6 +123,24 @@ function getZoomBasedSize(zoom: number, isSelected: boolean): number {
   }
   // Selected markers are 40% larger
   return isSelected ? Math.round(baseSize * 1.4) : Math.round(baseSize);
+}
+
+// Calculate zoom-based marker size for POI markers
+// Always smaller than brand markers to maintain visual hierarchy
+function getPOIZoomBasedSize(zoom: number, isSelected: boolean): number {
+  // POI: 6px at zoom 6, scaling up to max 12px at zoom 18
+  // Always smaller than brand markers (8-24px)
+  let baseSize: number;
+  if (zoom <= 6) {
+    baseSize = 6;
+  } else if (zoom <= 10) {
+    baseSize = 6 + ((zoom - 6) / 4) * 2; // 6 to 8
+  } else if (zoom <= 14) {
+    baseSize = 8 + ((zoom - 10) / 4) * 2; // 8 to 10
+  } else {
+    baseSize = 10 + ((zoom - 14) / 4) * 2; // 10 to 12
+  }
+  return isSelected ? Math.round(baseSize * 1.3) : Math.round(baseSize);
 }
 
 // Brand marker component with zoom-dependent sizing
@@ -191,11 +209,12 @@ function BrandMarker({
   );
 }
 
-// POI marker component - larger and more visible
+// POI marker component with zoom-responsive sizing and name labels
 function POIMarker({
   poi,
   isSelected,
   onClick,
+  zoom = 10,
 }: {
   poi: {
     place_id: string;
@@ -208,9 +227,11 @@ function POIMarker({
   };
   isSelected: boolean;
   onClick: () => void;
+  zoom?: number;
 }) {
   const color = POI_CATEGORY_COLORS[poi.category] || '#666';
-  const size = isSelected ? 20 : 14;  // Increased from 16/10
+  const size = getPOIZoomBasedSize(zoom, isSelected);
+  const showLabel = zoom >= 16; // Show POI names at street level
 
   return (
     <Marker
@@ -221,21 +242,31 @@ function POIMarker({
         e.originalEvent.stopPropagation();
         onClick();
       }}
-      style={{ zIndex: isSelected ? 1000 : 100, cursor: 'pointer' }}
+      style={{ zIndex: isSelected ? 50 : 10, cursor: 'pointer' }}
     >
-      <svg
-        width={size * 2}
-        height={size * 2}
-        viewBox="0 0 24 24"
-        style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.3))' }}
-      >
-        <path
-          d="M12 2L4 12l8 10 8-10L12 2z"
-          fill={color}
-          stroke="white"
-          strokeWidth={isSelected ? 2 : 1.5}
-        />
-      </svg>
+      <div className="flex flex-col items-center">
+        {showLabel && (
+          <span
+            className="text-[10px] bg-white/90 px-1 rounded shadow-sm mb-0.5 whitespace-nowrap max-w-[100px] truncate"
+            style={{ color: color }}
+          >
+            {poi.name}
+          </span>
+        )}
+        <svg
+          width={size * 2}
+          height={size * 2}
+          viewBox="0 0 24 24"
+          style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.3))' }}
+        >
+          <path
+            d="M12 2L4 12l8 10 8-10L12 2z"
+            fill={color}
+            stroke="white"
+            strokeWidth={isSelected ? 2 : 1.5}
+          />
+        </svg>
+      </div>
     </Marker>
   );
 }
@@ -640,6 +671,7 @@ export function MapboxMap() {
     setIsAnalyzing,
     setAnalysisError,
     visiblePOICategories,
+    hiddenPOIs,
     setShowAnalysisPanel,
     analysisRadius,
     setMapInstance,
@@ -782,14 +814,54 @@ export function MapboxMap() {
     );
   }, [storeData?.stores, visibleBrandsArray, visibleStatesArray]);
 
-  // Filter POIs
+  // Filter POIs (by category and individual visibility)
+  const hiddenPOIsArray = useMemo(() => Array.from(hiddenPOIs), [hiddenPOIs]);
   const visiblePOIs = useMemo(() => {
     if (!analysisResult?.pois) return [];
     const filtered = analysisResult.pois.filter((poi) =>
-      visiblePOICategoriesArray.includes(poi.category)
+      visiblePOICategoriesArray.includes(poi.category) && !hiddenPOIsArray.includes(poi.place_id)
     );
     return filtered.slice(0, 100);
-  }, [analysisResult?.pois, visiblePOICategoriesArray]);
+  }, [analysisResult?.pois, visiblePOICategoriesArray, hiddenPOIsArray]);
+
+  // POI Clustering - group nearby POIs when zoomed out
+  const POI_CLUSTER_ZOOM_THRESHOLD = 14; // Show clusters below this zoom
+  const poiClusters = useMemo(() => {
+    if (viewState.zoom >= POI_CLUSTER_ZOOM_THRESHOLD || visiblePOIs.length === 0) {
+      return []; // Show individual markers at high zoom
+    }
+
+    // Simple grid-based clustering
+    const gridSize = 0.01 * Math.pow(2, 14 - viewState.zoom); // Adjust grid size based on zoom
+    const clusters: Record<string, { lat: number; lng: number; pois: typeof visiblePOIs }> = {};
+
+    visiblePOIs.forEach((poi) => {
+      const gridX = Math.floor(poi.longitude / gridSize);
+      const gridY = Math.floor(poi.latitude / gridSize);
+      const key = `${gridX},${gridY}`;
+
+      if (!clusters[key]) {
+        clusters[key] = { lat: poi.latitude, lng: poi.longitude, pois: [] };
+      }
+      clusters[key].pois.push(poi);
+    });
+
+    // Convert to array and calculate cluster centers
+    return Object.values(clusters).map((cluster) => {
+      const avgLat = cluster.pois.reduce((sum, p) => sum + p.latitude, 0) / cluster.pois.length;
+      const avgLng = cluster.pois.reduce((sum, p) => sum + p.longitude, 0) / cluster.pois.length;
+      return {
+        id: `cluster-${avgLat.toFixed(4)}-${avgLng.toFixed(4)}`,
+        latitude: avgLat,
+        longitude: avgLng,
+        count: cluster.pois.length,
+        pois: cluster.pois,
+      };
+    });
+  }, [visiblePOIs, viewState.zoom]);
+
+  // Determine if we should show clusters or individual POIs
+  const showPOIClusters = viewState.zoom < POI_CLUSTER_ZOOM_THRESHOLD && poiClusters.length > 0;
 
   // Stores in view for stats
   const storesInView = useMemo(() => {
@@ -2304,8 +2376,39 @@ export function MapboxMap() {
           );
         })}
 
-        {/* POI markers */}
-        {visiblePOIs.map((poi) => (
+        {/* POI Cluster markers (shown when zoomed out) */}
+        {showPOIClusters && poiClusters.map((cluster) => (
+          <Marker
+            key={cluster.id}
+            longitude={cluster.longitude}
+            latitude={cluster.latitude}
+            anchor="center"
+            onClick={(e: MarkerEvent<MouseEvent>) => {
+              e.originalEvent.stopPropagation();
+              // Zoom in to show individual POIs
+              mapRef.current?.flyTo({
+                center: [cluster.longitude, cluster.latitude],
+                zoom: POI_CLUSTER_ZOOM_THRESHOLD,
+                duration: 500,
+              });
+            }}
+            style={{ zIndex: 20, cursor: 'pointer' }}
+          >
+            <div
+              className="flex items-center justify-center rounded-full bg-purple-600 text-white font-bold shadow-lg border-2 border-white"
+              style={{
+                width: Math.min(24 + cluster.count * 2, 48),
+                height: Math.min(24 + cluster.count * 2, 48),
+                fontSize: cluster.count > 99 ? '10px' : '12px',
+              }}
+            >
+              {cluster.count}
+            </div>
+          </Marker>
+        ))}
+
+        {/* POI markers with zoom-responsive sizing (shown when zoomed in) */}
+        {!showPOIClusters && visiblePOIs.map((poi) => (
           <POIMarker
             key={poi.place_id}
             poi={{
@@ -2327,6 +2430,7 @@ export function MapboxMap() {
               address: poi.address,
               rating: poi.rating,
             })}
+            zoom={viewState.zoom}
           />
         ))}
 
