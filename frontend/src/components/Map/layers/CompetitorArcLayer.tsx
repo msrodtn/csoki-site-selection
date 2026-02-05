@@ -192,7 +192,7 @@ export function useCompetitorArcLayer({
  * Get arc statistics for display
  */
 export function getArcStats(
-  siteLocation: [number, number],
+  _siteLocation: [number, number],
   competitors: (Store | CompetitorWithTravelTime)[]
 ): {
   totalCompetitors: number;

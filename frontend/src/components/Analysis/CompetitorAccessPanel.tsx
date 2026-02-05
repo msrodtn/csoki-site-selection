@@ -20,7 +20,6 @@ import {
   Route,
   Download,
   Filter,
-  ArrowUpDown,
 } from 'lucide-react';
 import { analysisApi } from '../../services/api';
 import { useMapStore } from '../../store/useMapStore';
@@ -87,7 +86,7 @@ export function CompetitorAccessPanel({
   const [result, setResult] = useState<CompetitorAccessResponse | null>(null);
   const [profile, setProfile] = useState<TravelProfile>('driving-traffic');
   const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set());
-  const [maxCompetitors, setMaxCompetitors] = useState(25);
+  const [maxCompetitors] = useState(25);
 
   // Filter and sort state
   const [maxTravelTime, setMaxTravelTime] = useState<number>(60); // minutes
@@ -363,9 +362,6 @@ export function CompetitorAccessPanel({
             {/* Summary */}
             <div className="text-sm text-gray-600 pb-2 border-b">
               Found {result.competitors.length} competitors within range
-              {result.cached && (
-                <span className="ml-2 text-xs text-gray-400">(cached)</span>
-              )}
             </div>
 
             {/* Competitors by brand */}

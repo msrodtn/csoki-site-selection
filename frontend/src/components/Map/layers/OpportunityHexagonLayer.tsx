@@ -11,7 +11,7 @@
  * - Configurable radius and elevation scale
  */
 
-import { useEffect, useMemo, useCallback } from 'react';
+import { useEffect, useMemo } from 'react';
 import { HexagonLayer } from '@deck.gl/aggregation-layers';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import type { PropertyListing } from '../../../types/store';
@@ -101,8 +101,8 @@ export function createOpportunityHexagonLayer({
     },
 
     // Event handlers
-    onClick: onClick ? (info) => onClick(info) : undefined,
-    onHover: onHover ? (info) => onHover(info) : undefined,
+    onClick: onClick ? (info: any) => { onClick(info); return true; } : undefined,
+    onHover: onHover ? (info: any) => { onHover(info); return true; } : undefined,
   });
 }
 

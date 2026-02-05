@@ -57,11 +57,6 @@ import IsochroneControl, { type IsochroneSettings, type TravelMode } from './Iso
 import { fetchIsochrone, getIsochroneColor, getIsochroneOpacity } from '../../services/mapbox-isochrone';
 import {
   buildHeatmapPaint,
-  buildPropertyCirclePaint,
-  opportunityScoreColor,
-  opportunityScoreRadius,
-  zoomBasedMarkerSize,
-  BRAND_COLORS_RGB,
 } from '../../utils/mapbox-expressions';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { createOpportunityHexagonLayer } from './layers/OpportunityHexagonLayer';
@@ -545,16 +540,6 @@ const heatmapLayer: HeatmapLayerSpecification = {
   source: 'stores',
   maxzoom: 15,
   paint: buildHeatmapPaint(false) as HeatmapLayerSpecification['paint'],
-};
-
-// Opportunity-weighted heatmap for property visualization
-// Higher opportunity scores create more intense "heat"
-const opportunityHeatmapLayer: HeatmapLayerSpecification = {
-  id: 'opportunity-heat',
-  type: 'heatmap',
-  source: 'opportunities',
-  maxzoom: 15,
-  paint: buildHeatmapPaint(true) as HeatmapLayerSpecification['paint'],
 };
 
 // Analysis radius circle layers

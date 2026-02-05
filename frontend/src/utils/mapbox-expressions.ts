@@ -126,6 +126,7 @@ export const PROPERTY_TYPE_COLORS_RGB: Record<PropertyType, [number, number, num
   office: [59, 130, 246],
   industrial: [107, 114, 128],
   mixed_use: [139, 92, 246],
+  unknown: [156, 163, 175],
 };
 
 // ============================================================================
@@ -426,7 +427,7 @@ export function createInterpolateColor(
   property: string,
   stops: [number, string][]
 ): ExpressionSpecification {
-  const expression: (string | number | string[])[] = [
+  const expression: any[] = [
     'interpolate',
     ['linear'],
     ['coalesce', ['get', property], 0],
