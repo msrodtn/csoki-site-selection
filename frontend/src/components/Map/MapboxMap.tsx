@@ -80,20 +80,19 @@ const INITIAL_VIEW = {
 };
 
 // Mapbox Tileset IDs for administrative boundaries (Census TIGER data)
-// NOTE: source-layer names must match what Mapbox assigned during upload
-// These are based on the Census shapefile names preserved by mapshaper
+// NOTE: source-layer names are assigned by Mapbox during upload - found in Mapbox Studio
 const BOUNDARY_TILESETS = {
   counties: {
-    id: 'msrodtn.05vjtaqc',              // CORRECTED: was swapped with cities
-    sourceLayer: 'cb_2023_us_county_5m',  // Census shapefile layer name
+    id: 'msrodtn.05vjtaqc',
+    sourceLayer: 'counties-aukpeg',  // From Mapbox Studio tileset details
   },
   cities: {
-    id: 'msrodtn.9jpdhu14',               // CORRECTED: was swapped with counties
-    sourceLayer: 'cb_2023_us_place_5m',   // Census shapefile layer name
+    id: 'msrodtn.9jpdhu14',
+    sourceLayer: 'cities-au3sim',    // From Mapbox Studio tileset details
   },
   zctas: {
     id: 'msrodtn.917bnr7e',
-    sourceLayer: 'cb_2023_us_zcta520_5m', // Census shapefile layer name
+    sourceLayer: 'zctas-7z7sbf',     // From Mapbox Studio tileset details
   },
 };
 
