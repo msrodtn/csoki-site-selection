@@ -1902,3 +1902,115 @@ async def get_zipcode_boundaries(
                 status_code=503,
                 detail=f"Failed to connect to Census TIGER API: {str(e)}"
             )
+
+
+# =============================================================================
+# Store Coordinate Validation Endpoint
+# =============================================================================
+
+# Continental US bounding box
+US_BOUNDS = {
+    "min_lat": 24.0,
+    "max_lat": 49.5,
+    "min_lng": -125.0,
+    "max_lng": -66.0,
+}
+
+
+class ValidationResult(BaseModel):
+    """Result of store coordinate validation."""
+    total_checked: int
+    null_coords: int
+    zero_coords: int
+    out_of_bounds: int
+    issues: list[dict]
+
+
+@router.get("/validate-store-coords/", response_model=ValidationResult)
+async def validate_store_coordinates(
+    brand: Optional[str] = Query(None, description="Filter by brand"),
+    limit: int = Query(1000, description="Max stores to check"),
+):
+    """
+    Validate store coordinates to identify problematic geocoding data.
+
+    Checks for:
+    - Null coordinates
+    - Zero coordinates (0, 0)
+    - Coordinates outside continental US bounds
+
+    Returns a summary of issues found.
+    """
+    db = next(get_db())
+    try:
+        # Build query
+        query_str = """
+            SELECT id, brand, street, city, state, latitude, longitude
+            FROM stores
+        """
+        params = {"limit": limit}
+
+        if brand:
+            query_str += " WHERE brand = :brand"
+            params["brand"] = brand.lower()
+
+        query_str += " ORDER BY id LIMIT :limit"
+
+        result = db.execute(text(query_str), params)
+        stores = result.fetchall()
+
+        # Validate each store
+        null_coords = []
+        zero_coords = []
+        out_of_bounds = []
+
+        for store in stores:
+            store_id, store_brand, street, city, state, lat, lng = store
+
+            # Check for null
+            if lat is None or lng is None:
+                null_coords.append({
+                    "id": store_id,
+                    "brand": store_brand,
+                    "address": f"{street}, {city}, {state}" if street else f"{city}, {state}",
+                    "issue": "NULL_COORDS",
+                })
+                continue
+
+            # Check for zero
+            if lat == 0 and lng == 0:
+                zero_coords.append({
+                    "id": store_id,
+                    "brand": store_brand,
+                    "address": f"{street}, {city}, {state}" if street else f"{city}, {state}",
+                    "issue": "ZERO_COORDS",
+                })
+                continue
+
+            # Check bounds
+            if not (US_BOUNDS["min_lat"] <= lat <= US_BOUNDS["max_lat"]) or \
+               not (US_BOUNDS["min_lng"] <= lng <= US_BOUNDS["max_lng"]):
+                out_of_bounds.append({
+                    "id": store_id,
+                    "brand": store_brand,
+                    "lat": lat,
+                    "lng": lng,
+                    "issue": "OUT_OF_BOUNDS",
+                })
+
+        # Combine all issues
+        all_issues = null_coords + zero_coords + out_of_bounds
+
+        return ValidationResult(
+            total_checked=len(stores),
+            null_coords=len(null_coords),
+            zero_coords=len(zero_coords),
+            out_of_bounds=len(out_of_bounds),
+            issues=all_issues[:50],  # Limit issues returned
+        )
+
+    except Exception as e:
+        logger.error(f"Validation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Validation error: {str(e)}")
+    finally:
+        db.close()
