@@ -735,14 +735,18 @@ export function MapboxMap() {
   } | null>(null);
 
   // City hover state (for tileset-based boundaries)
+  const [hoveredCityId, setHoveredCityId] = useState<string | null>(null);
   const [hoveredCityInfo, setHoveredCityInfo] = useState<{
     name: string;
+    population: number;
     lngLat: [number, number];
   } | null>(null);
 
   // ZIP Code hover state (for tileset-based boundaries)
+  const [hoveredZipId, setHoveredZipId] = useState<string | null>(null);
   const [hoveredZipInfo, setHoveredZipInfo] = useState<{
     zipCode: string;
+    population: number;
     lngLat: [number, number];
   } | null>(null);
 
@@ -1113,12 +1117,19 @@ export function MapboxMap() {
       if (features && features.length > 0) {
         const feature = features[0];
         map.getCanvas().style.cursor = 'pointer';
+
+        // Set ID for layer highlighting (use NAME as unique identifier)
+        const cityId = feature.properties?.NAME || feature.properties?.BASENAME || null;
+        setHoveredCityId(cityId);
+
         setHoveredCityInfo({
-          name: feature.properties?.NAME || feature.properties?.BASENAME || 'Unknown City',
+          name: cityId || 'Unknown City',
+          population: feature.properties?.POPULATION || feature.properties?.POP100 || 0,
           lngLat: [e.lngLat.lng, e.lngLat.lat],
         });
         return;
       } else {
+        setHoveredCityId(null);
         setHoveredCityInfo(null);
       }
     }
@@ -1132,14 +1143,19 @@ export function MapboxMap() {
       if (features && features.length > 0) {
         const feature = features[0];
         map.getCanvas().style.cursor = 'pointer';
-        // ZIP code can be in NAME, ZCTA5CE20, or GEOID
-        const zipCode = feature.properties?.NAME || feature.properties?.ZCTA5CE20 || feature.properties?.GEOID || 'Unknown';
+
+        // Use ZCTA5CE20 or GEOID20 for unique ID (these are the ZIP code itself)
+        const zipCode = feature.properties?.ZCTA5CE20 || feature.properties?.GEOID20 || feature.properties?.NAME || 'Unknown';
+        setHoveredZipId(zipCode);
+
         setHoveredZipInfo({
           zipCode,
+          population: feature.properties?.POPULATION || feature.properties?.POP100 || feature.properties?.DP0010001 || 0,
           lngLat: [e.lngLat.lng, e.lngLat.lat],
         });
         return;
       } else {
+        setHoveredZipId(null);
         setHoveredZipInfo(null);
       }
     }
@@ -1156,7 +1172,9 @@ export function MapboxMap() {
     setHoveredTractInfo(null);
     setHoveredCountyId(null);
     setHoveredCountyInfo(null);
+    setHoveredCityId(null);
     setHoveredCityInfo(null);
+    setHoveredZipId(null);
     setHoveredZipInfo(null);
     setHoveredTraffic(null);
   }, []);
@@ -1741,10 +1759,15 @@ export function MapboxMap() {
             anchor="bottom"
             offset={10}
           >
-            <div className="text-sm min-w-[120px]">
-              <div className="font-semibold text-green-700">
+            <div className="text-sm min-w-[140px]">
+              <div className="font-semibold text-green-700 mb-1">
                 {hoveredCityInfo.name}
               </div>
+              {hoveredCityInfo.population > 0 && (
+                <div className="text-xs text-gray-600">
+                  Pop: {hoveredCityInfo.population.toLocaleString()}
+                </div>
+              )}
             </div>
           </Popup>
         )}
@@ -1759,10 +1782,15 @@ export function MapboxMap() {
             anchor="bottom"
             offset={10}
           >
-            <div className="text-sm min-w-[100px]">
-              <div className="font-semibold text-orange-700">
+            <div className="text-sm min-w-[120px]">
+              <div className="font-semibold text-orange-700 mb-1">
                 ZIP: {hoveredZipInfo.zipCode}
               </div>
+              {hoveredZipInfo.population > 0 && (
+                <div className="text-xs text-gray-600">
+                  Pop: {hoveredZipInfo.population.toLocaleString()}
+                </div>
+              )}
             </div>
           </Popup>
         )}
@@ -1918,7 +1946,7 @@ export function MapboxMap() {
             type="vector"
             url={`mapbox://${BOUNDARY_TILESETS.cities.id}`}
           >
-            {/* Green fill with low opacity */}
+            {/* Green fill with dynamic hover highlighting */}
             <Layer
               id="city-boundaries-fill"
               type="fill"
@@ -1926,7 +1954,12 @@ export function MapboxMap() {
               minzoom={9}
               paint={{
                 'fill-color': '#22C55E',  // Green
-                'fill-opacity': 0.1,  // Very low opacity
+                'fill-opacity': [
+                  'case',
+                  ['==', ['get', 'NAME'], hoveredCityId],  // Dynamic hover check
+                  0.35,  // Hovered
+                  0.1,   // Normal
+                ],
               }}
             />
             <Layer
@@ -1937,14 +1970,17 @@ export function MapboxMap() {
               paint={{
                 'line-color': '#22C55E',  // Green
                 'line-width': [
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  9, 0.5,
-                  12, 1.5,
-                  16, 2,
+                  'case',
+                  ['==', ['get', 'NAME'], hoveredCityId],  // Dynamic hover check
+                  3,     // Hovered
+                  ['interpolate', ['linear'], ['zoom'], 9, 0.5, 12, 1.5, 16, 2],  // Normal
                 ],
-                'line-opacity': 0.7,
+                'line-opacity': [
+                  'case',
+                  ['==', ['get', 'NAME'], hoveredCityId],  // Dynamic hover check
+                  1,     // Hovered
+                  0.7,   // Normal
+                ],
               }}
             />
           </Source>
@@ -1957,7 +1993,7 @@ export function MapboxMap() {
             type="vector"
             url={`mapbox://${BOUNDARY_TILESETS.zctas.id}`}
           >
-            {/* Orange fill with low opacity */}
+            {/* Orange fill with dynamic hover highlighting */}
             <Layer
               id="zipcode-boundaries-fill"
               type="fill"
@@ -1965,7 +2001,12 @@ export function MapboxMap() {
               minzoom={10}
               paint={{
                 'fill-color': '#F97316',  // Orange
-                'fill-opacity': 0.08,  // Very low opacity
+                'fill-opacity': [
+                  'case',
+                  ['==', ['get', 'ZCTA5CE20'], hoveredZipId],  // Dynamic hover check
+                  0.35,  // Hovered
+                  0.08,  // Normal
+                ],
               }}
             />
             <Layer
@@ -1975,9 +2016,19 @@ export function MapboxMap() {
               minzoom={10}
               paint={{
                 'line-color': '#F97316',  // Orange
-                'line-width': 1,
+                'line-width': [
+                  'case',
+                  ['==', ['get', 'ZCTA5CE20'], hoveredZipId],  // Dynamic hover check
+                  3,    // Hovered
+                  1,    // Normal
+                ],
                 'line-dasharray': [2, 2],
-                'line-opacity': 0.6,
+                'line-opacity': [
+                  'case',
+                  ['==', ['get', 'ZCTA5CE20'], hoveredZipId],  // Dynamic hover check
+                  1,    // Hovered
+                  0.6,  // Normal
+                ],
               }}
             />
           </Source>
