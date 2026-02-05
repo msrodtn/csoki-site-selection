@@ -1074,17 +1074,21 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
             """)
             result = db.execute(query, {"ids": request.competitor_ids})
         else:
-            # Fetch nearest competitors using PostGIS
+            # Fetch nearest competitors using simple distance calculation
+            # This approach works even without PostGIS spatial index
             query = text("""
                 SELECT id, brand, street, city, state, postal_code, latitude, longitude,
-                       ST_Distance(
-                           location::geography,
-                           ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
-                       ) / 1609.34 as distance_miles
+                       (
+                           3959 * acos(
+                               cos(radians(:lat)) * cos(radians(latitude)) *
+                               cos(radians(longitude) - radians(:lng)) +
+                               sin(radians(:lat)) * sin(radians(latitude))
+                           )
+                       ) as distance_miles
                 FROM stores
                 WHERE latitude IS NOT NULL
                 AND longitude IS NOT NULL
-                ORDER BY location::geography <-> ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+                ORDER BY distance_miles
                 LIMIT :limit
             """)
             result = db.execute(query, {
@@ -1106,6 +1110,10 @@ async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
             }
             for row in result.fetchall()
         ]
+    except Exception as db_error:
+        logger.error(f"Database error in competitor-access: {db_error}", exc_info=True)
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
     finally:
         db.close()
 
