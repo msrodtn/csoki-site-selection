@@ -1699,6 +1699,7 @@ export function MapboxMap() {
             closeOnClick={false}
             anchor="bottom"
             offset={10}
+            className="!z-[100]"
           >
             <div className="text-sm min-w-[160px]">
               <div className="font-semibold text-purple-700 mb-1">
@@ -1729,6 +1730,7 @@ export function MapboxMap() {
             closeOnClick={false}
             anchor="bottom"
             offset={10}
+            className="!z-[100]"
           >
             <div className="text-sm min-w-[160px]">
               <div className="font-semibold text-blue-700 mb-1">
@@ -1758,6 +1760,7 @@ export function MapboxMap() {
             closeOnClick={false}
             anchor="bottom"
             offset={10}
+            className="!z-[100]"
           >
             <div className="text-sm min-w-[140px]">
               <div className="font-semibold text-green-700 mb-1">
@@ -1781,6 +1784,7 @@ export function MapboxMap() {
             closeOnClick={false}
             anchor="bottom"
             offset={10}
+            className="!z-[100]"
           >
             <div className="text-sm min-w-[120px]">
               <div className="font-semibold text-orange-700 mb-1">
@@ -1886,14 +1890,14 @@ export function MapboxMap() {
                 'line-width': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredCountyId],
-                  3,
-                  1.5,
+                  4,
+                  2,
                 ],
                 'line-opacity': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredCountyId],
                   1,
-                  0.7,
+                  0.9,
                 ],
               }}
             />
@@ -1929,11 +1933,11 @@ export function MapboxMap() {
                   'interpolate',
                   ['linear'],
                   ['zoom'],
-                  6, 1,
-                  10, 2,
-                  14, 2.5,
+                  6, 1.5,
+                  10, 2.5,
+                  14, 3,
                 ],
-                'line-opacity': 0.8,
+                'line-opacity': 0.95,
               }}
             />
           </Source>
@@ -1972,14 +1976,14 @@ export function MapboxMap() {
                 'line-width': [
                   'case',
                   ['==', ['get', 'NAME'], hoveredCityId],  // Dynamic hover check
-                  3,     // Hovered
-                  ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 1, 14, 1.5],  // Normal
+                  4,     // Hovered
+                  ['interpolate', ['linear'], ['zoom'], 6, 1, 10, 1.5, 14, 2],  // Normal - thicker
                 ],
                 'line-opacity': [
                   'case',
                   ['==', ['get', 'NAME'], hoveredCityId],  // Dynamic hover check
                   1,     // Hovered
-                  0.7,   // Normal
+                  0.9,   // Normal - more visible
                 ],
               }}
             />
@@ -2019,15 +2023,15 @@ export function MapboxMap() {
                 'line-width': [
                   'case',
                   ['==', ['get', 'ZCTA5CE20'], hoveredZipId],  // Dynamic hover check
-                  3,    // Hovered
-                  ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 1, 14, 1.5],  // Normal
+                  4,    // Hovered
+                  ['interpolate', ['linear'], ['zoom'], 6, 1, 10, 1.5, 14, 2],  // Normal - thicker
                 ],
                 'line-dasharray': [2, 2],
                 'line-opacity': [
                   'case',
                   ['==', ['get', 'ZCTA5CE20'], hoveredZipId],  // Dynamic hover check
                   1,    // Hovered
-                  0.6,  // Normal
+                  0.85, // Normal - more visible
                 ],
               }}
             />
@@ -2064,14 +2068,14 @@ export function MapboxMap() {
                 'line-width': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredTractId],
-                  3,
-                  0.5,
+                  4,
+                  1,
                 ],
                 'line-opacity': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredTractId],
                   1,
-                  0.6,
+                  0.8,
                 ],
               }}
             />
