@@ -80,10 +80,21 @@ const INITIAL_VIEW = {
 };
 
 // Mapbox Tileset IDs for administrative boundaries (Census TIGER data)
+// NOTE: source-layer names must match what Mapbox assigned during upload
+// These are based on the Census shapefile names preserved by mapshaper
 const BOUNDARY_TILESETS = {
-  counties: 'msrodtn.9jpdhu14',  // Counties for IA, NE, NV, ID
-  cities: 'msrodtn.05vjtaqc',    // Cities/Places for IA, NE, NV, ID
-  zctas: 'msrodtn.917bnr7e',     // ZIP Code areas for IA, NE, NV, ID
+  counties: {
+    id: 'msrodtn.9jpdhu14',
+    sourceLayer: 'cb_2023_us_county_5m',  // Census shapefile layer name
+  },
+  cities: {
+    id: 'msrodtn.05vjtaqc',
+    sourceLayer: 'cb_2023_us_place_5m',   // Census shapefile layer name
+  },
+  zctas: {
+    id: 'msrodtn.917bnr7e',
+    sourceLayer: 'cb_2023_us_zcta520_5m', // Census shapefile layer name
+  },
 };
 
 // Helper to parse WKT to GeoJSON
@@ -1632,12 +1643,12 @@ export function MapboxMap() {
           <Source
             id="county-boundaries-source"
             type="vector"
-            url={`mapbox://${BOUNDARY_TILESETS.counties}`}
+            url={`mapbox://${BOUNDARY_TILESETS.counties.id}`}
           >
             <Layer
               id="county-boundaries"
               type="line"
-              source-layer="counties"
+              source-layer={BOUNDARY_TILESETS.counties.sourceLayer}
               minzoom={6}
               paint={{
                 'line-color': '#3B82F6',
@@ -1660,12 +1671,12 @@ export function MapboxMap() {
           <Source
             id="city-boundaries-source"
             type="vector"
-            url={`mapbox://${BOUNDARY_TILESETS.cities}`}
+            url={`mapbox://${BOUNDARY_TILESETS.cities.id}`}
           >
             <Layer
               id="city-boundaries"
               type="line"
-              source-layer="cities"
+              source-layer={BOUNDARY_TILESETS.cities.sourceLayer}
               minzoom={9}
               paint={{
                 'line-color': '#22C55E',
@@ -1688,12 +1699,12 @@ export function MapboxMap() {
           <Source
             id="zipcode-boundaries-source"
             type="vector"
-            url={`mapbox://${BOUNDARY_TILESETS.zctas}`}
+            url={`mapbox://${BOUNDARY_TILESETS.zctas.id}`}
           >
             <Layer
               id="zipcode-boundaries"
               type="line"
-              source-layer="zctas"
+              source-layer={BOUNDARY_TILESETS.zctas.sourceLayer}
               minzoom={10}
               paint={{
                 'line-color': '#F97316',
