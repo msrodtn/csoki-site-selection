@@ -620,9 +620,7 @@ export function MapboxMap() {
     setMapInstance,
     visibleLayers,
     visiblePropertySources,
-    // deck.gl 3D visualization state
-    show3DVisualization,
-    deckLayerVisibility,
+    // deck.gl arc visualization state
     arcSettings,
     setArcSettings,
     competitorAccessResult,
@@ -1160,13 +1158,10 @@ export function MapboxMap() {
       deckOverlayRef.current = null;
     }
 
-    // Only create overlay if 3D visualization is enabled
-    if (!show3DVisualization) return;
-
     const layers: any[] = [];
 
-    // Add competitor arc layer if enabled and we have analysis data
-    if (deckLayerVisibility.competitorArcs && arcSettings.siteLocation && competitorAccessResult?.competitors) {
+    // Add competitor arc layer automatically when we have analysis data (no toggle required)
+    if (arcSettings.siteLocation && competitorAccessResult?.competitors?.length > 0) {
       layers.push(
         createCompetitorArcLayer({
           siteLocation: arcSettings.siteLocation,
@@ -1199,9 +1194,6 @@ export function MapboxMap() {
       }
     };
   }, [
-    show3DVisualization,
-    deckLayerVisibility,
-    properties,
     arcSettings,
     competitorAccessResult,
   ]);

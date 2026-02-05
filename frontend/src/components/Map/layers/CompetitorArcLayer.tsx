@@ -2,26 +2,21 @@
  * Competitor Arc Layer
  *
  * Visualizes connections between a potential site and nearby competitors.
- * Uses deck.gl's ArcLayer for animated, curved arcs.
+ * Uses deck.gl's ArcLayer for curved arcs.
  *
  * Features:
  * - Arcs from site to each competitor
- * - Color-coded by brand
- * - Arc height based on distance
- * - Animation support for highlighting
+ * - Color-coded by travel time (green=close, yellow=medium, red=far)
+ * - Auto-appears when competitor analysis data is available
  */
 
 import { useMemo } from 'react';
 import { ArcLayer } from '@deck.gl/layers';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import type { Store, BrandKey, CompetitorWithTravelTime } from '../../../types/store';
-import { BRAND_COLORS_RGB, getTravelTimeColorRGB } from '../../../utils/mapbox-expressions';
+import type { Store, CompetitorWithTravelTime } from '../../../types/store';
 
 // Default source color (green for the potential site)
 const SOURCE_COLOR: [number, number, number] = [46, 204, 113];
-
-// Arc height multiplier based on distance
-const ARC_HEIGHT_FACTOR = 0.5;
 
 export interface CompetitorArcLayerProps {
   siteLocation: [number, number];  // [lng, lat]
@@ -39,41 +34,6 @@ export interface CompetitorArcLayerProps {
 /**
  * Get RGB color for a brand
  */
-function getBrandColor(brand: string): [number, number, number] {
-  return BRAND_COLORS_RGB[brand as BrandKey] || [102, 102, 102];
-}
-
-/**
- * Calculate arc height based on travel time or distance
- * Longer travel times = higher arcs (more curved)
- */
-function getArcHeight(
-  competitor: Store | CompetitorWithTravelTime,
-  siteLocation: [number, number]
-): number {
-  // Use actual travel time from Matrix API if available
-  if ('travel_time_minutes' in competitor && competitor.travel_time_minutes != null) {
-    // Scale: 5 min = 0.25 height, 10 min = 0.5, 20 min = 1.0 (max)
-    return Math.min(competitor.travel_time_minutes / 20, 1) * ARC_HEIGHT_FACTOR;
-  }
-
-  // Use distance if available
-  if ('distance_miles' in competitor && competitor.distance_miles != null) {
-    // Scale: 1 mile = 0.1, 5 miles = 0.5, 10+ miles = 1.0
-    return Math.min(competitor.distance_miles / 10, 1) * ARC_HEIGHT_FACTOR;
-  }
-
-  // Fall back to rough lat/lng distance calculation
-  if (competitor.latitude && competitor.longitude) {
-    const dlat = Math.abs(competitor.latitude - siteLocation[1]);
-    const dlng = Math.abs(competitor.longitude - siteLocation[0]);
-    const distance = Math.sqrt(dlat * dlat + dlng * dlng);
-    return Math.min(distance * 10, 1) * ARC_HEIGHT_FACTOR;
-  }
-
-  return 0.2; // Default height
-}
-
 /**
  * Create a CompetitorArcLayer instance
  */
@@ -109,22 +69,21 @@ export function createCompetitorArcLayer({
     // Source color is always green (site)
     getSourceColor: () => [...SOURCE_COLOR, 200] as [number, number, number, number],
 
-    // Target color based on travel time (if available) or brand
+    // Target color based on travel time (green=close, yellow=medium, red=far)
     getTargetColor: (d) => {
       const isHighlighted = highlightedCompetitorId === d.id;
+      const alpha = isHighlighted ? 255 : 220;
 
-      // Use travel time color if available (green=fast, red=slow)
+      // Color by travel time for clear visual feedback
       if ('travel_time_minutes' in d && d.travel_time_minutes != null) {
-        const color = getTravelTimeColorRGB(d.travel_time_minutes);
-        if (isHighlighted) {
-          return [color[0], color[1], color[2], 255] as [number, number, number, number];
-        }
-        return color;
+        const minutes = d.travel_time_minutes;
+        if (minutes < 5) return [34, 197, 94, alpha];     // Green - very close
+        if (minutes < 15) return [234, 179, 8, alpha];    // Yellow - medium
+        return [239, 68, 68, alpha];                       // Red - far
       }
 
-      // Fall back to brand color
-      const alpha = isHighlighted ? 255 : 180;
-      return [...getBrandColor(d.brand), alpha] as [number, number, number, number];
+      // Gray fallback when no travel time data
+      return [107, 114, 128, isHighlighted ? 255 : 180];
     },
 
     // Arc width (wider for highlighted)
@@ -133,8 +92,8 @@ export function createCompetitorArcLayer({
       return isHighlighted ? arcWidth * 2 : arcWidth;
     },
 
-    // Arc height based on distance/travel time
-    getHeight: (d) => getArcHeight(d, siteLocation) * 0.02,
+    // Fixed low arc height for cleaner flat appearance
+    getHeight: 0.3,
 
     // Arc curvature
     getTilt: tilt,

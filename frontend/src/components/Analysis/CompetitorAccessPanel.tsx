@@ -476,6 +476,27 @@ export function CompetitorAccessPanel({
         )}
       </div>
 
+      {/* Arc Color Legend */}
+      {result && result.competitors.length > 0 && (
+        <div className="px-4 py-2 border-t border-gray-200 bg-blue-50">
+          <div className="flex items-center gap-3 text-xs">
+            <span className="font-medium text-gray-700">Arc Colors:</span>
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-1.5 bg-green-500 rounded-full" />
+              <span className="text-gray-600">&lt;5 min</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-1.5 bg-yellow-500 rounded-full" />
+              <span className="text-gray-600">5-15 min</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-1.5 bg-red-500 rounded-full" />
+              <span className="text-gray-600">&gt;15 min</span>
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="p-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
         <div className="flex items-center gap-1">
