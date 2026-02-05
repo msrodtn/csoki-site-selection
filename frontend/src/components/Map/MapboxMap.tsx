@@ -1951,7 +1951,7 @@ export function MapboxMap() {
               id="city-boundaries-fill"
               type="fill"
               source-layer={BOUNDARY_TILESETS.cities.sourceLayer}
-              minzoom={9}
+              minzoom={6}
               paint={{
                 'fill-color': '#22C55E',  // Green
                 'fill-opacity': [
@@ -1966,14 +1966,14 @@ export function MapboxMap() {
               id="city-boundaries"
               type="line"
               source-layer={BOUNDARY_TILESETS.cities.sourceLayer}
-              minzoom={9}
+              minzoom={6}
               paint={{
                 'line-color': '#22C55E',  // Green
                 'line-width': [
                   'case',
                   ['==', ['get', 'NAME'], hoveredCityId],  // Dynamic hover check
                   3,     // Hovered
-                  ['interpolate', ['linear'], ['zoom'], 9, 0.5, 12, 1.5, 16, 2],  // Normal
+                  ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 1, 14, 1.5],  // Normal
                 ],
                 'line-opacity': [
                   'case',
@@ -1998,7 +1998,7 @@ export function MapboxMap() {
               id="zipcode-boundaries-fill"
               type="fill"
               source-layer={BOUNDARY_TILESETS.zctas.sourceLayer}
-              minzoom={10}
+              minzoom={6}
               paint={{
                 'fill-color': '#F97316',  // Orange
                 'fill-opacity': [
@@ -2013,14 +2013,14 @@ export function MapboxMap() {
               id="zipcode-boundaries"
               type="line"
               source-layer={BOUNDARY_TILESETS.zctas.sourceLayer}
-              minzoom={10}
+              minzoom={6}
               paint={{
                 'line-color': '#F97316',  // Orange
                 'line-width': [
                   'case',
                   ['==', ['get', 'ZCTA5CE20'], hoveredZipId],  // Dynamic hover check
                   3,    // Hovered
-                  1,    // Normal
+                  ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 1, 14, 1.5],  // Normal
                 ],
                 'line-dasharray': [2, 2],
                 'line-opacity': [
