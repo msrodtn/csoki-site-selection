@@ -93,7 +93,7 @@ export function CompetitorAccessPanel({
   const [sortBy, setSortBy] = useState<'time' | 'distance' | 'brand'>('time');
   const [showFilters, setShowFilters] = useState(false);
 
-  const { navigateTo } = useMapStore();
+  const { navigateTo, setCompetitorAccessResult, setArcSettings } = useMapStore();
 
   // Export to CSV function
   const exportToCSV = useCallback(() => {
@@ -141,6 +141,10 @@ export function CompetitorAccessPanel({
       });
       setResult(response);
 
+      // Store in global state for 3D arc visualization
+      setCompetitorAccessResult(response);
+      setArcSettings({ siteLocation: [longitude, latitude] });
+
       // Auto-expand brands with competitors
       const brandsWithCompetitors = new Set(
         response.competitors.map((c) => c.brand)
@@ -152,7 +156,7 @@ export function CompetitorAccessPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [latitude, longitude, profile, maxCompetitors]);
+  }, [latitude, longitude, profile, maxCompetitors, setCompetitorAccessResult, setArcSettings]);
 
   // Fetch on mount and when parameters change
   useEffect(() => {
