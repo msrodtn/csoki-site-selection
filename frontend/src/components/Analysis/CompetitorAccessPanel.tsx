@@ -5,7 +5,7 @@
  * Uses Mapbox Matrix API for accurate travel time calculations.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   X,
   Car,
@@ -20,6 +20,7 @@ import {
   Route,
   Download,
   Filter,
+  GripVertical,
 } from 'lucide-react';
 import { analysisApi } from '../../services/api';
 import { useMapStore } from '../../store/useMapStore';
@@ -93,7 +94,49 @@ export function CompetitorAccessPanel({
   const [sortBy, setSortBy] = useState<'time' | 'distance' | 'brand'>('time');
   const [showFilters, setShowFilters] = useState(false);
 
+  // Draggable panel state
+  const [position, setPosition] = useState({ x: 16, y: 96 }); // Default: left-4, top-24
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const { navigateTo, setCompetitorAccessResult, setArcSettings } = useMapStore();
+
+  // Drag handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (panelRef.current) {
+      setIsDragging(true);
+      dragOffset.current = {
+        x: e.clientX - position.x,
+        y: e.clientY - position.y,
+      };
+    }
+  }, [position]);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isDragging) {
+      setPosition({
+        x: e.clientX - dragOffset.current.x,
+        y: e.clientY - dragOffset.current.y,
+      });
+    }
+  }, [isDragging]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Add/remove mouse listeners for dragging
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   // Export to CSV function
   const exportToCSV = useCallback(() => {
@@ -236,15 +279,29 @@ export function CompetitorAccessPanel({
   };
 
   return (
-    <div className="absolute top-24 left-4 w-80 sm:w-96 bg-white rounded-lg shadow-xl z-50 max-h-[calc(100vh-10rem)] flex flex-col border border-gray-200">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <div
+      ref={panelRef}
+      className="fixed w-80 sm:w-96 bg-white rounded-lg shadow-xl max-h-[calc(100vh-10rem)] flex flex-col border border-gray-200"
+      style={{
+        left: position.x,
+        top: position.y,
+        zIndex: 9999, // Very high z-index to be above all markers
+        cursor: isDragging ? 'grabbing' : 'default',
+      }}
+    >
+      {/* Draggable Header */}
+      <div
+        className="flex items-center justify-between p-4 border-b border-gray-200 cursor-grab active:cursor-grabbing select-none"
+        onMouseDown={handleMouseDown}
+      >
         <div className="flex items-center gap-2">
+          <GripVertical className="w-4 h-4 text-gray-400" />
           <Car className="w-5 h-5 text-blue-600" />
           <h3 className="font-semibold text-gray-900">Competitor Access</h3>
         </div>
         <button
           onClick={onClose}
+          onMouseDown={(e) => e.stopPropagation()} // Prevent drag on close button
           className="p-1 hover:bg-gray-100 rounded-full transition-colors"
         >
           <X className="w-5 h-5 text-gray-500" />

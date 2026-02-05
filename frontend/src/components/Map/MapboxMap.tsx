@@ -940,6 +940,33 @@ export function MapboxMap() {
     };
   }, [selectedParcel]);
 
+  // GeoJSON for competitor route lines
+  const competitorRoutesGeoJSON = useMemo((): GeoJSON.FeatureCollection | null => {
+    if (!arcSettings.siteLocation || !competitorAccessResult?.competitors?.length) return null;
+
+    const [siteLng, siteLat] = arcSettings.siteLocation;
+    const features: GeoJSON.Feature[] = competitorAccessResult.competitors.map((competitor: any) => ({
+      type: 'Feature' as const,
+      properties: {
+        brand: competitor.brand,
+        travelTime: competitor.travel_time_minutes,
+        distance: competitor.distance_miles,
+      },
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: [
+          [siteLng, siteLat],
+          [competitor.longitude, competitor.latitude],
+        ],
+      },
+    }));
+
+    return {
+      type: 'FeatureCollection' as const,
+      features,
+    };
+  }, [arcSettings.siteLocation, competitorAccessResult]);
+
   // Run trade area analysis
   const runAnalysis = useCallback(async (lat: number, lng: number, radius: number) => {
     setSelectedStore(null);
@@ -1936,6 +1963,41 @@ export function MapboxMap() {
                 'line-color': getIsochroneColor(isochroneSettings.mode),
                 'line-width': 2,
                 'line-opacity': 0.8,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Competitor Route Lines - shows paths from site to competitors */}
+        {competitorRoutesGeoJSON && showCompetitorAccessPanel && (
+          <Source id="competitor-routes" type="geojson" data={competitorRoutesGeoJSON}>
+            {/* Background line for visibility */}
+            <Layer
+              id="competitor-routes-bg"
+              type="line"
+              paint={{
+                'line-color': '#ffffff',
+                'line-width': 5,
+                'line-opacity': 0.8,
+              }}
+            />
+            {/* Main route line - color by travel time */}
+            <Layer
+              id="competitor-routes-line"
+              type="line"
+              paint={{
+                'line-color': [
+                  'interpolate',
+                  ['linear'],
+                  ['get', 'travelTime'],
+                  0, '#22c55e',   // Green for < 5 min
+                  5, '#84cc16',   // Lime for 5-10 min
+                  10, '#eab308',  // Yellow for 10-15 min
+                  15, '#f97316',  // Orange for 15-20 min
+                  20, '#ef4444',  // Red for > 20 min
+                ],
+                'line-width': 3,
+                'line-opacity': 0.9,
               }}
             />
           </Source>
