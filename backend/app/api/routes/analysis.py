@@ -1539,8 +1539,9 @@ async def get_demographic_boundaries(
         out_fields = "NAME,GEOID,B19049_001E,Shape__Area"
     else:
         url = f"{ACS_POPULATION_BASE}/{layer_index}/query"
-        # ACS Population service fields: NAME, GEOID, B01001_001E (total pop), Shape_Area
-        out_fields = "NAME,GEOID,B01001_001E,Shape_Area"
+        # ACS Population service fields: NAME, GEOID, B01001_001E (total pop), Shape__Area
+        # Note: Both tract and county layers use Shape__Area (double underscore)
+        out_fields = "NAME,GEOID,B01001_001E,Shape__Area"
 
     # Build query parameters - filter by state FIPS (first 2 chars of GEOID)
     params = {
@@ -1566,8 +1567,8 @@ async def get_demographic_boundaries(
                     # B01001_001E = Total Population, B19049_001E = Median Household Income
                     pop = props.get("B01001_001E") or 0
                     income = props.get("B19049_001E") or 0
-                    # Shape field name varies: Shape_Area (population) vs Shape__Area (income)
-                    shape_area = props.get("Shape_Area") or props.get("Shape__Area") or 0  # in square meters
+                    # Both services use Shape__Area (double underscore)
+                    shape_area = props.get("Shape__Area") or 0  # in square meters
 
                     # Calculate density (pop per sq mile)
                     # 1 sq mile = 2,589,988 sq meters
