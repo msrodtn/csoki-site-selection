@@ -28,6 +28,7 @@ export interface IsochronePolygon {
 
 /**
  * Fetch isochrone polygon from Mapbox API
+ * Throws errors with user-friendly messages for UI display
  */
 export async function fetchIsochrone(
   options: IsochroneOptions,
@@ -35,6 +36,16 @@ export async function fetchIsochrone(
 ): Promise<GeoJSON.Feature<GeoJSON.Polygon> | null> {
   const { coordinates, minutes, mode } = options;
   const [lng, lat] = coordinates;
+
+  // Validate access token
+  if (!accessToken) {
+    throw new Error('Map service not configured. Please contact support.');
+  }
+
+  // Validate coordinates
+  if (lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+    throw new Error('Invalid location. Please select a point on the map.');
+  }
 
   // Mapbox Isochrone API endpoint
   const url = `https://api.mapbox.com/isochrone/v1/mapbox/${mode}/${lng},${lat}`;
@@ -48,8 +59,16 @@ export async function fetchIsochrone(
   try {
     const response = await fetch(`${url}?${params}`);
 
+    if (response.status === 401) {
+      throw new Error('Map service authentication failed. Please refresh the page.');
+    }
+
+    if (response.status === 422) {
+      throw new Error('Unable to calculate travel area for this location. Try a different spot.');
+    }
+
     if (!response.ok) {
-      throw new Error(`Isochrone API error: ${response.statusText}`);
+      throw new Error(`Travel area service error (${response.status}). Please try again.`);
     }
 
     const data = await response.json();
@@ -59,10 +78,19 @@ export async function fetchIsochrone(
       return data.features[0] as GeoJSON.Feature<GeoJSON.Polygon>;
     }
 
+    // No features returned - location might be unreachable (e.g., in ocean)
     return null;
   } catch (error) {
+    // Re-throw our custom errors
+    if (error instanceof Error && error.message.includes('Map service') ||
+        error instanceof Error && error.message.includes('Unable to calculate') ||
+        error instanceof Error && error.message.includes('Invalid location') ||
+        error instanceof Error && error.message.includes('Travel area service')) {
+      throw error;
+    }
+    // Network or other errors
     console.error('Failed to fetch isochrone:', error);
-    return null;
+    throw new Error('Failed to calculate travel area. Check your connection and try again.');
   }
 }
 

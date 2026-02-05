@@ -619,6 +619,8 @@ export function MapboxMap() {
     coordinates: null,
   });
   const [isochronePolygon, setIsochronePolygon] = useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
+  const [isIsochroneLoading, setIsIsochroneLoading] = useState(false);
+  const [isochroneError, setIsochroneError] = useState<string | null>(null);
 
   // Map store state
   const {
@@ -1344,6 +1346,9 @@ export function MapboxMap() {
   // Fetch isochrone when settings change or coordinates update
   useEffect(() => {
     if (isochroneSettings.enabled && isochroneSettings.coordinates && MAPBOX_TOKEN) {
+      setIsIsochroneLoading(true);
+      setIsochroneError(null);
+
       fetchIsochrone(
         {
           coordinates: isochroneSettings.coordinates,
@@ -1353,12 +1358,19 @@ export function MapboxMap() {
         MAPBOX_TOKEN
       ).then((polygon) => {
         setIsochronePolygon(polygon);
+        if (!polygon) {
+          setIsochroneError('Could not calculate travel area for this location.');
+        }
       }).catch((error) => {
         console.error('Failed to fetch isochrone:', error);
         setIsochronePolygon(null);
+        setIsochroneError(error instanceof Error ? error.message : 'Failed to calculate travel area.');
+      }).finally(() => {
+        setIsIsochroneLoading(false);
       });
     } else {
       setIsochronePolygon(null);
+      setIsochroneError(null);
     }
   }, [isochroneSettings]);
 
@@ -1562,6 +1574,15 @@ export function MapboxMap() {
       <IsochroneControl
         settings={isochroneSettings}
         onSettingsChange={setIsochroneSettings}
+        isLoading={isIsochroneLoading}
+        error={isochroneError}
+        onClearError={() => setIsochroneError(null)}
+        onShowCompetitorAccess={() => {
+          if (isochroneSettings.coordinates) {
+            setArcSettings({ siteLocation: isochroneSettings.coordinates });
+            setShowCompetitorAccessPanel(true);
+          }
+        }}
       />
 
       {/* Property loading indicator */}
@@ -2415,10 +2436,8 @@ export function MapboxMap() {
           onClose={() => {
             setShowCompetitorAccessPanel(false);
             setArcSettings({ siteLocation: null });
-            setIsochroneSettings({
-              ...isochroneSettings,
-              coordinates: null,
-            });
+            // Don't clear isochrone coordinates - let user keep the drive time polygon visible
+            // User can clear via the X button on IsochroneControl if desired
           }}
           onNavigateToCompetitor={(lat, lng) => {
             mapRef.current?.getMap()?.flyTo({
