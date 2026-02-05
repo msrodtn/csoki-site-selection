@@ -24,7 +24,7 @@ import * as turf from '@turf/turf';
 import { wktToGeoJSON } from '@terraformer/wkt';
 import { useStores } from '../../hooks/useStores';
 import { useMapStore } from '../../store/useMapStore';
-import { analysisApi, teamPropertiesApi, listingsApi } from '../../services/api';
+import { analysisApi, teamPropertiesApi, listingsApi, opportunitiesApi } from '../../services/api';
 import {
   BRAND_COLORS,
   BRAND_LABELS,
@@ -41,6 +41,7 @@ import {
   type TeamProperty,
   type ParcelInfo,
   type ScrapedListing,
+  type OpportunityRanking,
 } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
@@ -620,7 +621,9 @@ export function MapboxMap() {
     setMapInstance,
     visibleLayers,
     visiblePropertySources,
-    // deck.gl arc visualization state
+    // deck.gl 3D visualization state
+    show3DVisualization,
+    deckLayerVisibility,
     arcSettings,
     setArcSettings,
     competitorAccessResult,
@@ -671,6 +674,11 @@ export function MapboxMap() {
   // Scraped listings state
   const [scrapedListings, setScrapedListings] = useState<ScrapedListing[]>([]);
   const [isLoadingScrapedListings, setIsLoadingScrapedListings] = useState(false);
+
+  // CSOKi Opportunities state
+  const [opportunities, setOpportunities] = useState<OpportunityRanking[]>([]);
+  const [isLoadingOpportunities, setIsLoadingOpportunities] = useState(false);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<OpportunityRanking | null>(null);
 
   // Traffic counts hover state
   const [hoveredTraffic, setHoveredTraffic] = useState<{
@@ -1095,6 +1103,46 @@ export function MapboxMap() {
     }
   }, [visiblePropertySources, mapBounds]);
 
+  // CSOKi Opportunities when layer is toggled
+  useEffect(() => {
+    const showOpportunities = visibleLayersArray.includes('csoki_opportunities');
+
+    if (showOpportunities && mapBounds) {
+      const fetchOpportunities = async () => {
+        setIsLoadingOpportunities(true);
+        try {
+          const result = await opportunitiesApi.search({
+            min_lat: mapBounds.south,
+            max_lat: mapBounds.north,
+            min_lng: mapBounds.west,
+            max_lng: mapBounds.east,
+            min_parcel_acres: 0.8,
+            max_parcel_acres: 2.0,
+            min_building_sqft: 2500,
+            max_building_sqft: 6000,
+            include_retail: true,
+            include_office: true,
+            include_land: true,
+            require_opportunity_signal: true,
+            limit: 100,
+          });
+          setOpportunities(result.opportunities || []);
+          console.log('[CSOKi Opportunities] Fetched:', result.opportunities?.length || 0, 'opportunities');
+        } catch (error: any) {
+          console.error('[CSOKi Opportunities] Error fetching:', error);
+          setOpportunities([]);
+        } finally {
+          setIsLoadingOpportunities(false);
+        }
+      };
+
+      fetchOpportunities();
+    } else if (!showOpportunities) {
+      setOpportunities([]);
+      setSelectedOpportunity(null);
+    }
+  }, [visibleLayersArray, mapBounds]);
+
   // Handle team property form success
   const handleTeamPropertySuccess = useCallback(() => {
     if (mapBounds && visibleLayersArray.includes('properties_for_sale')) {
@@ -1161,10 +1209,13 @@ export function MapboxMap() {
       deckOverlayRef.current = null;
     }
 
+    // Only create overlay if 3D visualization is enabled
+    if (!show3DVisualization) return;
+
     const layers: any[] = [];
 
-    // Add competitor arc layer automatically when we have analysis data (no toggle required)
-    if (arcSettings.siteLocation && competitorAccessResult?.competitors?.length > 0) {
+    // Add competitor arc layer if enabled and we have analysis data
+    if (deckLayerVisibility.competitorArcs && arcSettings.siteLocation && competitorAccessResult?.competitors) {
       layers.push(
         createCompetitorArcLayer({
           siteLocation: arcSettings.siteLocation,
@@ -1197,6 +1248,9 @@ export function MapboxMap() {
       }
     };
   }, [
+    show3DVisualization,
+    deckLayerVisibility,
+    properties,
     arcSettings,
     competitorAccessResult,
   ]);
@@ -1580,6 +1634,59 @@ export function MapboxMap() {
           />
         ))}
 
+        {/* CSOKi Opportunity markers */}
+        {visibleLayersArray.includes('csoki_opportunities') && opportunities.map((opp) => {
+          const prop = opp.property;
+          if (!prop.latitude || !prop.longitude) return null;
+
+          const isSelected = selectedOpportunity?.property.id === prop.id;
+          const size = getZoomBasedSize(viewState.zoom, isSelected);
+
+          return (
+            <Marker
+              key={`opportunity-${prop.id}`}
+              longitude={prop.longitude}
+              latitude={prop.latitude}
+              anchor="center"
+              onClick={(e: MarkerEvent<MouseEvent>) => {
+                e.originalEvent.stopPropagation();
+                setSelectedOpportunity(opp);
+                setSelectedProperty(null);
+                setSelectedTeamProperty(null);
+              }}
+              style={{ zIndex: isSelected ? 1500 : 300 }}
+            >
+              <div
+                className="cursor-pointer transition-transform duration-150"
+                style={{
+                  transform: isSelected ? 'scale(1.3)' : 'scale(1)',
+                }}
+              >
+                {/* Purple diamond with rank number */}
+                <svg width={size} height={size} viewBox="0 0 24 24">
+                  <path
+                    d="M12 2 L22 12 L12 22 L2 12 Z"
+                    fill="#9333EA"
+                    stroke="white"
+                    strokeWidth="1.5"
+                    opacity={isSelected ? 1 : 0.85}
+                  />
+                  <text
+                    x="12"
+                    y="15"
+                    textAnchor="middle"
+                    fill="white"
+                    fontSize="10"
+                    fontWeight="bold"
+                  >
+                    {opp.rank}
+                  </text>
+                </svg>
+              </div>
+            </Marker>
+          );
+        })}
+
         {/* POI markers */}
         {visiblePOIs.map((poi) => (
           <POIMarker
@@ -1699,6 +1806,16 @@ export function MapboxMap() {
         />
       )}
 
+      {/* Opportunity Info Card (CSOKi Opportunities) */}
+      {selectedOpportunity && (
+        <PropertyInfoCard
+          property={selectedOpportunity.property}
+          onClose={() => setSelectedOpportunity(null)}
+          opportunityRank={selectedOpportunity.rank}
+          opportunitySignals={selectedOpportunity.priority_signals}
+        />
+      )}
+
       {/* Competitor Access Panel - Drive time analysis to competitors */}
       {showCompetitorAccessPanel && arcSettings.siteLocation && (
         <CompetitorAccessPanel
@@ -1753,6 +1870,14 @@ export function MapboxMap() {
         <div className="absolute bottom-32 right-6 z-40 bg-blue-100 text-blue-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
           <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full" />
           Loading active listings...
+        </div>
+      )}
+
+      {/* CSOKi Opportunities loading indicator */}
+      {isLoadingOpportunities && visibleLayersArray.includes('csoki_opportunities') && (
+        <div className="absolute bottom-44 right-6 z-40 bg-purple-100 text-purple-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full" />
+          Loading CSOKi opportunities...
         </div>
       )}
 
