@@ -10,9 +10,7 @@ import Map, {
   Popup,
   Source,
   Layer,
-  NavigationControl,
   ScaleControl,
-  GeolocateControl,
 } from '@vis.gl/react-mapbox';
 import type { MapRef, ViewStateChangeEvent, MarkerEvent } from '@vis.gl/react-mapbox';
 import type {
@@ -65,6 +63,8 @@ import { MapboxOverlay } from '@deck.gl/mapbox';
 // import { createOpportunityHexagonLayer } from './layers/OpportunityHexagonLayer';
 import { createCompetitorArcLayer } from './layers/CompetitorArcLayer';
 import { POILayer } from './layers/POILayer';
+import { BuildingLayer, type BuildingInfo } from './layers/BuildingLayer';
+import { NavigationControl, GeolocateControl } from './controls';
 
 // Feature flag for native POI layers (set to true to use new performant layers)
 const USE_NATIVE_POI_LAYERS = true;
@@ -696,6 +696,8 @@ export function MapboxMap() {
     setShowCompetitorAccessPanel,
     // Opportunity filters
     opportunityFilters,
+    // Building layer state
+    showBuildingLayer,
   } = useMapStore();
 
   // Local state
@@ -1743,9 +1745,9 @@ export function MapboxMap() {
         mapboxAccessToken={MAPBOX_TOKEN}
       >
         {/* Navigation controls */}
-        <NavigationControl position="top-right" />
+        <NavigationControl map={mapRef.current} position="top-right" />
         <ScaleControl position="bottom-right" />
-        <GeolocateControl position="top-right" />
+        <GeolocateControl map={mapRef.current} position="top-right" />
 
         {/* Traffic Layer */}
         {visibleLayersArray.includes('traffic') && (
@@ -2498,6 +2500,16 @@ export function MapboxMap() {
             }}
           />
         )}
+
+        {/* Building Layer - Interactive building footprints */}
+        <BuildingLayer
+          map={mapRef.current}
+          visible={showBuildingLayer}
+          onBuildingClick={(building: BuildingInfo) => {
+            console.log('Building clicked:', building);
+            // TODO: Add building info popup or panel
+          }}
+        />
 
         {/* Legacy POI markers (fallback when native layers disabled) */}
         {!USE_NATIVE_POI_LAYERS && !showPOIClusters && visiblePOIs.map((poi) => (

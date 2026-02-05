@@ -233,6 +233,12 @@ interface MapState {
   setCompetitorAccessError: (error: string | null) => void;
   showCompetitorAccessPanel: boolean;
   setShowCompetitorAccessPanel: (show: boolean) => void;
+
+  // Building Layer state
+  showBuildingLayer: boolean;
+  setShowBuildingLayer: (show: boolean) => void;
+  selectedBuildingId: number | null;
+  setSelectedBuildingId: (id: number | null) => void;
 }
 
 // Default to center of US with all brands visible
@@ -640,4 +646,10 @@ export const useMapStore = create<MapState>((set, get) => ({
   setCompetitorAccessError: (error) => set({ competitorAccessError: error }),
   showCompetitorAccessPanel: false,
   setShowCompetitorAccessPanel: (show) => set({ showCompetitorAccessPanel: show }),
+
+  // Building Layer state
+  showBuildingLayer: false,
+  setShowBuildingLayer: (show) => set({ showBuildingLayer: show }),
+  selectedBuildingId: null,
+  setSelectedBuildingId: (id) => set({ selectedBuildingId: id }),
 }));

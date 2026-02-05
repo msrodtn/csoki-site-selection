@@ -33,3 +33,9 @@ export {
 } from './InteractiveMapLayer';
 
 export { POILayer, type POILayerProps } from './POILayer';
+
+export {
+  BuildingLayer,
+  type BuildingLayerProps,
+  type BuildingInfo,
+} from './BuildingLayer';
