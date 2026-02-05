@@ -734,6 +734,18 @@ export function MapboxMap() {
     lngLat: [number, number];
   } | null>(null);
 
+  // City hover state (for tileset-based boundaries)
+  const [hoveredCityInfo, setHoveredCityInfo] = useState<{
+    name: string;
+    lngLat: [number, number];
+  } | null>(null);
+
+  // ZIP Code hover state (for tileset-based boundaries)
+  const [hoveredZipInfo, setHoveredZipInfo] = useState<{
+    zipCode: string;
+    lngLat: [number, number];
+  } | null>(null);
+
   // Track analysis center for re-analysis
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
 
@@ -1092,6 +1104,46 @@ export function MapboxMap() {
       }
     }
 
+    // Handle city boundaries layer (tileset)
+    if (map.getLayer('city-boundaries-fill')) {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['city-boundaries-fill'],
+      });
+
+      if (features && features.length > 0) {
+        const feature = features[0];
+        map.getCanvas().style.cursor = 'pointer';
+        setHoveredCityInfo({
+          name: feature.properties?.NAME || feature.properties?.BASENAME || 'Unknown City',
+          lngLat: [e.lngLat.lng, e.lngLat.lat],
+        });
+        return;
+      } else {
+        setHoveredCityInfo(null);
+      }
+    }
+
+    // Handle ZIP code boundaries layer (tileset)
+    if (map.getLayer('zipcode-boundaries-fill')) {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['zipcode-boundaries-fill'],
+      });
+
+      if (features && features.length > 0) {
+        const feature = features[0];
+        map.getCanvas().style.cursor = 'pointer';
+        // ZIP code can be in NAME, ZCTA5CE20, or GEOID
+        const zipCode = feature.properties?.NAME || feature.properties?.ZCTA5CE20 || feature.properties?.GEOID || 'Unknown';
+        setHoveredZipInfo({
+          zipCode,
+          lngLat: [e.lngLat.lng, e.lngLat.lat],
+        });
+        return;
+      } else {
+        setHoveredZipInfo(null);
+      }
+    }
+
     map.getCanvas().style.cursor = '';
   }, []);
 
@@ -1104,6 +1156,8 @@ export function MapboxMap() {
     setHoveredTractInfo(null);
     setHoveredCountyId(null);
     setHoveredCountyInfo(null);
+    setHoveredCityInfo(null);
+    setHoveredZipInfo(null);
     setHoveredTraffic(null);
   }, []);
 
@@ -1531,6 +1585,8 @@ export function MapboxMap() {
           ...(visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') ? ['census-tract-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyDemographicsData ? ['county-demographics-fill'] : []),
+          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') ? ['city-boundaries-fill'] : []),
+          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') ? ['zipcode-boundaries-fill'] : []),
         ]}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
@@ -1636,11 +1692,9 @@ export function MapboxMap() {
               <div className="text-xs text-gray-600">
                 Pop: {hoveredTractInfo.population.toLocaleString()}
               </div>
-              {hoveredTractInfo.income > 0 && (
-                <div className="text-xs text-green-700">
-                  Income: ${hoveredTractInfo.income.toLocaleString()}
-                </div>
-              )}
+              <div className="text-xs text-green-700">
+                Income: ${hoveredTractInfo.income.toLocaleString()}
+              </div>
               <div className="text-xs text-gray-600">
                 Density: {hoveredTractInfo.density.toLocaleString()}/sq mi
               </div>
@@ -1672,6 +1726,42 @@ export function MapboxMap() {
               )}
               <div className="text-xs text-gray-600">
                 Density: {hoveredCountyInfo.density.toLocaleString()}/sq mi
+              </div>
+            </div>
+          </Popup>
+        )}
+
+        {/* City Boundary Tooltip */}
+        {hoveredCityInfo && (
+          <Popup
+            longitude={hoveredCityInfo.lngLat[0]}
+            latitude={hoveredCityInfo.lngLat[1]}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+          >
+            <div className="text-sm min-w-[120px]">
+              <div className="font-semibold text-green-700">
+                {hoveredCityInfo.name}
+              </div>
+            </div>
+          </Popup>
+        )}
+
+        {/* ZIP Code Boundary Tooltip */}
+        {hoveredZipInfo && (
+          <Popup
+            longitude={hoveredZipInfo.lngLat[0]}
+            latitude={hoveredZipInfo.lngLat[1]}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+          >
+            <div className="text-sm min-w-[100px]">
+              <div className="font-semibold text-orange-700">
+                ZIP: {hoveredZipInfo.zipCode}
               </div>
             </div>
           </Popup>
