@@ -8,6 +8,9 @@ import type {
   DemographicsRequest,
   NearestCompetitorsResponse,
   NearestCompetitorsRequest,
+  TrafficAnalysis,
+  TrafficCountsRequest,
+  SegmentCountEstimate,
   ParcelInfo,
   ParcelRequest,
   PropertySearchResult,
@@ -126,6 +129,32 @@ export const analysisApi = {
   // Check if ArcGIS API key is configured
   checkArcGISKey: async (): Promise<{ configured: boolean; message: string }> => {
     const { data } = await api.get('/analysis/check-arcgis-key/');
+    return data;
+  },
+
+  // ============================================
+  // Streetlight Traffic Counts API
+  // ============================================
+
+  // Get traffic counts data from Streetlight
+  getTrafficCounts: async (request: TrafficCountsRequest): Promise<TrafficAnalysis> => {
+    const { data } = await api.post('/analysis/traffic-counts/', request);
+    return data;
+  },
+
+  // Estimate segment count (for quota planning)
+  estimateTrafficSegments: async (request: {
+    latitude: number;
+    longitude: number;
+    radius_miles?: number;
+  }): Promise<SegmentCountEstimate> => {
+    const { data } = await api.post('/analysis/traffic-counts/estimate/', request);
+    return data;
+  },
+
+  // Check if Streetlight API key is configured
+  checkStreetlightKey: async (): Promise<{ configured: boolean; message: string }> => {
+    const { data } = await api.get('/analysis/check-streetlight-key/');
     return data;
   },
 
