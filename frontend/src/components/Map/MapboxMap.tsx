@@ -191,7 +191,7 @@ function BrandMarker({
   );
 }
 
-// POI marker component
+// POI marker component - larger and more visible
 function POIMarker({
   poi,
   isSelected,
@@ -210,7 +210,7 @@ function POIMarker({
   onClick: () => void;
 }) {
   const color = POI_CATEGORY_COLORS[poi.category] || '#666';
-  const size = isSelected ? 16 : 10;
+  const size = isSelected ? 20 : 14;  // Increased from 16/10
 
   return (
     <Marker
@@ -221,14 +221,19 @@ function POIMarker({
         e.originalEvent.stopPropagation();
         onClick();
       }}
-      style={{ zIndex: isSelected ? 1000 : 100 }}
+      style={{ zIndex: isSelected ? 1000 : 100, cursor: 'pointer' }}
     >
-      <svg width={size * 2} height={size * 2} viewBox="0 0 24 24">
+      <svg
+        width={size * 2}
+        height={size * 2}
+        viewBox="0 0 24 24"
+        style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.3))' }}
+      >
         <path
           d="M12 2L4 12l8 10 8-10L12 2z"
           fill={color}
-          stroke={isSelected ? 'white' : color}
-          strokeWidth={isSelected ? 2 : 1}
+          stroke="white"
+          strokeWidth={isSelected ? 2 : 1.5}
         />
       </svg>
     </Marker>

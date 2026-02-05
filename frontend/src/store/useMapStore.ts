@@ -7,6 +7,7 @@ import type {
   POICategory,
   DemographicsResponse,
   NearestCompetitorsResponse,
+  TrafficAnalysis,
   SavedLocation,
   PropertySearchResult,
   PropertyType,
@@ -79,6 +80,14 @@ interface MapState {
   setDemographicsError: (error: string | null) => void;
   selectedDemographicsRadius: number;
   setSelectedDemographicsRadius: (radius: number) => void;
+
+  // Traffic Counts (Streetlight)
+  trafficData: TrafficAnalysis | null;
+  setTrafficData: (data: TrafficAnalysis | null) => void;
+  isTrafficLoading: boolean;
+  setIsTrafficLoading: (loading: boolean) => void;
+  trafficError: string | null;
+  setTrafficError: (error: string | null) => void;
 
   // Map Layers
   visibleLayers: Set<string>;
@@ -225,6 +234,8 @@ const ALL_POI_CATEGORIES: POICategory[] = [
   'quick_service',
   'restaurants',
   'retail',
+  'entertainment',
+  'services',
 ];
 
 const ALL_PROPERTY_TYPES: PropertyType[] = [
@@ -334,6 +345,14 @@ export const useMapStore = create<MapState>((set, get) => ({
   setDemographicsError: (error) => set({ demographicsError: error }),
   selectedDemographicsRadius: 1,  // Default to 1 mile view
   setSelectedDemographicsRadius: (radius) => set({ selectedDemographicsRadius: radius }),
+
+  // Traffic Counts (Streetlight)
+  trafficData: null,
+  setTrafficData: (data) => set({ trafficData: data }),
+  isTrafficLoading: false,
+  setIsTrafficLoading: (loading) => set({ isTrafficLoading: loading }),
+  trafficError: null,
+  setTrafficError: (error) => set({ trafficError: error }),
 
   // Map Layers - none visible by default
   visibleLayers: new Set<string>(),
@@ -492,6 +511,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       showAnalysisPanel: false,
       demographicsData: null,
       demographicsError: null,
+      trafficData: null,
+      trafficError: null,
       nearestCompetitors: null,
     }),
 

@@ -48,10 +48,10 @@ async def analyze_trade_area(request: TradeAreaRequest):
     """
     Analyze the trade area around a location.
 
-    Fetches nearby points of interest (POIs) within the specified radius
-    and categorizes them into: anchors, quick_service, restaurants, retail.
+    Fetches nearby points of interest (POIs) within the specified radius.
+    Categories: anchors, quick_service, restaurants, retail, entertainment, services.
 
-    Uses Mapbox Search Box API (primary) or Google Places API (fallback).
+    Uses Mapbox Search Box API.
 
     - **latitude**: Center point latitude
     - **longitude**: Center point longitude
@@ -64,86 +64,56 @@ async def analyze_trade_area(request: TradeAreaRequest):
     if radius_meters > 50000:
         radius_meters = 50000
 
-    # Prefer Mapbox if configured (8x cheaper: ~$0.004 vs $0.032 per analysis)
-    if settings.MAPBOX_ACCESS_TOKEN:
-        try:
-            logger.info(f"Attempting Mapbox POI search for ({request.latitude}, {request.longitude})")
-            from app.services.mapbox_places import fetch_mapbox_pois
-            mapbox_result = await fetch_mapbox_pois(
-                latitude=request.latitude,
-                longitude=request.longitude,
-                radius_meters=radius_meters,
-            )
-            # Convert Mapbox response to TradeAreaAnalysis format
-            from app.services.places import POI
-            pois = [
-                POI(
-                    place_id=poi.mapbox_id,
-                    name=poi.name,
-                    category=poi.category,
-                    types=[poi.poi_category] if poi.poi_category else [],
-                    latitude=poi.latitude,
-                    longitude=poi.longitude,
-                    address=poi.full_address or poi.address,
-                    rating=None,
-                    user_ratings_total=None,
-                )
-                for poi in mapbox_result.pois
-            ]
-            
-            result = TradeAreaAnalysis(
-                center_latitude=mapbox_result.center_latitude,
-                center_longitude=mapbox_result.center_longitude,
-                radius_meters=mapbox_result.radius_meters,
-                pois=pois,
-                summary=mapbox_result.summary,
-            )
-            
-            logger.info(f"✅ Mapbox POI search succeeded: {len(pois)} POIs found")
-            return result
-            
-        except ValueError as e:
-            # Token not configured or invalid
-            logger.warning(f"Mapbox POI search failed (configuration issue): {e}")
-        except Exception as e:
-            # API error, network issue, or other failure
-            logger.warning(f"Mapbox POI search failed, falling back to Google Places: {e}", exc_info=True)
-
-    # Fallback to Google Places (more expensive but reliable)
-    if not settings.GOOGLE_PLACES_API_KEY:
-        logger.error("No POI API configured: Both Mapbox and Google Places unavailable")
+    # Check Mapbox token
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        logger.error("Mapbox access token not configured")
         raise HTTPException(
             status_code=503,
-            detail="No POI search API configured. Please set MAPBOX_ACCESS_TOKEN or GOOGLE_PLACES_API_KEY in Railway environment variables."
+            detail="POI search not available. Please set MAPBOX_ACCESS_TOKEN in Railway environment variables."
         )
-    
-    logger.info(f"Using Google Places API fallback for ({request.latitude}, {request.longitude})")
-    
+
     try:
-        result = await fetch_nearby_pois(
+        logger.info(f"Fetching POIs for ({request.latitude}, {request.longitude}) within {radius_meters}m")
+        from app.services.mapbox_places import fetch_mapbox_pois
+        mapbox_result = await fetch_mapbox_pois(
             latitude=request.latitude,
             longitude=request.longitude,
             radius_meters=radius_meters,
         )
-        logger.info(f"✅ Google Places search succeeded: {len(result.pois)} POIs found")
-        return result
-    except Exception as e:
-        logger.error(f"Google Places API also failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail=f"POI search failed: {str(e)}"
+
+        # Convert Mapbox response to TradeAreaAnalysis format
+        from app.services.places import POI
+        pois = [
+            POI(
+                place_id=poi.mapbox_id,
+                name=poi.name,
+                category=poi.category,
+                types=[poi.poi_category] if poi.poi_category else [],
+                latitude=poi.latitude,
+                longitude=poi.longitude,
+                address=poi.full_address or poi.address,
+                rating=None,
+                user_ratings_total=None,
+            )
+            for poi in mapbox_result.pois
+        ]
+
+        result = TradeAreaAnalysis(
+            center_latitude=mapbox_result.center_latitude,
+            center_longitude=mapbox_result.center_longitude,
+            radius_meters=mapbox_result.radius_meters,
+            pois=pois,
+            summary=mapbox_result.summary,
         )
 
-    try:
-        result = await fetch_nearby_pois(
-            latitude=request.latitude,
-            longitude=request.longitude,
-            radius_meters=radius_meters,
-        )
+        logger.info(f"POI search complete: {len(pois)} POIs found, summary: {result.summary}")
         return result
+
     except ValueError as e:
+        logger.error(f"POI search configuration error: {e}")
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
+        logger.error(f"POI search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error analyzing trade area: {str(e)}")
 
 

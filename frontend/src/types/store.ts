@@ -57,7 +57,13 @@ export const BRAND_LOGOS: Record<BrandKey, string> = {
 };
 
 // Trade Area Analysis Types
-export type POICategory = 'anchors' | 'quick_service' | 'restaurants' | 'retail';
+export type POICategory =
+  | 'anchors'
+  | 'quick_service'
+  | 'restaurants'
+  | 'retail'
+  | 'entertainment'
+  | 'services';
 
 export interface POI {
   place_id: string;
@@ -76,7 +82,7 @@ export interface TradeAreaAnalysis {
   center_longitude: number;
   radius_meters: number;
   pois: POI[];
-  summary: Record<POICategory, number>;
+  summary: Record<string, number>;  // Flexible for any category
 }
 
 export interface TradeAreaRequest {
@@ -86,10 +92,12 @@ export interface TradeAreaRequest {
 }
 
 export const POI_CATEGORY_COLORS: Record<POICategory, string> = {
-  anchors: '#8B5CF6',      // Purple
+  anchors: '#8B5CF6',       // Purple
   quick_service: '#F59E0B', // Amber
   restaurants: '#10B981',   // Emerald
   retail: '#3B82F6',        // Blue
+  entertainment: '#EC4899', // Pink
+  services: '#6366F1',      // Indigo
 };
 
 export const POI_CATEGORY_LABELS: Record<POICategory, string> = {
@@ -97,6 +105,8 @@ export const POI_CATEGORY_LABELS: Record<POICategory, string> = {
   quick_service: 'Quick Service',
   restaurants: 'Restaurants',
   retail: 'Retail',
+  entertainment: 'Entertainment',
+  services: 'Services',
 };
 
 // Demographics Types (ArcGIS GeoEnrichment)
@@ -154,6 +164,89 @@ export interface NearestCompetitorsResponse {
 export interface NearestCompetitorsRequest {
   latitude: number;
   longitude: number;
+}
+
+// Traffic Counts Types (Streetlight Advanced Traffic Counts API)
+export interface IncomeBreakdown {
+  under_15k: number | null;
+  income_15k_25k: number | null;
+  income_25k_35k: number | null;
+  income_35k_50k: number | null;
+  income_50k_75k: number | null;
+  income_75k_100k: number | null;
+  income_100k_150k: number | null;
+  income_150k_200k: number | null;
+  over_200k: number | null;
+}
+
+export interface TripPurposeBreakdown {
+  hbw: number | null;  // Home-Based Work
+  hbo: number | null;  // Home-Based Other
+  nhbw: number | null; // Non-Home-Based Work
+  wbo: number | null;  // Work-Based Other
+}
+
+export interface VehicleClassBreakdown {
+  sedan: number | null;
+  suv: number | null;
+  truck: number | null;
+  pickup: number | null;
+  minivan: number | null;
+  hatchback: number | null;
+  coupe: number | null;
+  cuv: number | null;
+  other: number | null;
+}
+
+export interface PowerTrainBreakdown {
+  ev: number | null;     // Electric Vehicle
+  hybrid: number | null;
+  ice: number | null;    // Internal Combustion Engine
+  other: number | null;
+}
+
+export interface TrafficAnalysis {
+  latitude: number;
+  longitude: number;
+  radius_miles: number;
+
+  // Volume metrics
+  total_segments: number;
+  total_daily_traffic: number | null;
+  avg_segment_volume: number | null;
+  total_vmt: number | null;
+
+  // Speed metrics
+  avg_speed: number | null;
+  avg_free_flow_speed: number | null;
+
+  // Traveler demographics
+  income_breakdown: IncomeBreakdown | null;
+  trip_purpose_breakdown: TripPurposeBreakdown | null;
+
+  // Vehicle attributes
+  vehicle_class_breakdown: VehicleClassBreakdown | null;
+  power_train_breakdown: PowerTrainBreakdown | null;
+
+  // Metadata
+  data_source: string;
+  date_range: string | null;
+  segments_queried: number;
+}
+
+export interface TrafficCountsRequest {
+  latitude: number;
+  longitude: number;
+  radius_miles?: number;
+  include_demographics?: boolean;
+  include_vehicle_attributes?: boolean;
+  year?: number;
+  month?: number;
+}
+
+export interface SegmentCountEstimate {
+  segment_count: number;
+  geometry_type: string;
 }
 
 // Saved Location for Compare feature

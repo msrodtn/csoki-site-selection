@@ -18,6 +18,11 @@ import {
   Target,
   Bookmark,
   GitCompare,
+  Car,
+  Gauge,
+  TrendingUp,
+  Ticket,
+  Building2,
 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import { analysisApi, storeApi } from '../../services/api';
@@ -44,6 +49,8 @@ const CATEGORY_ICONS: Record<POICategory, React.ReactNode> = {
   quick_service: <MapPin className="w-4 h-4" />,
   restaurants: <Utensils className="w-4 h-4" />,
   retail: <ShoppingBag className="w-4 h-4" />,
+  entertainment: <Ticket className="w-4 h-4" />,
+  services: <Building2 className="w-4 h-4" />,
 };
 
 // Format numbers with commas
@@ -79,6 +86,13 @@ export function AnalysisPanel() {
     setDemographicsError,
     selectedDemographicsRadius,
     setSelectedDemographicsRadius,
+    // Traffic Counts
+    trafficData,
+    setTrafficData,
+    isTrafficLoading,
+    setIsTrafficLoading,
+    trafficError,
+    setTrafficError,
     // Nearest Competitors
     nearestCompetitors,
     setNearestCompetitors,
@@ -97,6 +111,7 @@ export function AnalysisPanel() {
   // Collapsible section states
   const [isPOIExpanded, setIsPOIExpanded] = useState(true);
   const [isDemographicsExpanded, setIsDemographicsExpanded] = useState(false);
+  const [isTrafficExpanded, setIsTrafficExpanded] = useState(false);
   const [isCompetitorsExpanded, setIsCompetitorsExpanded] = useState(false);
 
   // Report modal state
@@ -196,6 +211,42 @@ export function AnalysisPanel() {
     if (!demographicsData) return null;
     return demographicsData.radii.find((r) => r.radius_miles === selectedDemographicsRadius) || null;
   }, [demographicsData, selectedDemographicsRadius]);
+
+  // Load traffic counts on-demand when section is expanded
+  const handleTrafficExpand = useCallback(async () => {
+    const newExpanded = !isTrafficExpanded;
+    setIsTrafficExpanded(newExpanded);
+
+    // Load traffic data if expanding and no data yet
+    if (newExpanded && !trafficData && !isTrafficLoading && analysisResult) {
+      setIsTrafficLoading(true);
+      setTrafficError(null);
+
+      try {
+        const data = await analysisApi.getTrafficCounts({
+          latitude: analysisResult.center_latitude,
+          longitude: analysisResult.center_longitude,
+          radius_miles: 1.0,
+          include_demographics: true,
+          include_vehicle_attributes: false,
+        });
+        setTrafficData(data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load traffic counts';
+        setTrafficError(message);
+      } finally {
+        setIsTrafficLoading(false);
+      }
+    }
+  }, [
+    isTrafficExpanded,
+    trafficData,
+    isTrafficLoading,
+    analysisResult,
+    setIsTrafficLoading,
+    setTrafficError,
+    setTrafficData,
+  ]);
 
   // Load nearest competitors on-demand when section is expanded
   const handleCompetitorsExpand = useCallback(async () => {
@@ -635,6 +686,170 @@ export function AnalysisPanel() {
                         </div>
                       )}
                     </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Traffic Counts Section - Collapsible, loads on-demand */}
+            <div className="mb-4 border rounded-lg overflow-hidden">
+              <button
+                onClick={handleTrafficExpand}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  {isTrafficExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-500" />
+                  )}
+                  <Car className="w-4 h-4 text-amber-600" />
+                  <span className="font-semibold text-gray-700">Traffic Counts</span>
+                </div>
+                <span className="text-xs text-gray-400">Streetlight</span>
+              </button>
+
+              {isTrafficExpanded && (
+                <div className="p-4 border-t">
+                  {isTrafficLoading && (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-5 h-5 text-amber-600 animate-spin" />
+                      <span className="ml-2 text-sm text-gray-600">Loading traffic data...</span>
+                    </div>
+                  )}
+
+                  {trafficError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                      {trafficError}
+                    </div>
+                  )}
+
+                  {trafficData && !isTrafficLoading && (
+                    <div className="space-y-4">
+                      {/* Volume Metrics */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <TrendingUp className="w-4 h-4 text-amber-600" />
+                          <span className="text-xs font-semibold text-gray-500 uppercase">
+                            Traffic Volume
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-gray-500 text-xs">Daily Traffic (AADT)</div>
+                            <div className="font-semibold">
+                              {formatNumber(trafficData.total_daily_traffic)}
+                            </div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-gray-500 text-xs">Avg per Segment</div>
+                            <div className="font-semibold">
+                              {formatNumber(trafficData.avg_segment_volume)}
+                            </div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-gray-500 text-xs">Total VMT</div>
+                            <div className="font-semibold">
+                              {trafficData.total_vmt?.toLocaleString() || 'N/A'}
+                            </div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-gray-500 text-xs">Road Segments</div>
+                            <div className="font-semibold">
+                              {trafficData.total_segments}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Speed Metrics */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Gauge className="w-4 h-4 text-blue-600" />
+                          <span className="text-xs font-semibold text-gray-500 uppercase">
+                            Speed
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-gray-500 text-xs">Avg Speed</div>
+                            <div className="font-semibold">
+                              {trafficData.avg_speed ? `${trafficData.avg_speed} mph` : 'N/A'}
+                            </div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-gray-500 text-xs">Free Flow Speed</div>
+                            <div className="font-semibold">
+                              {trafficData.avg_free_flow_speed ? `${trafficData.avg_free_flow_speed} mph` : 'N/A'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Traveler Income Distribution */}
+                      {trafficData.income_breakdown && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-4 h-4 text-emerald-600" />
+                            <span className="text-xs font-semibold text-gray-500 uppercase">
+                              Traveler Income
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            {[
+                              { label: '<$50K', value: (trafficData.income_breakdown.under_15k || 0) + (trafficData.income_breakdown.income_15k_25k || 0) + (trafficData.income_breakdown.income_25k_35k || 0) + (trafficData.income_breakdown.income_35k_50k || 0) },
+                              { label: '$50K-$100K', value: (trafficData.income_breakdown.income_50k_75k || 0) + (trafficData.income_breakdown.income_75k_100k || 0) },
+                              { label: '$100K+', value: (trafficData.income_breakdown.income_100k_150k || 0) + (trafficData.income_breakdown.income_150k_200k || 0) + (trafficData.income_breakdown.over_200k || 0) },
+                            ].map((bracket) => (
+                              <div key={bracket.label} className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 w-20">{bracket.label}</span>
+                                <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="bg-emerald-500 h-2 rounded-full"
+                                    style={{ width: `${Math.min(bracket.value, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-medium w-10 text-right">
+                                  {bracket.value.toFixed(0)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Trip Purpose */}
+                      {trafficData.trip_purpose_breakdown && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <Target className="w-4 h-4 text-purple-600" />
+                            <span className="text-xs font-semibold text-gray-500 uppercase">
+                              Trip Purpose
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="bg-gray-50 rounded-lg p-2">
+                              <div className="text-gray-500 text-xs">Work Commute</div>
+                              <div className="font-semibold">
+                                {trafficData.trip_purpose_breakdown.hbw?.toFixed(0) || 0}%
+                              </div>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-2">
+                              <div className="text-gray-500 text-xs">Shopping/Errands</div>
+                              <div className="font-semibold">
+                                {trafficData.trip_purpose_breakdown.hbo?.toFixed(0) || 0}%
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Data source note */}
+                      <p className="text-xs text-gray-400 text-center">
+                        Data: Streetlight {trafficData.data_source}
+                        {trafficData.date_range && ` (${trafficData.date_range})`}
+                      </p>
+                    </div>
                   )}
                 </div>
               )}

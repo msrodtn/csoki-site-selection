@@ -1,16 +1,16 @@
 """
 Mapbox Search Box API service for POI discovery.
 
-This is a proof-of-concept replacement for Google Places Nearby Search.
 Uses Mapbox Search Box API which provides 170M+ POIs globally.
 
-Key differences from Google Places:
-- Single API call with category filters (vs 28 separate calls)
-- Session-based pricing (more cost-effective)
-- Different category taxonomy
+Key features:
+- Category-based search with proximity filtering
+- 6 POI categories: anchors, quick_service, restaurants, retail, entertainment, services
+- Session-based pricing (cost-effective)
 """
 import httpx
 import logging
+import math
 from typing import Optional
 from pydantic import BaseModel
 
@@ -19,7 +19,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-# Mapbox category mapping to match our existing POI categories
+# Mapbox category mapping - uses Mapbox's POI category IDs
 # See: https://docs.mapbox.com/api/search/search-box/#poi-categories
 MAPBOX_CATEGORIES = {
     "anchors": [
@@ -37,15 +37,17 @@ MAPBOX_CATEGORIES = {
         "convenience_store",
         "gas_station",
         "pharmacy",
-        "bank",
-        "atm",
+        "fast_food",
     ],
     "restaurants": [
         "restaurant",
-        "fast_food",
         "bar",
         "food_court",
         "bakery",
+        "pizza",
+        "mexican_restaurant",
+        "chinese_restaurant",
+        "american_restaurant",
     ],
     "retail": [
         "clothing_store",
@@ -56,6 +58,31 @@ MAPBOX_CATEGORIES = {
         "florist",
         "bookstore",
         "sporting_goods_store",
+        "mobile_phone_store",  # Important for cellular competitor analysis
+    ],
+    "entertainment": [
+        "movie_theater",
+        "theater",
+        "bowling_alley",
+        "gym",
+        "fitness_center",
+        "park",
+        "museum",
+        "art_gallery",
+        "amusement_park",
+        "stadium",
+    ],
+    "services": [
+        "bank",
+        "credit_union",
+        "insurance_agency",
+        "doctor",
+        "dentist",
+        "hospital",
+        "urgent_care",
+        "veterinarian",
+        "post_office",
+        "laundry",
     ],
 }
 
@@ -87,36 +114,47 @@ class MapboxTradeAreaAnalysis(BaseModel):
     summary: dict[str, int]
 
 
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate the distance in meters between two points."""
+    R = 6371000  # Earth's radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = math.sin(delta_phi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    return R * c
+
+
 async def fetch_mapbox_pois(
     latitude: float,
     longitude: float,
     radius_meters: int = 1609,  # Default 1 mile
     categories: Optional[list[str]] = None,
-    limit: int = 100,
+    limit_per_category: int = 25,
 ) -> MapboxTradeAreaAnalysis:
     """
     Fetch nearby POIs using Mapbox Search Box API.
 
-    This makes significantly fewer API calls than Google Places:
-    - Google: 28 separate calls (one per POI type)
-    - Mapbox: 1-4 calls (one per category group, or single call)
+    Uses the category search endpoint with proximity filtering.
 
     Args:
         latitude: Center latitude
         longitude: Center longitude
         radius_meters: Search radius in meters (default 1609 = 1 mile)
         categories: Optional list of categories to search (anchors, quick_service, etc.)
-        limit: Maximum POIs to return per category
+        limit_per_category: Maximum POIs per Mapbox category type
 
     Returns:
         MapboxTradeAreaAnalysis with categorized POIs
     """
-    # Use Mapbox token from settings
     token = getattr(settings, 'MAPBOX_ACCESS_TOKEN', None)
     if not token:
         logger.error("Mapbox access token not configured")
         raise ValueError("Mapbox access token not configured. Set MAPBOX_ACCESS_TOKEN environment variable.")
-    
+
     logger.info(f"Fetching Mapbox POIs for ({latitude}, {longitude}) within {radius_meters}m")
 
     # Determine which categories to search
@@ -125,112 +163,86 @@ async def fetch_mapbox_pois(
     all_pois: list[MapboxPOI] = []
     seen_ids: set[str] = set()
 
-    # Convert radius to bbox (approximate)
-    # 1 degree latitude ~= 111km, longitude varies by latitude
-    lat_delta = radius_meters / 111000
-    lng_delta = radius_meters / (111000 * abs(cos_deg(latitude)))
-
-    bbox = f"{longitude - lng_delta},{latitude - lat_delta},{longitude + lng_delta},{latitude + lat_delta}"
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         for our_category in search_categories:
             mapbox_types = MAPBOX_CATEGORIES.get(our_category, [])
             if not mapbox_types:
                 continue
 
-            # Build category filter for Mapbox
-            # Mapbox uses comma-separated POI categories
-            poi_category_filter = ",".join(mapbox_types)
+            # Search each Mapbox category type
+            for mapbox_type in mapbox_types:
+                try:
+                    # Use Search Box API category endpoint
+                    # Docs: https://docs.mapbox.com/api/search/search-box/#get-category-search
+                    url = f"https://api.mapbox.com/search/searchbox/v1/category/{mapbox_type}"
 
-            try:
-                # Use Search Box API category endpoint
-                # https://docs.mapbox.com/api/search/search-box/#category-search
-                params = {
-                    "access_token": token,
-                    "bbox": bbox,
-                    "limit": min(limit, 25),  # Mapbox limit per request
-                    "language": "en",
-                    "poi_category": poi_category_filter,
-                }
-
-                response = await client.get(
-                    "https://api.mapbox.com/search/searchbox/v1/category/" + mapbox_types[0],
-                    params=params,
-                )
-
-                if response.status_code != 200:
-                    logger.warning(f"Mapbox category search failed for {our_category}, status {response.status_code}, trying forward geocoding")
-                    # Try alternative: forward geocoding with type filter
                     params = {
-                        "q": our_category.replace("_", " "),
                         "access_token": token,
                         "proximity": f"{longitude},{latitude}",
-                        "bbox": bbox,
-                        "types": "poi",
-                        "limit": min(limit, 10),
+                        "limit": min(limit_per_category, 25),
                         "language": "en",
                     }
 
-                    response = await client.get(
-                        "https://api.mapbox.com/search/geocode/v6/forward",
-                        params=params,
-                    )
+                    response = await client.get(url, params=params)
 
                     if response.status_code != 200:
-                        logger.warning(f"Mapbox forward geocoding also failed for {our_category}, status {response.status_code}")
+                        # Log warning but continue - some categories may not exist
+                        logger.debug(f"Mapbox category '{mapbox_type}' returned {response.status_code}")
                         continue
 
-                data = response.json()
+                    data = response.json()
+                    features = data.get("features", [])
 
-                # Parse features from response
-                features = data.get("features", [])
+                    logger.debug(f"Category '{mapbox_type}': found {len(features)} features")
 
-                for feature in features:
-                    # Handle both Search Box and Geocoding API response formats
-                    if "properties" in feature:
-                        props = feature["properties"]
+                    for feature in features:
+                        props = feature.get("properties", {})
                         geom = feature.get("geometry", {})
 
                         mapbox_id = props.get("mapbox_id") or feature.get("id", "")
-
-                        if mapbox_id in seen_ids:
+                        if not mapbox_id or mapbox_id in seen_ids:
                             continue
-                        seen_ids.add(mapbox_id)
 
                         # Get coordinates
-                        coords = geom.get("coordinates", [0, 0])
-                        if len(coords) >= 2:
-                            lng, lat = coords[0], coords[1]
-                        else:
+                        coords = geom.get("coordinates", [])
+                        if len(coords) < 2:
                             continue
+
+                        poi_lng, poi_lat = coords[0], coords[1]
+
+                        # Filter by radius
+                        distance = haversine_distance(latitude, longitude, poi_lat, poi_lng)
+                        if distance > radius_meters:
+                            continue
+
+                        seen_ids.add(mapbox_id)
 
                         # Get POI category from Mapbox
                         poi_cat = None
-                        if "poi_category" in props:
-                            poi_cats = props["poi_category"]
-                            if isinstance(poi_cats, list) and poi_cats:
-                                poi_cat = poi_cats[0]
-                            elif isinstance(poi_cats, str):
-                                poi_cat = poi_cats
+                        poi_cats = props.get("poi_category", [])
+                        if isinstance(poi_cats, list) and poi_cats:
+                            poi_cat = poi_cats[0]
+                        elif isinstance(poi_cats, str):
+                            poi_cat = poi_cats
 
                         poi = MapboxPOI(
                             mapbox_id=mapbox_id,
-                            name=props.get("name", props.get("name_preferred", "Unknown")),
+                            name=props.get("name") or props.get("name_preferred") or "Unknown",
                             category=our_category,
-                            poi_category=poi_cat,
-                            latitude=lat,
-                            longitude=lng,
+                            poi_category=poi_cat or mapbox_type,
+                            latitude=poi_lat,
+                            longitude=poi_lng,
                             address=props.get("address"),
                             full_address=props.get("full_address"),
                         )
                         all_pois.append(poi)
 
-            except httpx.HTTPError as e:
-                logger.error(f"Mapbox HTTP error for {our_category}: {e}", exc_info=True)
-                continue
-            except Exception as e:
-                logger.error(f"Unexpected error fetching Mapbox POIs for {our_category}: {e}", exc_info=True)
-                continue
+                except httpx.HTTPError as e:
+                    logger.warning(f"HTTP error for category '{mapbox_type}': {e}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"Error fetching '{mapbox_type}': {e}")
+                    continue
 
     # Calculate summary
     summary = {cat: 0 for cat in MAPBOX_CATEGORIES.keys()}
@@ -247,12 +259,6 @@ async def fetch_mapbox_pois(
         pois=all_pois,
         summary=summary,
     )
-
-
-def cos_deg(degrees: float) -> float:
-    """Calculate cosine of degrees."""
-    import math
-    return math.cos(math.radians(degrees))
 
 
 async def check_mapbox_token() -> dict:
