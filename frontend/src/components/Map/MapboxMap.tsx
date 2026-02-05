@@ -969,6 +969,9 @@ export function MapboxMap() {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
+    // Only query if the layer exists
+    if (!map.getLayer('traffic-counts-layer')) return;
+
     const features = map.queryRenderedFeatures(e.point, {
       layers: ['traffic-counts-layer'],
     });

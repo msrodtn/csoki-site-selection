@@ -83,10 +83,20 @@ app = FastAPI(
 # Add HTTPS redirect middleware (must be added before CORS)
 app.add_middleware(HTTPSRedirectMiddleware)
 
-# Configure CORS
+# Configure CORS - ensure all required origins are always included
+# This prevents Railway env vars from accidentally overriding required origins
+_required_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://dashboard.fivecodevelopment.com",
+    "https://frontend-production-12b6.up.railway.app",
+]
+cors_origins = list(set(settings.CORS_ORIGINS + _required_origins))
+logger.info(f"CORS origins configured: {cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
