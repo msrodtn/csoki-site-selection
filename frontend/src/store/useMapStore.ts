@@ -89,6 +89,14 @@ interface MapState {
   visiblePropertySources: Set<'attom' | 'team' | 'scraped'>;
   togglePropertySource: (source: 'attom' | 'team' | 'scraped') => void;
 
+  // Boundary type sub-toggles (for Boundaries Explorer layer)
+  visibleBoundaryTypes: Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts'>;
+  toggleBoundaryType: (type: 'counties' | 'cities' | 'zipcodes' | 'census_tracts') => void;
+
+  // Demographic metric for choropleth coloring
+  demographicMetric: 'population' | 'income' | 'density';
+  setDemographicMetric: (metric: 'population' | 'income' | 'density') => void;
+
   // Nearest Competitors
   nearestCompetitors: NearestCompetitorsResponse | null;
   setNearestCompetitors: (data: NearestCompetitorsResponse | null) => void;
@@ -362,6 +370,23 @@ export const useMapStore = create<MapState>((set, get) => ({
       }
       return { visiblePropertySources: newSources };
     }),
+
+  // Boundary type sub-toggles - counties and cities visible by default
+  visibleBoundaryTypes: new Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts'>(['counties', 'cities']),
+  toggleBoundaryType: (type) =>
+    set((state) => {
+      const newTypes = new Set(state.visibleBoundaryTypes);
+      if (newTypes.has(type)) {
+        newTypes.delete(type);
+      } else {
+        newTypes.add(type);
+      }
+      return { visibleBoundaryTypes: newTypes };
+    }),
+
+  // Demographic metric for choropleth coloring
+  demographicMetric: 'population',
+  setDemographicMetric: (metric) => set({ demographicMetric: metric }),
 
   // Nearest Competitors
   nearestCompetitors: null,

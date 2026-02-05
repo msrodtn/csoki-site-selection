@@ -621,6 +621,8 @@ export function MapboxMap() {
     setMapInstance,
     visibleLayers,
     visiblePropertySources,
+    visibleBoundaryTypes,
+    demographicMetric,
     // deck.gl 3D visualization state
     show3DVisualization,
     deckLayerVisibility,
@@ -688,6 +690,17 @@ export function MapboxMap() {
     latitude: number;
     aadt: number;
     route: string;
+  } | null>(null);
+
+  // Census Tracts choropleth state
+  const [censusTractsData, setCensusTractsData] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [isLoadingCensusTracts, setIsLoadingCensusTracts] = useState(false);
+  const [hoveredTractId, setHoveredTractId] = useState<string | number | null>(null);
+  const [hoveredTractInfo, setHoveredTractInfo] = useState<{
+    name: string;
+    population: number;
+    density: number;
+    lngLat: [number, number];
   } | null>(null);
 
   // Track analysis center for re-analysis
@@ -979,26 +992,51 @@ export function MapboxMap() {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    // Only query if the layer exists
-    if (!map.getLayer('traffic-counts-layer')) return;
-
-    const features = map.queryRenderedFeatures(e.point, {
-      layers: ['traffic-counts-layer'],
-    });
-
-    if (features && features.length > 0) {
-      const feature = features[0];
-      map.getCanvas().style.cursor = 'pointer';
-      setHoveredTraffic({
-        longitude: e.lngLat.lng,
-        latitude: e.lngLat.lat,
-        aadt: feature.properties?.aadt || 0,
-        route: feature.properties?.route || 'Unknown',
+    // Handle traffic counts layer
+    if (map.getLayer('traffic-counts-layer')) {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['traffic-counts-layer'],
       });
-    } else {
-      map.getCanvas().style.cursor = '';
-      setHoveredTraffic(null);
+
+      if (features && features.length > 0) {
+        const feature = features[0];
+        map.getCanvas().style.cursor = 'pointer';
+        setHoveredTraffic({
+          longitude: e.lngLat.lng,
+          latitude: e.lngLat.lat,
+          aadt: feature.properties?.aadt || 0,
+          route: feature.properties?.route || 'Unknown',
+        });
+        return; // Early return if traffic feature found
+      } else {
+        setHoveredTraffic(null);
+      }
     }
+
+    // Handle census tract layer
+    if (map.getLayer('census-tract-fill')) {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['census-tract-fill'],
+      });
+
+      if (features && features.length > 0) {
+        const feature = features[0];
+        map.getCanvas().style.cursor = 'pointer';
+        setHoveredTractId(feature.properties?.GEOID || null);
+        setHoveredTractInfo({
+          name: feature.properties?.NAME || 'Unknown Tract',
+          population: feature.properties?.TOTAL_POPULATION || 0,
+          density: feature.properties?.POP_DENSITY || 0,
+          lngLat: [e.lngLat.lng, e.lngLat.lat],
+        });
+        return;
+      } else {
+        setHoveredTractId(null);
+        setHoveredTractInfo(null);
+      }
+    }
+
+    map.getCanvas().style.cursor = '';
   }, []);
 
   const handleTrafficMouseLeave = useCallback(() => {
@@ -1006,6 +1044,8 @@ export function MapboxMap() {
     if (map) {
       map.getCanvas().style.cursor = '';
     }
+    setHoveredTractId(null);
+    setHoveredTractInfo(null);
     setHoveredTraffic(null);
   }, []);
 
@@ -1258,6 +1298,40 @@ export function MapboxMap() {
     competitorAccessResult,
   ]);
 
+  // Fetch Census Tract data when census_tracts boundary type is enabled
+  useEffect(() => {
+    const shouldFetch = visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts');
+
+    if (!shouldFetch) {
+      setCensusTractsData(null);
+      return;
+    }
+
+    // Determine which state to fetch based on current view
+    // For now, fetch Iowa (IA) as default - could be enhanced to detect from viewport
+    const fetchCensusTracts = async () => {
+      setIsLoadingCensusTracts(true);
+      try {
+        // Fetch data for target states based on visible states
+        const statesToFetch = Array.from(visibleStates).filter(s => ['IA', 'NE', 'NV', 'ID'].includes(s));
+        const primaryState = statesToFetch[0] || 'IA';
+
+        const data = await analysisApi.getDemographicBoundaries({
+          state: primaryState,
+          metric: demographicMetric,
+        });
+        setCensusTractsData(data);
+      } catch (error) {
+        console.error('Failed to fetch census tracts:', error);
+        setCensusTractsData(null);
+      } finally {
+        setIsLoadingCensusTracts(false);
+      }
+    };
+
+    fetchCensusTracts();
+  }, [visibleLayersArray, visibleBoundaryTypes, visibleStates, demographicMetric]);
+
   // Check for token
   if (!MAPBOX_TOKEN) {
     return (
@@ -1331,6 +1405,14 @@ export function MapboxMap() {
         </div>
       )}
 
+      {/* Census tracts loading indicator */}
+      {isLoadingCensusTracts && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
+          <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+          Loading census tracts...
+        </div>
+      )}
+
       {/* Property error display */}
       {propertyError && visibleLayersArray.includes('properties_for_sale') && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-red-600 text-white px-4 py-2 rounded-lg shadow-md text-sm">
@@ -1348,7 +1430,10 @@ export function MapboxMap() {
         onContextMenu={handleMapRightClick}
         onMouseMove={handleTrafficMouseMove}
         onMouseLeave={handleTrafficMouseLeave}
-        interactiveLayerIds={visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []}
+        interactiveLayerIds={[
+          ...(visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []),
+          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') ? ['census-tract-fill'] : []),
+        ]}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
         mapboxAccessToken={MAPBOX_TOKEN}
@@ -1433,6 +1518,33 @@ export function MapboxMap() {
           </Popup>
         )}
 
+        {/* Census Tract Tooltip */}
+        {hoveredTractInfo && (
+          <Popup
+            longitude={hoveredTractInfo.lngLat[0]}
+            latitude={hoveredTractInfo.lngLat[1]}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+          >
+            <div className="text-sm min-w-[140px]">
+              <div className="font-semibold text-purple-700 mb-1">
+                Census Tract
+              </div>
+              <div className="text-xs text-gray-700 mb-0.5">
+                {hoveredTractInfo.name}
+              </div>
+              <div className="text-xs text-gray-600">
+                Pop: {hoveredTractInfo.population.toLocaleString()}
+              </div>
+              <div className="text-xs text-gray-600">
+                Density: {hoveredTractInfo.density.toLocaleString()}/sq mi
+              </div>
+            </div>
+          </Popup>
+        )}
+
         {/* FEMA Flood Zones Layer */}
         {visibleLayersArray.includes('fema_flood') && (
           <Source
@@ -1494,7 +1606,7 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Administrative Boundaries Layer - Mapbox Boundaries v4 */}
+        {/* Boundaries Explorer Layer - Mapbox Boundaries v4 */}
         {visibleLayersArray.includes('boundaries') && (
           <Source
             id="mapbox-boundaries"
@@ -1502,60 +1614,130 @@ export function MapboxMap() {
             url="mapbox://mapbox.boundaries-adm-v4"
           >
             {/* County boundaries (admin level 2) */}
-            <Layer
-              id="county-boundaries"
-              type="line"
-              source-layer="boundaries_admin_2"
-              minzoom={6}
-              paint={{
-                'line-color': '#627BC1',
-                'line-width': [
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  6,
-                  1,
-                  10,
-                  2,
-                  14,
-                  2.5,
-                ],
-                'line-opacity': 0.8,
-              }}
-            />
+            {visibleBoundaryTypes.has('counties') && (
+              <Layer
+                id="county-boundaries"
+                type="line"
+                source-layer="boundaries_admin_2"
+                minzoom={6}
+                paint={{
+                  'line-color': '#3B82F6',
+                  'line-width': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    6,
+                    1,
+                    10,
+                    2,
+                    14,
+                    2.5,
+                  ],
+                  'line-opacity': 0.8,
+                }}
+              />
+            )}
             {/* City boundaries (admin level 3) - show at higher zoom */}
+            {visibleBoundaryTypes.has('cities') && (
+              <Layer
+                id="city-boundaries"
+                type="line"
+                source-layer="boundaries_admin_3"
+                minzoom={9}
+                paint={{
+                  'line-color': '#22C55E',
+                  'line-width': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    9,
+                    0.5,
+                    12,
+                    1.5,
+                    16,
+                    2,
+                  ],
+                  'line-opacity': 0.6,
+                }}
+              />
+            )}
+            {/* Postal code boundaries (ZIP codes) - show when zoomed in */}
+            {visibleBoundaryTypes.has('zipcodes') && (
+              <Layer
+                id="postal-boundaries"
+                type="line"
+                source-layer="boundaries_postal_code"
+                minzoom={10}
+                paint={{
+                  'line-color': '#F97316',
+                  'line-width': 1,
+                  'line-dasharray': [2, 2],
+                  'line-opacity': 0.5,
+                }}
+              />
+            )}
+          </Source>
+        )}
+
+        {/* Census Tracts Choropleth Layer */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') && censusTractsData && (
+          <Source
+            id="census-tracts"
+            type="geojson"
+            data={censusTractsData}
+          >
+            {/* Colored fill based on demographic metric */}
             <Layer
-              id="city-boundaries"
-              type="line"
-              source-layer="boundaries_admin_3"
-              minzoom={9}
+              id="census-tract-fill"
+              type="fill"
               paint={{
-                'line-color': '#4CAF50',
-                'line-width': [
+                'fill-color': demographicMetric === 'density' ? [
                   'interpolate',
                   ['linear'],
-                  ['zoom'],
-                  9,
-                  0.5,
-                  12,
-                  1.5,
-                  16,
-                  2,
+                  ['coalesce', ['get', 'metric_value'], 0],
+                  0, '#fff7ec',
+                  500, '#fee8c8',
+                  1000, '#fdbb84',
+                  2500, '#fc8d59',
+                  5000, '#e34a33',
+                  10000, '#7f2704',
+                ] : [
+                  'interpolate',
+                  ['linear'],
+                  ['coalesce', ['get', 'metric_value'], 0],
+                  0, '#f7fbff',
+                  1000, '#deebf7',
+                  2500, '#c6dbef',
+                  5000, '#9ecae1',
+                  10000, '#6baed6',
+                  25000, '#3182bd',
+                  50000, '#08519c',
                 ],
-                'line-opacity': 0.6,
+                'fill-opacity': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredTractId],
+                  0.8,
+                  0.5,
+                ],
               }}
             />
-            {/* Postal code boundaries (ZIP codes) - show when zoomed in */}
+            {/* Outline with hover highlight */}
             <Layer
-              id="postal-boundaries"
+              id="census-tract-outline"
               type="line"
-              source-layer="boundaries_postal_code"
-              minzoom={10}
               paint={{
-                'line-color': '#FF9800',
-                'line-width': 1,
-                'line-dasharray': [2, 2],
-                'line-opacity': 0.5,
+                'line-color': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredTractId],
+                  '#8B5CF6',
+                  '#666',
+                ],
+                'line-width': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredTractId],
+                  3,
+                  0.5,
+                ],
               }}
             />
           </Source>

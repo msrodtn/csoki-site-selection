@@ -1446,3 +1446,126 @@ async def get_multi_contour_isochrone_endpoint(request: MultiContourIsochroneReq
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Multi-contour isochrone error: {str(e)}")
+
+
+# =============================================================================
+# Demographic Boundaries API (Census Tracts for Choropleth)
+# =============================================================================
+
+# State FIPS codes for target markets
+STATE_FIPS = {
+    "IA": "19",
+    "NE": "31",
+    "NV": "32",
+    "ID": "16",
+}
+
+# ArcGIS Census Tract Feature Server URL
+ARCGIS_CENSUS_TRACTS_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Census_Tracts/FeatureServer/0/query"
+
+
+@router.get("/demographic-boundaries/")
+async def get_demographic_boundaries(
+    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+    metric: str = Query("population", description="Metric to include: population, income, density"),
+):
+    """
+    Fetch Census Tract boundaries with demographic data for choropleth visualization.
+
+    Returns GeoJSON FeatureCollection with tracts colored by the specified metric.
+
+    **Parameters:**
+    - `state`: State abbreviation (IA, NE, NV, ID)
+    - `metric`: Demographic metric (population, income, density)
+
+    **Supported Metrics:**
+    - `population`: Total population per tract
+    - `income`: Median household income
+    - `density`: Population density (pop/sq mile)
+
+    **Returns:**
+    GeoJSON FeatureCollection with properties for each tract including:
+    - NAME: Tract name/number
+    - STATE: State FIPS code
+    - COUNTY: County name
+    - TOTAL_POPULATION: Total population
+    - POP_DENSITY: Population per square mile (calculated)
+    - The specified metric value for choropleth coloring
+    """
+    state_upper = state.upper()
+    if state_upper not in STATE_FIPS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid state: {state}. Supported states: {', '.join(STATE_FIPS.keys())}"
+        )
+
+    fips_code = STATE_FIPS[state_upper]
+
+    # Define fields to fetch based on metric
+    # ArcGIS Census Tract fields available:
+    # NAME, STATE, COUNTY, TRACT, GEOID, ALAND (land area in sq meters),
+    # AWATER, POP100 (2020 census pop), HU100 (housing units)
+    out_fields = "NAME,STATE,COUNTY,TRACT,GEOID,ALAND,POP100"
+
+    # Build query parameters
+    params = {
+        "where": f"STATE = '{fips_code}'",
+        "outFields": out_fields,
+        "f": "geojson",
+        "returnGeometry": "true",
+        "outSR": "4326",
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.get(ARCGIS_CENSUS_TRACTS_URL, params=params)
+            response.raise_for_status()
+            geojson = response.json()
+
+            # Process features to add calculated metrics
+            if "features" in geojson:
+                for feature in geojson["features"]:
+                    props = feature.get("properties", {})
+
+                    # Get raw values
+                    pop = props.get("POP100") or 0
+                    land_area_sqm = props.get("ALAND") or 0
+
+                    # Calculate density (pop per sq mile)
+                    # 1 sq mile = 2,589,988 sq meters
+                    land_area_sqmi = land_area_sqm / 2589988 if land_area_sqm > 0 else 0
+                    density = pop / land_area_sqmi if land_area_sqmi > 0 else 0
+
+                    # Add calculated fields
+                    props["TOTAL_POPULATION"] = pop
+                    props["POP_DENSITY"] = round(density, 2)
+                    props["LAND_AREA_SQMI"] = round(land_area_sqmi, 2)
+
+                    # Add the selected metric as a standardized field
+                    if metric == "population":
+                        props["metric_value"] = pop
+                    elif metric == "density":
+                        props["metric_value"] = round(density, 2)
+                    elif metric == "income":
+                        # Note: Income data requires ArcGIS GeoEnrichment API
+                        # For now, use population as placeholder
+                        props["metric_value"] = pop
+                        props["income_note"] = "Income data requires GeoEnrichment API"
+
+            return geojson
+
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"ArcGIS API error: {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to connect to ArcGIS API: {str(e)}"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error fetching demographic boundaries: {str(e)}"
+            )

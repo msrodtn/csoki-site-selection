@@ -71,10 +71,11 @@ export const MAP_LAYERS = {
   },
   boundaries: {
     id: 'boundaries',
-    name: 'Administrative Boundaries',
+    name: 'Boundaries Explorer',
     icon: Grid,
     color: '#627BC1',
-    description: 'Counties, cities, ZIP codes',
+    description: 'Counties, cities, ZIP codes + demographics',
+    hasSubToggles: true,
   },
 } as const;
 
@@ -100,6 +101,38 @@ const PROPERTY_SUB_TOGGLES = [
     icon: MapPin,
     color: '#F97316', // Orange
     description: 'User-contributed properties',
+  },
+];
+
+// Sub-toggle definitions for Boundaries Explorer layer
+const BOUNDARY_SUB_TOGGLES = [
+  {
+    id: 'counties' as const,
+    name: 'Counties',
+    icon: Grid,
+    color: '#3B82F6', // Blue
+    description: 'County boundaries',
+  },
+  {
+    id: 'cities' as const,
+    name: 'Cities',
+    icon: Building2,
+    color: '#22C55E', // Green
+    description: 'City/place boundaries',
+  },
+  {
+    id: 'zipcodes' as const,
+    name: 'ZIP Codes',
+    icon: MapPinned,
+    color: '#F97316', // Orange
+    description: 'ZIP code boundaries',
+  },
+  {
+    id: 'census_tracts' as const,
+    name: 'Census Tracts',
+    icon: BarChart2,
+    color: '#8B5CF6', // Purple
+    description: 'Demographics choropleth',
   },
 ];
 
@@ -286,16 +319,64 @@ function InlineCrexiSearch() {
   );
 }
 
+// Inline Demographic Metric Selector Component
+function InlineDemographicMetricSelector() {
+  const { demographicMetric, setDemographicMetric, visibleBoundaryTypes } = useMapStore();
+
+  // Only show if census tracts is enabled
+  if (!visibleBoundaryTypes.has('census_tracts')) {
+    return null;
+  }
+
+  return (
+    <div className="ml-6 mt-2 p-3 bg-purple-50 rounded-lg border-l-2 border-purple-300">
+      <div className="flex items-center gap-2 mb-2">
+        <BarChart2 className="w-3 h-3 text-purple-600" />
+        <span className="text-xs font-medium text-purple-800">Choropleth Metric</span>
+      </div>
+
+      <div className="flex flex-wrap gap-1">
+        {[
+          { id: 'population' as const, label: 'Population' },
+          { id: 'density' as const, label: 'Density' },
+          { id: 'income' as const, label: 'Income' },
+        ].map((metric) => (
+          <button
+            key={metric.id}
+            onClick={() => setDemographicMetric(metric.id)}
+            className={`px-2 py-1 text-xs rounded-md transition-colors ${
+              demographicMetric === metric.id
+                ? 'bg-purple-600 text-white'
+                : 'bg-white text-gray-600 hover:bg-purple-100'
+            }`}
+          >
+            {metric.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-xs text-purple-600 mt-2">
+        {demographicMetric === 'population' && 'Census 2020 total population'}
+        {demographicMetric === 'density' && 'Population per square mile'}
+        {demographicMetric === 'income' && 'Coming soon - requires GeoEnrichment'}
+      </p>
+    </div>
+  );
+}
+
 export function MapLayers() {
   const {
     visibleLayers,
     toggleLayer,
     visiblePropertySources,
     togglePropertySource,
+    visibleBoundaryTypes,
+    toggleBoundaryType,
   } = useMapStore();
 
   const layerArray = Array.from(visibleLayers);
   const propertySourcesArray = Array.from(visiblePropertySources);
+  const boundaryTypesArray = Array.from(visibleBoundaryTypes);
 
   return (
     <div className="p-4 border-b border-gray-200">
@@ -354,7 +435,7 @@ export function MapLayers() {
               </button>
 
               {/* Sub-toggles for Properties For Sale layer */}
-              {hasSubToggles && isActive && (
+              {layer.id === 'properties_for_sale' && hasSubToggles && isActive && (
                 <div className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
                   {PROPERTY_SUB_TOGGLES.map((subToggle) => {
                     const isSubActive = propertySourcesArray.includes(subToggle.id);
@@ -394,6 +475,51 @@ export function MapLayers() {
                   })}
                 </div>
               )}
+
+              {/* Sub-toggles for Boundaries Explorer layer */}
+              {layer.id === 'boundaries' && hasSubToggles && isActive && (
+                <div className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
+                  {BOUNDARY_SUB_TOGGLES.map((subToggle) => {
+                    const isSubActive = boundaryTypesArray.includes(subToggle.id);
+                    const SubIcon = subToggle.icon;
+
+                    return (
+                      <button
+                        key={subToggle.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleBoundaryType(subToggle.id);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-left ${
+                          isSubActive
+                            ? 'bg-gray-50'
+                            : 'hover:bg-gray-50 opacity-60'
+                        }`}
+                      >
+                        <SubIcon
+                          className="w-3.5 h-3.5"
+                          style={{ color: isSubActive ? subToggle.color : '#9CA3AF' }}
+                        />
+                        <span
+                          className={`text-xs font-medium ${
+                            isSubActive ? 'text-gray-700' : 'text-gray-400'
+                          }`}
+                        >
+                          {subToggle.name}
+                        </span>
+                        <div
+                          className={`ml-auto w-1.5 h-1.5 rounded-full ${
+                            isSubActive ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Inline Demographic Metric Selector for Boundaries Explorer */}
+              {layer.id === 'boundaries' && isActive && <InlineDemographicMetricSelector />}
 
               {/* Inline Crexi Search for Active Listings layer */}
               {layer.id === 'properties_for_sale' && isActive && <InlineCrexiSearch />}

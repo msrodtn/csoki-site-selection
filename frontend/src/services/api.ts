@@ -237,6 +237,24 @@ export const analysisApi = {
     const { data } = await api.post('/analysis/matrix/clear-cache/');
     return data;
   },
+
+  // ============================================
+  // Demographic Boundaries (Census Tracts Choropleth)
+  // ============================================
+
+  // Get Census Tract boundaries with demographic data for choropleth visualization
+  getDemographicBoundaries: async (request: {
+    state: string;
+    metric?: 'population' | 'income' | 'density';
+  }): Promise<GeoJSON.FeatureCollection> => {
+    const { data } = await api.get('/analysis/demographic-boundaries/', {
+      params: {
+        state: request.state,
+        metric: request.metric || 'population',
+      },
+    });
+    return data;
+  },
 };
 
 // ============================================
