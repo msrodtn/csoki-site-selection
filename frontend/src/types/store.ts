@@ -508,3 +508,54 @@ export interface OpportunitySearchResponse {
 
 // Opportunity marker color (distinct from properties)
 export const OPPORTUNITY_COLOR = '#9333EA';  // Purple
+
+// =============================================================================
+// Matrix API Types (Drive-Time Analysis)
+// =============================================================================
+
+export type TravelProfile = 'driving' | 'driving-traffic' | 'walking' | 'cycling';
+
+export interface MatrixElement {
+  origin_index: number;
+  destination_index: number;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+}
+
+export interface MatrixRequest {
+  origins: [number, number][];  // [lng, lat][]
+  destinations: [number, number][];  // [lng, lat][]
+  profile?: TravelProfile;
+}
+
+export interface MatrixResponse {
+  elements: MatrixElement[];
+  profile: string;
+  total_origins: number;
+  total_destinations: number;
+  cached: boolean;
+  timestamp: string;
+}
+
+export interface CompetitorAccessRequest {
+  site_latitude: number;
+  site_longitude: number;
+  competitor_ids?: number[];
+  max_competitors?: number;
+  profile?: TravelProfile;
+}
+
+export interface CompetitorWithTravelTime extends Store {
+  travel_time_seconds: number | null;
+  travel_time_minutes: number | null;
+  distance_meters: number | null;
+  distance_miles: number | null;
+}
+
+export interface CompetitorAccessResponse {
+  site_latitude: number;
+  site_longitude: number;
+  competitors: CompetitorWithTravelTime[];
+  profile: string;
+  analysis_timestamp: string;
+}

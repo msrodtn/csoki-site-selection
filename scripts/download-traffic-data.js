@@ -20,7 +20,8 @@ const STATE_SERVICES = {
   IA: {
     name: 'Iowa',
     url: 'https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/Traffic_Data_view/FeatureServer/10',
-    fields: 'AADT,ROUTE_NAME,STATESIGNED,COUNTYSIGNED,AADT_YEAR',
+    fields: 'AADT,ROUTEID,STATESIGNED,COUNTYSIGNED,AADT_YEAR',
+    maxRecords: 2000,  // Service limit per request
   },
   // Add more states here as we find their services
   // NE: { name: 'Nebraska', url: '...', fields: '...' },
@@ -66,7 +67,7 @@ async function fetchArcGISData(url, params) {
 }
 
 /**
- * Download traffic data for a state
+ * Download traffic data for a state with pagination
  */
 async function downloadState(stateCode) {
   const service = STATE_SERVICES[stateCode];
@@ -75,60 +76,83 @@ async function downloadState(stateCode) {
     console.log(`Available: ${Object.keys(STATE_SERVICES).join(', ')}`);
     process.exit(1);
   }
-  
+
   console.log(`\n📥 Downloading ${service.name} traffic data...`);
-  
+
   try {
-    // Fetch all features (may need pagination for large datasets)
-    const geojson = await fetchArcGISData(service.url, {
-      where: '1=1',
-      outFields: service.fields,
-      returnGeometry: 'true',
-      f: 'geojson',
-      resultRecordCount: 10000, // Max allowed
-    });
-    
-    if (!geojson.features || geojson.features.length === 0) {
+    const allFeatures = [];
+    let offset = 0;
+    const pageSize = service.maxRecords || 2000;
+    let hasMore = true;
+
+    // Paginate through all records
+    while (hasMore) {
+      console.log(`   Fetching records ${offset} - ${offset + pageSize}...`);
+
+      const geojson = await fetchArcGISData(service.url, {
+        where: '1=1',
+        outFields: service.fields,
+        returnGeometry: 'true',
+        f: 'geojson',
+        resultRecordCount: pageSize,
+        resultOffset: offset,
+      });
+
+      if (geojson.features && geojson.features.length > 0) {
+        allFeatures.push(...geojson.features);
+        offset += geojson.features.length;
+
+        // Check if there are more records
+        hasMore = geojson.properties?.exceededTransferLimit ||
+                  geojson.features.length === pageSize;
+      } else {
+        hasMore = false;
+      }
+    }
+
+    if (allFeatures.length === 0) {
       console.error('❌ No features returned!');
       return;
     }
-    
-    console.log(`✅ Downloaded ${geojson.features.length} road segments`);
-    
+
+    console.log(`✅ Downloaded ${allFeatures.length} road segments`);
+
     // Clean up the GeoJSON
     const cleaned = {
       type: 'FeatureCollection',
-      features: geojson.features.map(feature => ({
+      features: allFeatures.map(feature => ({
         type: 'Feature',
         geometry: feature.geometry,
         properties: {
           aadt: feature.properties.AADT || 0,
-          route: feature.properties.ROUTE_NAME || feature.properties.STATESIGNED || 'Unknown',
+          route: feature.properties.ROUTEID || feature.properties.STATESIGNED || 'Unknown',
           year: feature.properties.AADT_YEAR || null,
         },
       })),
     };
-    
+
     // Save to file
     const outputPath = path.join(OUTPUT_DIR, `${stateCode.toLowerCase()}-traffic.geojson`);
     fs.writeFileSync(outputPath, JSON.stringify(cleaned, null, 2));
-    
+
     console.log(`💾 Saved to: ${outputPath}`);
     console.log(`📊 File size: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(2)} MB`);
-    
+
     // Print stats
     const aadtValues = cleaned.features.map(f => f.properties.aadt).filter(v => v > 0);
-    const min = Math.min(...aadtValues);
-    const max = Math.max(...aadtValues);
-    const avg = Math.round(aadtValues.reduce((a, b) => a + b, 0) / aadtValues.length);
-    
-    console.log(`\n📈 AADT Stats:`);
-    console.log(`   Min: ${min.toLocaleString()} vehicles/day`);
-    console.log(`   Max: ${max.toLocaleString()} vehicles/day`);
-    console.log(`   Avg: ${avg.toLocaleString()} vehicles/day`);
-    
+    if (aadtValues.length > 0) {
+      const min = Math.min(...aadtValues);
+      const max = Math.max(...aadtValues);
+      const avg = Math.round(aadtValues.reduce((a, b) => a + b, 0) / aadtValues.length);
+
+      console.log(`\n📈 AADT Stats:`);
+      console.log(`   Min: ${min.toLocaleString()} vehicles/day`);
+      console.log(`   Max: ${max.toLocaleString()} vehicles/day`);
+      console.log(`   Avg: ${avg.toLocaleString()} vehicles/day`);
+    }
+
     return outputPath;
-    
+
   } catch (error) {
     console.error(`❌ Error: ${error.message}`);
     process.exit(1);

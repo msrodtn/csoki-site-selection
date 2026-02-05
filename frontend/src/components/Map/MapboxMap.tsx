@@ -46,6 +46,7 @@ import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
 import { ZoningLegend } from './ZoningLegend';
+import { TrafficCountsLegend } from './TrafficCountsLegend';
 import { QuickStatsBar } from './QuickStatsBar';
 import { DraggableParcelInfo } from './DraggableParcelInfo';
 import { PropertyInfoCard } from './PropertyInfoCard';
@@ -54,6 +55,12 @@ import { TeamPropertyForm } from './TeamPropertyForm';
 import MapStyleSwitcher from './MapStyleSwitcher';
 import IsochroneControl, { type IsochroneSettings, type TravelMode } from './IsochroneControl';
 import { fetchIsochrone, getIsochroneColor, getIsochroneOpacity } from '../../services/mapbox-isochrone';
+import {
+  buildHeatmapPaint,
+} from '../../utils/mapbox-expressions';
+import { MapboxOverlay } from '@deck.gl/mapbox';
+import { createOpportunityHexagonLayer } from './layers/OpportunityHexagonLayer';
+import { createCompetitorArcLayer } from './layers/CompetitorArcLayer';
 
 // Mapbox access token - try runtime config first (for Docker), then build-time env vars
 const MAPBOX_TOKEN = 
@@ -80,20 +87,40 @@ function parseWKTToGeoJSON(wkt: string): GeoJSON.Geometry | null {
   }
 }
 
-// Brand marker component
+// Calculate zoom-based marker size
+// Follows the zoomBasedMarkerSize expression pattern from mapbox-expressions.ts
+function getZoomBasedSize(zoom: number, isSelected: boolean): number {
+  // Base size interpolation: zoom 6 → 8px, zoom 10 → 12px, zoom 14 → 18px, zoom 18 → 24px
+  let baseSize: number;
+  if (zoom <= 6) {
+    baseSize = 8;
+  } else if (zoom <= 10) {
+    baseSize = 8 + ((zoom - 6) / 4) * 4; // 8 to 12
+  } else if (zoom <= 14) {
+    baseSize = 12 + ((zoom - 10) / 4) * 6; // 12 to 18
+  } else {
+    baseSize = 18 + ((zoom - 14) / 4) * 6; // 18 to 24
+  }
+  // Selected markers are 40% larger
+  return isSelected ? Math.round(baseSize * 1.4) : Math.round(baseSize);
+}
+
+// Brand marker component with zoom-dependent sizing
 function BrandMarker({
   store,
   isSelected,
   onClick,
+  zoom = 10,
 }: {
   store: Store;
   isSelected: boolean;
   onClick: () => void;
+  zoom?: number;
 }) {
   const brand = store.brand as BrandKey;
   const color = BRAND_COLORS[brand] || '#666666';
   const logo = BRAND_LOGOS[brand];
-  const size = isSelected ? 32 : 22;
+  const size = getZoomBasedSize(zoom, isSelected);
 
   if (!store.latitude || !store.longitude) return null;
 
@@ -504,29 +531,15 @@ function TeamPropertyPopup({
   );
 }
 
-// Heatmap layer configuration
+// Heatmap layer configuration - using data-driven expressions
+// The buildHeatmapPaint function creates expressions that can optionally weight
+// points by opportunity_score for opportunity-focused visualization
 const heatmapLayer: HeatmapLayerSpecification = {
   id: 'stores-heat',
   type: 'heatmap',
   source: 'stores',
   maxzoom: 15,
-  paint: {
-    'heatmap-weight': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
-    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
-    'heatmap-color': [
-      'interpolate',
-      ['linear'],
-      ['heatmap-density'],
-      0, 'rgba(0, 255, 0, 0)',
-      0.2, 'rgba(0, 255, 0, 0.5)',
-      0.4, 'rgba(255, 255, 0, 0.7)',
-      0.6, 'rgba(255, 165, 0, 0.8)',
-      0.8, 'rgba(255, 0, 0, 0.9)',
-      1, 'rgba(255, 0, 0, 1)',
-    ],
-    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 15, 30],
-    'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.8, 15, 0.3],
-  },
+  paint: buildHeatmapPaint(false) as HeatmapLayerSpecification['paint'],
 };
 
 // Analysis radius circle layers
@@ -605,6 +618,12 @@ export function MapboxMap() {
     setMapInstance,
     visibleLayers,
     visiblePropertySources,
+    // deck.gl 3D visualization state
+    show3DVisualization,
+    deckLayerVisibility,
+    hexagonSettings,
+    arcSettings,
+    competitorAccessResult,
   } = useMapStore();
 
   // Local state
@@ -650,6 +669,14 @@ export function MapboxMap() {
   // Scraped listings state
   const [scrapedListings, setScrapedListings] = useState<ScrapedListing[]>([]);
   const [isLoadingScrapedListings, setIsLoadingScrapedListings] = useState(false);
+
+  // Traffic counts hover state
+  const [hoveredTraffic, setHoveredTraffic] = useState<{
+    longitude: number;
+    latitude: number;
+    aadt: number;
+    route: string;
+  } | null>(null);
 
   // Track analysis center for re-analysis
   const analysisCenterRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -919,6 +946,38 @@ export function MapboxMap() {
     }
   }, []);
 
+  // Handle traffic counts layer hover
+  const handleTrafficMouseMove = useCallback((e: mapboxgl.MapMouseEvent) => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    const features = map.queryRenderedFeatures(e.point, {
+      layers: ['traffic-counts-layer'],
+    });
+
+    if (features && features.length > 0) {
+      const feature = features[0];
+      map.getCanvas().style.cursor = 'pointer';
+      setHoveredTraffic({
+        longitude: e.lngLat.lng,
+        latitude: e.lngLat.lat,
+        aadt: feature.properties?.aadt || 0,
+        route: feature.properties?.route || 'Unknown',
+      });
+    } else {
+      map.getCanvas().style.cursor = '';
+      setHoveredTraffic(null);
+    }
+  }, []);
+
+  const handleTrafficMouseLeave = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (map) {
+      map.getCanvas().style.cursor = '';
+    }
+    setHoveredTraffic(null);
+  }, []);
+
   // Property search when layer is toggled
   useEffect(() => {
     const showProperties = visibleLayersArray.includes('properties_for_sale');
@@ -1051,6 +1110,86 @@ export function MapboxMap() {
     }
   }, [isochroneSettings]);
 
+  // deck.gl overlay reference
+  const deckOverlayRef = useRef<MapboxOverlay | null>(null);
+
+  // Manage deck.gl 3D visualization layers
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const map = mapRef.current.getMap();
+    if (!map) return;
+
+    // Remove existing overlay if present
+    if (deckOverlayRef.current) {
+      try {
+        map.removeControl(deckOverlayRef.current);
+      } catch (e) {
+        // Overlay may not be attached
+      }
+      deckOverlayRef.current = null;
+    }
+
+    // Only create overlay if 3D visualization is enabled
+    if (!show3DVisualization) return;
+
+    const layers: any[] = [];
+
+    // Add opportunity hexagon layer if enabled and we have property data
+    if (deckLayerVisibility.opportunityHexagons && properties.length > 0) {
+      layers.push(
+        createOpportunityHexagonLayer({
+          data: properties,
+          visible: true,
+          radius: hexagonSettings.radius,
+          elevationScale: hexagonSettings.elevationScale,
+          colorMode: hexagonSettings.colorMode,
+        })
+      );
+    }
+
+    // Add competitor arc layer if enabled and we have analysis data
+    if (deckLayerVisibility.competitorArcs && arcSettings.siteLocation && competitorAccessResult?.competitors) {
+      layers.push(
+        createCompetitorArcLayer({
+          siteLocation: arcSettings.siteLocation,
+          competitors: competitorAccessResult.competitors,
+          visible: true,
+          highlightedCompetitorId: arcSettings.highlightedCompetitorId,
+        })
+      );
+    }
+
+    // Create and add overlay if we have layers
+    if (layers.length > 0) {
+      const overlay = new MapboxOverlay({
+        layers,
+        interleaved: true,
+      });
+      map.addControl(overlay);
+      deckOverlayRef.current = overlay;
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (deckOverlayRef.current && map) {
+        try {
+          map.removeControl(deckOverlayRef.current);
+        } catch (e) {
+          // Map may be unmounted
+        }
+        deckOverlayRef.current = null;
+      }
+    };
+  }, [
+    show3DVisualization,
+    deckLayerVisibility,
+    properties,
+    hexagonSettings,
+    arcSettings,
+    competitorAccessResult,
+  ]);
+
   // Check for token
   if (!MAPBOX_TOKEN) {
     return (
@@ -1096,6 +1235,7 @@ export function MapboxMap() {
       <HeatMapLegend isVisible={visibleLayersArray.includes('competition_heat')} />
       <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
+      <TrafficCountsLegend isVisible={visibleLayersArray.includes('traffic_counts')} />
       <PropertyLegend
         isVisible={visibleLayersArray.includes('properties_for_sale')}
         propertyCount={properties.length}
@@ -1138,6 +1278,9 @@ export function MapboxMap() {
         onLoad={onLoad}
         onClick={handleMapClick}
         onContextMenu={handleMapRightClick}
+        onMouseMove={handleTrafficMouseMove}
+        onMouseLeave={handleTrafficMouseLeave}
+        interactiveLayerIds={visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
         mapboxAccessToken={MAPBOX_TOKEN}
@@ -1173,6 +1316,53 @@ export function MapboxMap() {
               }}
             />
           </Source>
+        )}
+
+        {/* Iowa Traffic Counts (AADT) Layer */}
+        {visibleLayersArray.includes('traffic_counts') && (
+          <Source
+            id="ia-traffic-counts"
+            type="vector"
+            url="mapbox://msrodtn.ia-traffic"
+          >
+            <Layer
+              id="traffic-counts-layer"
+              type="line"
+              source-layer="traffic"
+              minzoom={8}
+              paint={{
+                'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 4],
+                'line-color': [
+                  'step',
+                  ['get', 'aadt'],
+                  '#3B82F6',      // 0-999: Blue
+                  1000, '#10B981', // 1000-1999: Green
+                  2000, '#F59E0B', // 2000-4999: Orange
+                  5000, '#EF4444', // 5000+: Red
+                ],
+                'line-opacity': 0.8,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Traffic Counts Hover Popup */}
+        {hoveredTraffic && (
+          <Popup
+            longitude={hoveredTraffic.longitude}
+            latitude={hoveredTraffic.latitude}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+          >
+            <div className="text-sm">
+              <div className="font-semibold text-gray-800">
+                {hoveredTraffic.aadt.toLocaleString()} vehicles/day
+              </div>
+              <div className="text-xs text-gray-500">{hoveredTraffic.route}</div>
+            </div>
+          </Popup>
         )}
 
         {/* FEMA Flood Zones Layer */}
@@ -1405,12 +1595,13 @@ export function MapboxMap() {
           />
         ))}
 
-        {/* Store markers */}
+        {/* Store markers with zoom-dependent sizing */}
         {visibleStores.map((store) => (
           <BrandMarker
             key={store.id}
             store={store}
             isSelected={selectedStore?.id === store.id}
+            zoom={viewState.zoom}
             onClick={() => {
               setSelectedStore(store);
               setSelectedPOI(null);

@@ -21,6 +21,10 @@ import type {
   ScrapedSourcesStatus,
   OpportunitySearchRequest,
   OpportunitySearchResponse,
+  MatrixRequest,
+  MatrixResponse,
+  CompetitorAccessRequest,
+  CompetitorAccessResponse,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -193,6 +197,44 @@ export const analysisApi = {
     message: string;
   }> => {
     const { data } = await api.get('/analysis/check-attom-key/');
+    return data;
+  },
+
+  // ============================================
+  // Matrix API (Drive-Time Analysis)
+  // ============================================
+
+  // Calculate travel time matrix between origins and destinations
+  calculateMatrix: async (request: MatrixRequest): Promise<MatrixResponse> => {
+    const { data } = await api.post('/analysis/matrix/', request);
+    return data;
+  },
+
+  // Calculate matrix for large datasets with automatic batching
+  calculateMatrixBatched: async (request: MatrixRequest): Promise<MatrixResponse> => {
+    const { data } = await api.post('/analysis/matrix/batched/', request);
+    return data;
+  },
+
+  // Analyze drive times from a site to nearby competitors
+  analyzeCompetitorAccess: async (request: CompetitorAccessRequest): Promise<CompetitorAccessResponse> => {
+    const { data } = await api.post('/analysis/competitor-access/', request);
+    return data;
+  },
+
+  // Get Matrix API cache statistics
+  getMatrixCacheStats: async (): Promise<{
+    total_entries: number;
+    valid_entries: number;
+    expired_entries: number;
+  }> => {
+    const { data } = await api.get('/analysis/matrix/cache-stats/');
+    return data;
+  },
+
+  // Clear Matrix API cache
+  clearMatrixCache: async (): Promise<{ status: string; message: string }> => {
+    const { data } = await api.post('/analysis/matrix/clear-cache/');
     return data;
   },
 };

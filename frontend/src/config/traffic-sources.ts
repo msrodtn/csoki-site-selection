@@ -15,7 +15,7 @@
 export type TrafficSourceMode = 'arcgis' | 'tileset';
 
 // Current mode - switch to 'tileset' after uploading to Mapbox
-export const TRAFFIC_SOURCE_MODE: TrafficSourceMode = 'arcgis';
+export const TRAFFIC_SOURCE_MODE: TrafficSourceMode = 'tileset';
 
 // ArcGIS REST API sources (direct fetch)
 export const ARCGIS_SOURCES = {
@@ -34,10 +34,10 @@ export const ARCGIS_SOURCES = {
 export const TILESET_SOURCES = {
   IA: {
     name: 'Iowa',
-    url: 'mapbox://YOUR_USERNAME.ia-traffic',  // Replace YOUR_USERNAME
+    url: 'mapbox://msrodtn.ia-traffic',
     sourceLayer: 'traffic',
   },
-  // NE: { name: 'Nebraska', url: 'mapbox://YOUR_USERNAME.ne-traffic', sourceLayer: 'traffic' },
+  // NE: { name: 'Nebraska', url: 'mapbox://msrodtn.ne-traffic', sourceLayer: 'traffic' },
 };
 
 // Get available states for current mode

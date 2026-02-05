@@ -146,6 +146,48 @@ interface MapState {
 
   // Clear analysis
   clearAnalysis: () => void;
+
+  // ============================================
+  // deck.gl 3D Visualization State
+  // ============================================
+
+  // 3D visualization mode toggle
+  show3DVisualization: boolean;
+  toggle3DVisualization: () => void;
+  set3DVisualization: (show: boolean) => void;
+
+  // deck.gl layer visibility
+  deckLayerVisibility: {
+    opportunityHexagons: boolean;
+    competitorArcs: boolean;
+  };
+  toggleDeckLayer: (layer: 'opportunityHexagons' | 'competitorArcs') => void;
+  setDeckLayerVisible: (layer: 'opportunityHexagons' | 'competitorArcs', visible: boolean) => void;
+
+  // Hexagon layer settings
+  hexagonSettings: {
+    radius: number;
+    elevationScale: number;
+    colorMode: 'opportunity' | 'competition';
+  };
+  setHexagonSettings: (settings: Partial<MapState['hexagonSettings']>) => void;
+
+  // Arc layer settings
+  arcSettings: {
+    highlightedCompetitorId: number | null;
+    siteLocation: [number, number] | null;
+  };
+  setArcSettings: (settings: Partial<MapState['arcSettings']>) => void;
+
+  // Competitor access analysis state
+  competitorAccessResult: any | null;
+  setCompetitorAccessResult: (result: any | null) => void;
+  isLoadingCompetitorAccess: boolean;
+  setIsLoadingCompetitorAccess: (loading: boolean) => void;
+  competitorAccessError: string | null;
+  setCompetitorAccessError: (error: string | null) => void;
+  showCompetitorAccessPanel: boolean;
+  setShowCompetitorAccessPanel: (show: boolean) => void;
 }
 
 // Default to center of US with all brands visible
@@ -400,4 +442,65 @@ export const useMapStore = create<MapState>((set, get) => ({
       demographicsError: null,
       nearestCompetitors: null,
     }),
+
+  // ============================================
+  // deck.gl 3D Visualization State
+  // ============================================
+
+  // 3D visualization mode
+  show3DVisualization: false,
+  toggle3DVisualization: () =>
+    set((state) => ({ show3DVisualization: !state.show3DVisualization })),
+  set3DVisualization: (show) => set({ show3DVisualization: show }),
+
+  // deck.gl layer visibility
+  deckLayerVisibility: {
+    opportunityHexagons: false,
+    competitorArcs: false,
+  },
+  toggleDeckLayer: (layer) =>
+    set((state) => ({
+      deckLayerVisibility: {
+        ...state.deckLayerVisibility,
+        [layer]: !state.deckLayerVisibility[layer],
+      },
+    })),
+  setDeckLayerVisible: (layer, visible) =>
+    set((state) => ({
+      deckLayerVisibility: {
+        ...state.deckLayerVisibility,
+        [layer]: visible,
+      },
+    })),
+
+  // Hexagon layer settings
+  hexagonSettings: {
+    radius: 500,
+    elevationScale: 50,
+    colorMode: 'opportunity',
+  },
+  setHexagonSettings: (settings) =>
+    set((state) => ({
+      hexagonSettings: { ...state.hexagonSettings, ...settings },
+    })),
+
+  // Arc layer settings
+  arcSettings: {
+    highlightedCompetitorId: null,
+    siteLocation: null,
+  },
+  setArcSettings: (settings) =>
+    set((state) => ({
+      arcSettings: { ...state.arcSettings, ...settings },
+    })),
+
+  // Competitor access analysis
+  competitorAccessResult: null,
+  setCompetitorAccessResult: (result) => set({ competitorAccessResult: result }),
+  isLoadingCompetitorAccess: false,
+  setIsLoadingCompetitorAccess: (loading) => set({ isLoadingCompetitorAccess: loading }),
+  competitorAccessError: null,
+  setCompetitorAccessError: (error) => set({ competitorAccessError: error }),
+  showCompetitorAccessPanel: false,
+  setShowCompetitorAccessPanel: (show) => set({ showCompetitorAccessPanel: show }),
 }));
