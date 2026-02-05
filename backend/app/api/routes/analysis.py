@@ -862,3 +862,549 @@ async def check_mapbox_token_endpoint():
     Check if the Mapbox access token is configured and valid.
     """
     return await check_mapbox_token()
+
+
+# =============================================================================
+# Matrix API Endpoints (Drive-Time Analysis)
+# =============================================================================
+
+from app.services.mapbox_matrix import (
+    MatrixRequest,
+    MatrixResponse,
+    MatrixElement,
+    CompetitorAccessResult,
+    TravelProfile,
+    calculate_matrix,
+    calculate_matrix_batched,
+    analyze_competitor_access,
+    get_cache_stats,
+    clear_matrix_cache,
+)
+
+
+class MatrixRequestBody(BaseModel):
+    """Request body for matrix calculation."""
+    origins: list[list[float]]  # [[lng, lat], ...]
+    destinations: list[list[float]]  # [[lng, lat], ...]
+    profile: str = "driving"
+
+
+class CompetitorAccessRequest(BaseModel):
+    """Request body for competitor access analysis."""
+    site_latitude: float
+    site_longitude: float
+    competitor_ids: Optional[list[int]] = None  # If None, uses nearest competitors
+    max_competitors: int = 25
+    profile: str = "driving-traffic"
+
+
+@router.post("/matrix/", response_model=MatrixResponse)
+async def calculate_travel_matrix(request: MatrixRequestBody):
+    """
+    Calculate travel time/distance matrix between origins and destinations.
+
+    Uses Mapbox Matrix API to calculate travel times for all origin-destination pairs.
+    Results are cached for 24 hours to reduce API costs.
+
+    **Limits:**
+    - Maximum 25 origins × 25 destinations per request (625 elements)
+    - For larger datasets, use /matrix/batched endpoint
+
+    **Profiles:**
+    - `driving` - Standard driving (default)
+    - `driving-traffic` - With real-time traffic
+    - `walking` - Walking
+    - `cycling` - Cycling
+
+    **Returns:**
+    - Duration in seconds for each pair
+    - Distance in meters for each pair
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured"
+        )
+
+    # Convert to tuples
+    origins = [(coord[0], coord[1]) for coord in request.origins]
+    destinations = [(coord[0], coord[1]) for coord in request.destinations]
+
+    # Validate profile
+    try:
+        profile = TravelProfile(request.profile)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid profile: {request.profile}. Valid options: driving, driving-traffic, walking, cycling"
+        )
+
+    try:
+        result = await calculate_matrix(
+            origins=origins,
+            destinations=destinations,
+            profile=profile,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Mapbox API error: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Matrix calculation error: {str(e)}")
+
+
+@router.post("/matrix/batched/", response_model=MatrixResponse)
+async def calculate_travel_matrix_batched(request: MatrixRequestBody):
+    """
+    Calculate travel matrix for large datasets with automatic batching.
+
+    Unlike /matrix/, this endpoint can handle datasets larger than 25×25 by
+    automatically splitting into multiple API calls and combining results.
+
+    **Use cases:**
+    - Analyzing coverage for all stores in a region
+    - Market gap analysis with many candidate sites
+    - Fleet routing optimization
+
+    **Note:** Larger requests = more API calls = higher cost
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured"
+        )
+
+    origins = [(coord[0], coord[1]) for coord in request.origins]
+    destinations = [(coord[0], coord[1]) for coord in request.destinations]
+
+    try:
+        profile = TravelProfile(request.profile)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid profile: {request.profile}"
+        )
+
+    try:
+        result = await calculate_matrix_batched(
+            origins=origins,
+            destinations=destinations,
+            profile=profile,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batched matrix error: {str(e)}")
+
+
+@router.post("/competitor-access/", response_model=CompetitorAccessResult)
+async def analyze_competitor_accessibility(request: CompetitorAccessRequest):
+    """
+    Analyze drive times from a potential site to nearby competitors.
+
+    Returns competitors sorted by travel time, showing which are most
+    accessible from the candidate site location.
+
+    **Use cases:**
+    - Identify competition cannibalization risk
+    - Understand customer drive-time patterns
+    - Validate site selection decisions
+
+    **Parameters:**
+    - `site_latitude`, `site_longitude`: Candidate site location
+    - `competitor_ids`: Specific stores to analyze (optional)
+    - `max_competitors`: Maximum competitors (default 25)
+    - `profile`: Travel profile (default: driving-traffic for realistic times)
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured"
+        )
+
+    try:
+        profile = TravelProfile(request.profile)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid profile: {request.profile}"
+        )
+
+    # Fetch competitors from database
+    db = next(get_db())
+    try:
+        if request.competitor_ids:
+            # Fetch specific competitors
+            query = text("""
+                SELECT id, brand, street, city, state, postal_code, latitude, longitude
+                FROM stores
+                WHERE id = ANY(:ids)
+                AND latitude IS NOT NULL
+                AND longitude IS NOT NULL
+            """)
+            result = db.execute(query, {"ids": request.competitor_ids})
+        else:
+            # Fetch nearest competitors using PostGIS
+            query = text("""
+                SELECT id, brand, street, city, state, postal_code, latitude, longitude,
+                       ST_Distance(
+                           location::geography,
+                           ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+                       ) / 1609.34 as distance_miles
+                FROM stores
+                WHERE latitude IS NOT NULL
+                AND longitude IS NOT NULL
+                ORDER BY location::geography <-> ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+                LIMIT :limit
+            """)
+            result = db.execute(query, {
+                "lat": request.site_latitude,
+                "lng": request.site_longitude,
+                "limit": request.max_competitors,
+            })
+
+        competitors = [
+            {
+                "id": row[0],
+                "brand": row[1],
+                "street": row[2],
+                "city": row[3],
+                "state": row[4],
+                "postal_code": row[5],
+                "latitude": row[6],
+                "longitude": row[7],
+            }
+            for row in result.fetchall()
+        ]
+    finally:
+        db.close()
+
+    if not competitors:
+        return CompetitorAccessResult(
+            site_latitude=request.site_latitude,
+            site_longitude=request.site_longitude,
+            competitors=[],
+            profile=request.profile,
+        )
+
+    try:
+        access_result = await analyze_competitor_access(
+            site_location=(request.site_longitude, request.site_latitude),
+            competitor_locations=competitors,
+            profile=profile,
+            max_competitors=request.max_competitors,
+        )
+        return access_result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Competitor access error: {str(e)}")
+
+
+@router.get("/matrix/cache-stats/")
+async def get_matrix_cache_statistics():
+    """
+    Get Matrix API cache statistics.
+
+    Shows cache utilization to monitor API cost savings.
+    """
+    return get_cache_stats()
+
+
+@router.post("/matrix/clear-cache/")
+async def clear_matrix_cache_endpoint():
+    """
+    Clear the Matrix API cache.
+
+    Use when you need fresh travel time data (e.g., after major traffic changes).
+    """
+    clear_matrix_cache()
+    return {"status": "success", "message": "Matrix cache cleared"}
+
+
+# =============================================================================
+# Datasets API Endpoints (Saved Analyses)
+# =============================================================================
+
+from app.services.mapbox_datasets import (
+    SavedAnalysisRequest,
+    SavedAnalysisResponse,
+    DatasetInfo,
+    AnalysisType,
+    save_analysis,
+    list_saved_analyses,
+    get_saved_analysis,
+    delete_saved_analysis,
+    list_datasets,
+    get_dataset,
+    get_features,
+)
+
+
+class SaveAnalysisRequestBody(BaseModel):
+    """Request body for saving an analysis."""
+    name: str
+    analysis_type: str  # trade_area, market_gap, coverage, competitor, demographic
+    center_latitude: float
+    center_longitude: float
+    geojson: dict  # GeoJSON FeatureCollection
+    config: Optional[dict] = None
+
+
+@router.post("/datasets/save/", response_model=SavedAnalysisResponse)
+async def save_analysis_endpoint(request: SaveAnalysisRequestBody):
+    """
+    Save an analysis as a Mapbox dataset.
+
+    Creates a persistent dataset that can be loaded later or shared.
+    The analysis GeoJSON is stored in Mapbox Datasets API.
+
+    **Analysis Types:**
+    - `trade_area` - Trade area with POIs and demographics
+    - `market_gap` - Identified market gaps
+    - `coverage` - Store coverage analysis
+    - `competitor` - Competitor analysis
+    - `demographic` - Demographic analysis
+
+    **Returns:**
+    - Database ID for local reference
+    - Mapbox dataset ID for API access
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured"
+        )
+
+    try:
+        analysis_type = AnalysisType(request.analysis_type)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid analysis type: {request.analysis_type}. Valid types: {[t.value for t in AnalysisType]}"
+        )
+
+    try:
+        result = await save_analysis(
+            SavedAnalysisRequest(
+                name=request.name,
+                analysis_type=analysis_type,
+                center_latitude=request.center_latitude,
+                center_longitude=request.center_longitude,
+                geojson=request.geojson,
+                config=request.config or {},
+            )
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving analysis: {str(e)}")
+
+
+@router.get("/datasets/", response_model=list[SavedAnalysisResponse])
+async def list_saved_analyses_endpoint():
+    """
+    List all saved analyses.
+
+    Returns analyses saved to Mapbox Datasets with their metadata.
+    """
+    try:
+        return await list_saved_analyses()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing analyses: {str(e)}")
+
+
+@router.get("/datasets/{analysis_id}/", response_model=SavedAnalysisResponse)
+async def get_saved_analysis_endpoint(analysis_id: int):
+    """
+    Get a specific saved analysis.
+
+    Returns the analysis metadata including the Mapbox dataset ID.
+    """
+    result = await get_saved_analysis(analysis_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Analysis {analysis_id} not found")
+    return result
+
+
+@router.get("/datasets/{analysis_id}/features/")
+async def get_analysis_features_endpoint(analysis_id: int, limit: int = 100):
+    """
+    Get the GeoJSON features from a saved analysis.
+
+    Returns the actual GeoJSON FeatureCollection stored in the dataset.
+    """
+    analysis = await get_saved_analysis(analysis_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail=f"Analysis {analysis_id} not found")
+
+    try:
+        features = await get_features(analysis.dataset_id, limit=limit)
+        return features
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching features: {str(e)}")
+
+
+@router.delete("/datasets/{analysis_id}/")
+async def delete_saved_analysis_endpoint(analysis_id: int):
+    """
+    Delete a saved analysis.
+
+    Removes both the local database record and the Mapbox dataset.
+    """
+    success = await delete_saved_analysis(analysis_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Analysis {analysis_id} not found")
+    return {"status": "success", "message": f"Analysis {analysis_id} deleted"}
+
+
+@router.get("/datasets/mapbox/")
+async def list_mapbox_datasets_endpoint():
+    """
+    List all Mapbox datasets for the authenticated user.
+
+    Returns raw dataset information from Mapbox API.
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured"
+        )
+
+    try:
+        datasets = await list_datasets()
+        return [d.model_dump() for d in datasets]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing Mapbox datasets: {str(e)}")
+
+
+# =============================================================================
+# Isochrone API Endpoints (Drive-Time Polygons)
+# =============================================================================
+
+from app.services.mapbox_isochrone import (
+    IsochroneRequest as IsochroneServiceRequest,
+    IsochroneResponse,
+    IsochroneProfile,
+    fetch_isochrone,
+    fetch_multi_contour_isochrone,
+    DEFAULT_ISOCHRONE_COLORS,
+)
+
+
+class IsochroneRequestBody(BaseModel):
+    """Request body for isochrone calculation."""
+    latitude: float
+    longitude: float
+    minutes: int = 10
+    profile: str = "driving"
+
+
+class MultiContourIsochroneRequest(BaseModel):
+    """Request body for multi-contour isochrone."""
+    latitude: float
+    longitude: float
+    minutes_list: list[int] = [5, 10, 15]
+    profile: str = "driving"
+    colors: Optional[list[str]] = None
+
+
+@router.post("/isochrone/", response_model=IsochroneResponse)
+async def get_isochrone_endpoint(request: IsochroneRequestBody):
+    """
+    Get a drive-time isochrone polygon.
+
+    Returns a GeoJSON polygon showing the area reachable within the specified
+    travel time from the center point.
+
+    **Parameters:**
+    - `latitude`, `longitude`: Center point coordinates
+    - `minutes`: Travel time in minutes (1-60)
+    - `profile`: Travel profile (driving, driving-traffic, walking, cycling)
+
+    **Use Cases:**
+    - Visualize service area coverage
+    - Identify market gaps
+    - Analyze competitor reach
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured"
+        )
+
+    try:
+        profile = IsochroneProfile(request.profile)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid profile: {request.profile}. Valid options: driving, driving-traffic, walking, cycling"
+        )
+
+    if request.minutes < 1 or request.minutes > 60:
+        raise HTTPException(
+            status_code=400,
+            detail="Minutes must be between 1 and 60"
+        )
+
+    try:
+        result = await fetch_isochrone(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            minutes=request.minutes,
+            profile=profile,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Isochrone error: {str(e)}")
+
+
+@router.post("/isochrone/multi/", response_model=IsochroneResponse)
+async def get_multi_contour_isochrone_endpoint(request: MultiContourIsochroneRequest):
+    """
+    Get multiple isochrone contours in a single request.
+
+    Returns multiple concentric polygons showing areas reachable at different
+    travel times (e.g., 5, 10, 15 minutes).
+
+    **Parameters:**
+    - `latitude`, `longitude`: Center point coordinates
+    - `minutes_list`: List of travel times (max 4 contours)
+    - `profile`: Travel profile
+    - `colors`: Optional hex colors for each contour
+
+    **Example Response:**
+    Returns a FeatureCollection with multiple polygon features, each representing
+    a different travel time contour.
+    """
+    if not settings.MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="Mapbox access token not configured"
+        )
+
+    try:
+        profile = IsochroneProfile(request.profile)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid profile: {request.profile}"
+        )
+
+    if len(request.minutes_list) > 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 4 contours allowed"
+        )
+
+    # Use default colors if not provided
+    colors = request.colors or DEFAULT_ISOCHRONE_COLORS[:len(request.minutes_list)]
+
+    try:
+        result = await fetch_multi_contour_isochrone(
+            latitude=request.latitude,
+            longitude=request.longitude,
+            minutes_list=request.minutes_list,
+            profile=profile,
+            colors=colors,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Multi-contour isochrone error: {str(e)}")

@@ -55,6 +55,17 @@ import { TeamPropertyForm } from './TeamPropertyForm';
 import MapStyleSwitcher from './MapStyleSwitcher';
 import IsochroneControl, { type IsochroneSettings, type TravelMode } from './IsochroneControl';
 import { fetchIsochrone, getIsochroneColor, getIsochroneOpacity } from '../../services/mapbox-isochrone';
+import {
+  buildHeatmapPaint,
+  buildPropertyCirclePaint,
+  opportunityScoreColor,
+  opportunityScoreRadius,
+  zoomBasedMarkerSize,
+  BRAND_COLORS_RGB,
+} from '../../utils/mapbox-expressions';
+import { MapboxOverlay } from '@deck.gl/mapbox';
+import { createOpportunityHexagonLayer } from './layers/OpportunityHexagonLayer';
+import { createCompetitorArcLayer } from './layers/CompetitorArcLayer';
 
 // Mapbox access token - try runtime config first (for Docker), then build-time env vars
 const MAPBOX_TOKEN = 
@@ -81,20 +92,40 @@ function parseWKTToGeoJSON(wkt: string): GeoJSON.Geometry | null {
   }
 }
 
-// Brand marker component
+// Calculate zoom-based marker size
+// Follows the zoomBasedMarkerSize expression pattern from mapbox-expressions.ts
+function getZoomBasedSize(zoom: number, isSelected: boolean): number {
+  // Base size interpolation: zoom 6 → 8px, zoom 10 → 12px, zoom 14 → 18px, zoom 18 → 24px
+  let baseSize: number;
+  if (zoom <= 6) {
+    baseSize = 8;
+  } else if (zoom <= 10) {
+    baseSize = 8 + ((zoom - 6) / 4) * 4; // 8 to 12
+  } else if (zoom <= 14) {
+    baseSize = 12 + ((zoom - 10) / 4) * 6; // 12 to 18
+  } else {
+    baseSize = 18 + ((zoom - 14) / 4) * 6; // 18 to 24
+  }
+  // Selected markers are 40% larger
+  return isSelected ? Math.round(baseSize * 1.4) : Math.round(baseSize);
+}
+
+// Brand marker component with zoom-dependent sizing
 function BrandMarker({
   store,
   isSelected,
   onClick,
+  zoom = 10,
 }: {
   store: Store;
   isSelected: boolean;
   onClick: () => void;
+  zoom?: number;
 }) {
   const brand = store.brand as BrandKey;
   const color = BRAND_COLORS[brand] || '#666666';
   const logo = BRAND_LOGOS[brand];
-  const size = isSelected ? 32 : 22;
+  const size = getZoomBasedSize(zoom, isSelected);
 
   if (!store.latitude || !store.longitude) return null;
 
@@ -505,29 +536,25 @@ function TeamPropertyPopup({
   );
 }
 
-// Heatmap layer configuration
+// Heatmap layer configuration - using data-driven expressions
+// The buildHeatmapPaint function creates expressions that can optionally weight
+// points by opportunity_score for opportunity-focused visualization
 const heatmapLayer: HeatmapLayerSpecification = {
   id: 'stores-heat',
   type: 'heatmap',
   source: 'stores',
   maxzoom: 15,
-  paint: {
-    'heatmap-weight': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
-    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
-    'heatmap-color': [
-      'interpolate',
-      ['linear'],
-      ['heatmap-density'],
-      0, 'rgba(0, 255, 0, 0)',
-      0.2, 'rgba(0, 255, 0, 0.5)',
-      0.4, 'rgba(255, 255, 0, 0.7)',
-      0.6, 'rgba(255, 165, 0, 0.8)',
-      0.8, 'rgba(255, 0, 0, 0.9)',
-      1, 'rgba(255, 0, 0, 1)',
-    ],
-    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 15, 30],
-    'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.8, 15, 0.3],
-  },
+  paint: buildHeatmapPaint(false) as HeatmapLayerSpecification['paint'],
+};
+
+// Opportunity-weighted heatmap for property visualization
+// Higher opportunity scores create more intense "heat"
+const opportunityHeatmapLayer: HeatmapLayerSpecification = {
+  id: 'opportunity-heat',
+  type: 'heatmap',
+  source: 'opportunities',
+  maxzoom: 15,
+  paint: buildHeatmapPaint(true) as HeatmapLayerSpecification['paint'],
 };
 
 // Analysis radius circle layers
@@ -606,6 +633,12 @@ export function MapboxMap() {
     setMapInstance,
     visibleLayers,
     visiblePropertySources,
+    // deck.gl 3D visualization state
+    show3DVisualization,
+    deckLayerVisibility,
+    hexagonSettings,
+    arcSettings,
+    competitorAccessResult,
   } = useMapStore();
 
   // Local state
@@ -1092,6 +1125,86 @@ export function MapboxMap() {
     }
   }, [isochroneSettings]);
 
+  // deck.gl overlay reference
+  const deckOverlayRef = useRef<MapboxOverlay | null>(null);
+
+  // Manage deck.gl 3D visualization layers
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const map = mapRef.current.getMap();
+    if (!map) return;
+
+    // Remove existing overlay if present
+    if (deckOverlayRef.current) {
+      try {
+        map.removeControl(deckOverlayRef.current);
+      } catch (e) {
+        // Overlay may not be attached
+      }
+      deckOverlayRef.current = null;
+    }
+
+    // Only create overlay if 3D visualization is enabled
+    if (!show3DVisualization) return;
+
+    const layers: any[] = [];
+
+    // Add opportunity hexagon layer if enabled and we have property data
+    if (deckLayerVisibility.opportunityHexagons && properties.length > 0) {
+      layers.push(
+        createOpportunityHexagonLayer({
+          data: properties,
+          visible: true,
+          radius: hexagonSettings.radius,
+          elevationScale: hexagonSettings.elevationScale,
+          colorMode: hexagonSettings.colorMode,
+        })
+      );
+    }
+
+    // Add competitor arc layer if enabled and we have analysis data
+    if (deckLayerVisibility.competitorArcs && arcSettings.siteLocation && competitorAccessResult?.competitors) {
+      layers.push(
+        createCompetitorArcLayer({
+          siteLocation: arcSettings.siteLocation,
+          competitors: competitorAccessResult.competitors,
+          visible: true,
+          highlightedCompetitorId: arcSettings.highlightedCompetitorId,
+        })
+      );
+    }
+
+    // Create and add overlay if we have layers
+    if (layers.length > 0) {
+      const overlay = new MapboxOverlay({
+        layers,
+        interleaved: true,
+      });
+      map.addControl(overlay);
+      deckOverlayRef.current = overlay;
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (deckOverlayRef.current && map) {
+        try {
+          map.removeControl(deckOverlayRef.current);
+        } catch (e) {
+          // Map may be unmounted
+        }
+        deckOverlayRef.current = null;
+      }
+    };
+  }, [
+    show3DVisualization,
+    deckLayerVisibility,
+    properties,
+    hexagonSettings,
+    arcSettings,
+    competitorAccessResult,
+  ]);
+
   // Check for token
   if (!MAPBOX_TOKEN) {
     return (
@@ -1497,12 +1610,13 @@ export function MapboxMap() {
           />
         ))}
 
-        {/* Store markers */}
+        {/* Store markers with zoom-dependent sizing */}
         {visibleStores.map((store) => (
           <BrandMarker
             key={store.id}
             store={store}
             isSelected={selectedStore?.id === store.id}
+            zoom={viewState.zoom}
             onClick={() => {
               setSelectedStore(store);
               setSelectedPOI(null);
