@@ -41,26 +41,26 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
 
-    # Auto-seed database if empty
+    # Auto-seed database and sync new stores from CSVs
     db = SessionLocal()
     try:
+        from app.services.data_import import import_all_competitors
+
         store_count = db.query(Store).count()
-        if store_count == 0:
-            logger.info("Database empty, seeding competitor data...")
-            from app.services.data_import import import_all_competitors
+        data_dir = Path(__file__).parent.parent / "data" / "competitors"
 
-            # Path to competitor data CSV files
-            data_dir = Path(__file__).parent.parent / "data" / "competitors"
-
-            if data_dir.exists():
-                stats = import_all_competitors(db, data_dir, geocode=False)
-                total_imported = sum(s.get('imported', 0) for s in stats.values())
-                total_geocoded = sum(s.get('geocoded', 0) for s in stats.values())
-                logger.info(f"Seeded {total_imported} stores ({total_geocoded} with coordinates)")
+        if data_dir.exists():
+            # Always run import with skip_existing=True to pick up new stores
+            logger.info(f"Database has {store_count} stores, syncing from CSVs...")
+            stats = import_all_competitors(db, data_dir, geocode=False)
+            total_imported = sum(s.get('imported', 0) for s in stats.values())
+            total_geocoded = sum(s.get('geocoded', 0) for s in stats.values())
+            if total_imported > 0:
+                logger.info(f"Imported {total_imported} new stores ({total_geocoded} with coordinates)")
             else:
-                logger.warning(f"Data directory not found: {data_dir}")
+                logger.info(f"All stores up to date ({store_count} in database)")
         else:
-            logger.info(f"Database already contains {store_count} stores")
+            logger.warning(f"Data directory not found: {data_dir}")
     except Exception as e:
         logger.error(f"Error during database seeding: {e}")
     finally:
