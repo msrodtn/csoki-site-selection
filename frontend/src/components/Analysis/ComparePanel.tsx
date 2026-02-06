@@ -86,7 +86,7 @@ export function ComparePanel() {
   };
 
   return (
-    <div className="absolute top-4 right-4 z-30 bg-white rounded-lg shadow-xl w-[500px] max-h-[calc(100vh-2rem)] flex flex-col">
+    <div className="absolute top-4 right-4 z-[3100] bg-white rounded-lg shadow-xl w-[500px] max-h-[calc(100vh-2rem)] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 rounded-t-lg">
         <div className="flex items-center gap-2">

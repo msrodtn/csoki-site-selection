@@ -78,7 +78,7 @@ export function DraggableParcelInfo({
           top: position.y,
           width: 320,
           maxHeight: 'calc(100% - 40px)',
-          zIndex: 1000,
+          zIndex: 3000,
         }}
       >
         {/* Draggable header */}

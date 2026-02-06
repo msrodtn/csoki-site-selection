@@ -166,7 +166,7 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
           position: 'absolute',
           left: position.x,
           top: position.y,
-          zIndex: 1000,
+          zIndex: 3000,
         }}
       >
       {/* Header - Draggable */}

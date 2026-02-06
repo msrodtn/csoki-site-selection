@@ -358,7 +358,7 @@ export function AnalysisPanel() {
   return (
     <div
       ref={panelRef}
-      className="absolute w-80 bg-white rounded-lg shadow-lg z-20 max-h-[calc(100vh-2rem)] flex flex-col"
+      className="absolute w-80 bg-white rounded-lg shadow-lg z-[3000] max-h-[calc(100vh-2rem)] flex flex-col"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,

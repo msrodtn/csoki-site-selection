@@ -9,6 +9,30 @@ html, body, #root {
   padding: 0;
 }
 
+/*
+ * Z-INDEX HIERARCHY
+ *
+ * INSIDE MAP (isolated via `isolation: isolate` in MapboxMap.tsx):
+ *   POI markers:           10 (normal), 50 (selected)
+ *   Property markers:      200-300 (normal), 1500-1700 (selected)
+ *   Brand store markers:   500 (normal), 2000 (selected)
+ *   Native popups:         5000 (!important override below)
+ *
+ * OUTSIDE MAP (MapboxMap wrapper div):
+ *   Controls/Legends:      z-10
+ *   FABs/Loading:          z-40
+ *   Search dropdowns:      z-50
+ *   Info cards:            3000 (PropertyInfoCard, DraggableParcelInfo)
+ *
+ * APP LEVEL (main in App.tsx):
+ *   AnalysisPanel:         3000
+ *   ComparePanel:          3100
+ *
+ * FIXED (viewport):
+ *   CompetitorAccessPanel: 3200
+ *   Modals (Report, Form): z-50 (fixed positioning)
+ */
+
 /* Mapbox overrides */
 /* Ensure popups always appear above markers (markers have z-index up to 2000) */
 .mapboxgl-popup {

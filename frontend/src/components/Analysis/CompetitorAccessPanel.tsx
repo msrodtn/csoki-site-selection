@@ -285,7 +285,7 @@ export function CompetitorAccessPanel({
       style={{
         left: position.x,
         top: position.y,
-        zIndex: 9999, // Very high z-index to be above all markers
+        zIndex: 3200,
         cursor: isDragging ? 'grabbing' : 'default',
       }}
     >

@@ -87,16 +87,20 @@ const INITIAL_VIEW = {
 // NOTE: source-layer names are assigned by Mapbox during upload - found in Mapbox Studio
 const BOUNDARY_TILESETS = {
   counties: {
-    id: 'msrodtn.05vjtaqc',
-    sourceLayer: 'counties-aukpeg',  // From Mapbox Studio tileset details
+    id: 'msrodtn.national-counties',
+    sourceLayer: 'national_counties',
   },
   cities: {
-    id: 'msrodtn.9jpdhu14',
-    sourceLayer: 'cities-au3sim',    // From Mapbox Studio tileset details
+    id: 'msrodtn.national-cities',
+    sourceLayer: 'national_cities',
   },
   zctas: {
-    id: 'msrodtn.917bnr7e',
-    sourceLayer: 'zctas-7z7sbf',     // From Mapbox Studio tileset details
+    id: 'msrodtn.national-zctas',
+    sourceLayer: 'national_zctas',
+  },
+  tracts: {
+    id: 'msrodtn.national-tracts',
+    sourceLayer: 'national_tracts',
   },
 };
 
@@ -757,9 +761,7 @@ export function MapboxMap() {
     route: string;
   } | null>(null);
 
-  // Census Tracts choropleth state
-  const [censusTractsData, setCensusTractsData] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [isLoadingCensusTracts, setIsLoadingCensusTracts] = useState(false);
+  // Census Tracts hover state (now using vector tileset)
   const [hoveredTractId, setHoveredTractId] = useState<string | number | null>(null);
   const [hoveredTractInfo, setHoveredTractInfo] = useState<{
     name: string;
@@ -769,10 +771,7 @@ export function MapboxMap() {
     lngLat: [number, number];
   } | null>(null);
 
-  // Note: Counties, cities, and ZIP codes now use Mapbox tilesets for simple boundary lines
-  // For demographic choropleth (Population/Income), we fetch GeoJSON with ACS data
-  const [countyDemographicsData, setCountyDemographicsData] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [_isLoadingCountyDemographics, setIsLoadingCountyDemographics] = useState(false);
+  // County hover state (now using vector tileset with data-driven styling)
   const [hoveredCountyId, setHoveredCountyId] = useState<string | number | null>(null);
   const [hoveredCountyInfo, setHoveredCountyInfo] = useState<{
     name: string;
@@ -1187,7 +1186,7 @@ export function MapboxMap() {
         setHoveredTractId(feature.properties?.GEOID || null);
         setHoveredTractInfo({
           name: feature.properties?.NAME || 'Unknown Tract',
-          population: feature.properties?.TOTAL_POPULATION || 0,
+          population: feature.properties?.POPULATION || 0,
           income: feature.properties?.MEDIAN_INCOME || 0,
           density: feature.properties?.POP_DENSITY || 0,
           lngLat: [e.lngLat.lng, e.lngLat.lat],
@@ -1211,7 +1210,7 @@ export function MapboxMap() {
         setHoveredCountyId(feature.properties?.GEOID || null);
         setHoveredCountyInfo({
           name: feature.properties?.NAME || 'Unknown County',
-          population: feature.properties?.TOTAL_POPULATION || 0,
+          population: feature.properties?.POPULATION || 0,
           income: feature.properties?.MEDIAN_INCOME || 0,
           density: feature.properties?.POP_DENSITY || 0,
           lngLat: [e.lngLat.lng, e.lngLat.lat],
@@ -1553,76 +1552,9 @@ export function MapboxMap() {
     competitorAccessResult,
   ]);
 
-  // Fetch Census Tract data when census_tracts boundary type is enabled
-  useEffect(() => {
-    const shouldFetch = visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts');
+  // Census tracts now use Mapbox vector tileset - no dynamic fetch needed
 
-    if (!shouldFetch) {
-      setCensusTractsData(null);
-      return;
-    }
-
-    // Determine which state to fetch based on current view
-    // For now, fetch Iowa (IA) as default - could be enhanced to detect from viewport
-    const fetchCensusTracts = async () => {
-      setIsLoadingCensusTracts(true);
-      try {
-        // Fetch data for target states based on visible states
-        const statesToFetch = Array.from(visibleStates).filter(s => ['IA', 'NE', 'NV', 'ID'].includes(s));
-        const primaryState = statesToFetch[0] || 'IA';
-
-        const data = await analysisApi.getDemographicBoundaries({
-          state: primaryState,
-          metric: demographicMetric,
-        });
-        setCensusTractsData(data);
-      } catch (error) {
-        console.error('Failed to fetch census tracts:', error);
-        setCensusTractsData(null);
-      } finally {
-        setIsLoadingCensusTracts(false);
-      }
-    };
-
-    fetchCensusTracts();
-  }, [visibleLayersArray, visibleBoundaryTypes, visibleStates, demographicMetric]);
-
-  // Fetch County demographic data when counties boundary type is enabled
-  // This enables Population/Income choropleth visualization for counties
-  useEffect(() => {
-    const shouldFetch = visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties');
-
-    if (!shouldFetch) {
-      setCountyDemographicsData(null);
-      return;
-    }
-
-    const fetchCountyDemographics = async () => {
-      setIsLoadingCountyDemographics(true);
-      try {
-        // Fetch data for target states based on visible states
-        const statesToFetch = Array.from(visibleStates).filter(s => ['IA', 'NE', 'NV', 'ID'].includes(s));
-        const primaryState = statesToFetch[0] || 'IA';
-
-        const data = await analysisApi.getDemographicBoundaries({
-          state: primaryState,
-          metric: demographicMetric,
-          geography: 'county',
-        });
-        setCountyDemographicsData(data);
-      } catch (error) {
-        console.error('Failed to fetch county demographics:', error);
-        setCountyDemographicsData(null);
-      } finally {
-        setIsLoadingCountyDemographics(false);
-      }
-    };
-
-    fetchCountyDemographics();
-  }, [visibleLayersArray, visibleBoundaryTypes, visibleStates, demographicMetric]);
-
-  // Note: Cities and ZIP codes still use Mapbox tilesets for boundary lines only
-  // Demographic choropleth is available for Counties and Census Tracts
+  // County demographics now use Mapbox vector tileset with data-driven styling - no dynamic fetch needed
 
   // Check for token
   if (!MAPBOX_TOKEN) {
@@ -1706,15 +1638,7 @@ export function MapboxMap() {
         </div>
       )}
 
-      {/* Census tracts loading indicator */}
-      {isLoadingCensusTracts && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-md text-sm flex items-center gap-2">
-          <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-          Loading census tracts...
-        </div>
-      )}
-
-      {/* Note: Boundaries now load from Mapbox tilesets - no loading indicator needed */}
+      {/* Note: All boundaries now load from Mapbox tilesets - no loading indicator needed */}
 
       {/* Property error display */}
       {propertyError && visibleLayersArray.includes('properties_for_sale') && (
@@ -1723,6 +1647,9 @@ export function MapboxMap() {
         </div>
       )}
 
+      {/* Isolation wrapper: contains marker z-indices (up to 2000) so they don't
+           paint above sibling panels like PropertyInfoCard and DraggableParcelInfo */}
+      <div style={{ isolation: 'isolate', width: '100%', height: '100%' }}>
       <Map
         ref={mapRef}
         {...viewState}
@@ -1736,7 +1663,7 @@ export function MapboxMap() {
         interactiveLayerIds={[
           ...(visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') ? ['census-tract-fill'] : []),
-          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyDemographicsData ? ['county-demographics-fill'] : []),
+          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') ? ['county-demographics-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') ? ['city-boundaries-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') ? ['zipcode-boundaries-fill'] : []),
         ]}
@@ -2029,24 +1956,57 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* County Demographics - GeoJSON with ACS data */}
-        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && countyDemographicsData && (
+        {/* County Boundaries - Mapbox Vector Tileset with data-driven choropleth */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && (
           <Source
-            id="county-demographics"
-            type="geojson"
-            data={countyDemographicsData}
+            id="county-boundaries-source"
+            type="vector"
+            url={`mapbox://${BOUNDARY_TILESETS.counties.id}`}
           >
-            {/* Solid blue fill matching line color, low opacity to see base map */}
+            {/* Fill with data-driven color based on demographicMetric */}
             <Layer
               id="county-demographics-fill"
               type="fill"
+              source-layer={BOUNDARY_TILESETS.counties.sourceLayer}
+              minzoom={6}
               paint={{
-                'fill-color': '#3B82F6',  // Blue - matches county line color
+                'fill-color': demographicMetric === 'income'
+                  ? [
+                      'interpolate',
+                      ['linear'],
+                      ['coalesce', ['get', 'MEDIAN_INCOME'], 0],
+                      0, '#EFF6FF',
+                      30000, '#BFDBFE',
+                      50000, '#60A5FA',
+                      75000, '#2563EB',
+                      100000, '#1E40AF',
+                    ]
+                  : demographicMetric === 'density'
+                  ? [
+                      'interpolate',
+                      ['linear'],
+                      ['coalesce', ['get', 'POP_DENSITY'], 0],
+                      0, '#EFF6FF',
+                      50, '#BFDBFE',
+                      200, '#60A5FA',
+                      500, '#2563EB',
+                      1000, '#1E40AF',
+                    ]
+                  : [
+                      'interpolate',
+                      ['linear'],
+                      ['coalesce', ['get', 'POPULATION'], 0],
+                      0, '#EFF6FF',
+                      10000, '#BFDBFE',
+                      25000, '#60A5FA',
+                      50000, '#2563EB',
+                      100000, '#1E40AF',
+                    ],
                 'fill-opacity': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredCountyId],
-                  0.35,  // Slightly higher on hover
-                  0.12,  // Very low opacity to see city names
+                  0.5,
+                  0.25,
                 ],
               }}
             />
@@ -2054,13 +2014,15 @@ export function MapboxMap() {
             <Layer
               id="county-demographics-outline"
               type="line"
+              source-layer={BOUNDARY_TILESETS.counties.sourceLayer}
+              minzoom={6}
               paint={{
-                'line-color': '#3B82F6',  // Blue
+                'line-color': '#3B82F6',
                 'line-width': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredCountyId],
                   4,
-                  2,
+                  ['interpolate', ['linear'], ['zoom'], 6, 1.5, 10, 2.5, 14, 3],
                 ],
                 'line-opacity': [
                   'case',
@@ -2068,45 +2030,6 @@ export function MapboxMap() {
                   1,
                   0.9,
                 ],
-              }}
-            />
-          </Source>
-        )}
-
-        {/* County Boundaries - Mapbox Tileset (shown when NO demographic data) */}
-        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') && !countyDemographicsData && (
-          <Source
-            id="county-boundaries-source"
-            type="vector"
-            url={`mapbox://${BOUNDARY_TILESETS.counties.id}`}
-          >
-            {/* Blue fill with low opacity */}
-            <Layer
-              id="county-boundaries-fill"
-              type="fill"
-              source-layer={BOUNDARY_TILESETS.counties.sourceLayer}
-              minzoom={6}
-              paint={{
-                'fill-color': '#3B82F6',  // Blue
-                'fill-opacity': 0.1,  // Very low opacity
-              }}
-            />
-            <Layer
-              id="county-boundaries"
-              type="line"
-              source-layer={BOUNDARY_TILESETS.counties.sourceLayer}
-              minzoom={6}
-              paint={{
-                'line-color': '#3B82F6',  // Blue
-                'line-width': [
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  6, 1.5,
-                  10, 2.5,
-                  14, 3,
-                ],
-                'line-opacity': 0.95,
               }}
             />
           </Source>
@@ -2207,24 +2130,26 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Census Tracts Layer - Purple fill with demographics data */}
-        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') && censusTractsData && (
+        {/* Census Tracts Layer - Mapbox Vector Tileset with purple fill */}
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') && (
           <Source
-            id="census-tracts"
-            type="geojson"
-            data={censusTractsData}
+            id="census-tracts-source"
+            type="vector"
+            url={`mapbox://${BOUNDARY_TILESETS.tracts.id}`}
           >
-            {/* Solid purple fill matching tract color, low opacity to see base map */}
+            {/* Purple fill with hover highlighting */}
             <Layer
               id="census-tract-fill"
               type="fill"
+              source-layer={BOUNDARY_TILESETS.tracts.sourceLayer}
+              minzoom={8}
               paint={{
-                'fill-color': '#8B5CF6',  // Purple - matches tract line color
+                'fill-color': '#8B5CF6',
                 'fill-opacity': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredTractId],
-                  0.35,  // Slightly higher on hover
-                  0.12,  // Very low opacity to see city names
+                  0.35,
+                  0.12,
                 ],
               }}
             />
@@ -2232,8 +2157,10 @@ export function MapboxMap() {
             <Layer
               id="census-tract-outline"
               type="line"
+              source-layer={BOUNDARY_TILESETS.tracts.sourceLayer}
+              minzoom={8}
               paint={{
-                'line-color': '#8B5CF6',  // Purple
+                'line-color': '#8B5CF6',
                 'line-width': [
                   'case',
                   ['==', ['get', 'GEOID'], hoveredTractId],
@@ -2592,6 +2519,7 @@ export function MapboxMap() {
         )}
 
       </Map>
+      </div>
 
       {/* Draggable Parcel Info Panel */}
       {(selectedParcel || isLoadingParcel || parcelError) && parcelClickPosition && (
