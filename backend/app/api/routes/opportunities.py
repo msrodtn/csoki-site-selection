@@ -23,7 +23,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
-from math import radians, cos, sin, asin, sqrt
 
 from sqlalchemy.orm import Session
 
@@ -38,21 +37,12 @@ from app.services.attom import (
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.store import Store
+from app.utils.geo import haversine
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
 # Verizon-family brands that CSOKi opportunities must be distant from
 VERIZON_FAMILY_BRANDS = ["russell_cellular", "victra", "verizon_corporate"]
-
-
-def _haversine(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-    """Calculate the great circle distance in miles between two points on earth."""
-    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-    c = 2 * asin(sqrt(a))
-    return c * 3956  # Earth radius in miles
 
 
 def _filter_by_verizon_family_proximity(
@@ -94,7 +84,7 @@ def _filter_by_verizon_family_proximity(
         if prop.latitude is None or prop.longitude is None:
             continue
         for store in verizon_stores:
-            dist = _haversine(prop.longitude, prop.latitude, store.longitude, store.latitude)
+            dist = haversine(prop.longitude, prop.latitude, store.longitude, store.latitude)
             if dist <= max_distance_miles:
                 filtered.append(prop)
                 break

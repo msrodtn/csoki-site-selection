@@ -12,13 +12,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/csoki_sites"
 
-    # Redis (for caching)
-    REDIS_URL: str = "redis://localhost:6379"
-
-    # API Keys (to be configured)
+    # API Keys (active integrations)
     MAPBOX_ACCESS_TOKEN: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
-    CENSUS_API_KEY: Optional[str] = None
     GOOGLE_PLACES_API_KEY: Optional[str] = None
     ARCGIS_API_KEY: Optional[str] = None
     REPORTALL_API_KEY: Optional[str] = None
@@ -27,6 +23,7 @@ class Settings(BaseSettings):
     CREXI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     STREETLIGHT_API_KEY: Optional[str] = None
+    CENSUS_API_KEY: Optional[str] = None
 
     # Listing Scraper Credentials (for authenticated browser automation)
     CREXI_USERNAME: Optional[str] = None  # Also accepts CREXI_EMAIL
@@ -34,7 +31,11 @@ class Settings(BaseSettings):
     CREXI_PASSWORD: Optional[str] = None
     LOOPNET_USERNAME: Optional[str] = None
     LOOPNET_PASSWORD: Optional[str] = None
-    
+
+    # Geocoding
+    GEOCODING_USER_AGENT: str = "csoki-site-selection/1.0"
+    GEOCODING_RATE_LIMIT: float = 1.0
+
     @property
     def crexi_username(self) -> Optional[str]:
         """Get Crexi username from either CREXI_USERNAME or CREXI_EMAIL."""
@@ -47,10 +48,6 @@ class Settings(BaseSettings):
         "https://dashboard.fivecodevelopment.com",
         "https://frontend-production-12b6.up.railway.app",
     ]
-
-    # Geocoding
-    GEOCODING_USER_AGENT: str = "csoki-site-selection/1.0"
-    GEOCODING_RATE_LIMIT: float = 1.0  # requests per second
 
     class Config:
         env_file = ".env"

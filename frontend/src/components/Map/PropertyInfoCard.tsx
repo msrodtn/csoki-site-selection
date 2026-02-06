@@ -14,6 +14,7 @@ import { X, ExternalLink, MapPin, Building2, Calendar, User, TrendingUp, AlertTr
 import type { PropertyListing, ParcelInfo } from '../../types/store';
 import { analysisApi } from '../../services/api';
 import { PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS } from '../../types/store';
+import { formatCurrencyIntl as formatCurrency } from '../../utils/formatters';
 
 interface PropertyInfoCardProps {
   property: PropertyListing;
@@ -122,17 +123,6 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
     } finally {
       setIsLoadingParcel(false);
     }
-  };
-
-  // Format currency
-  const formatCurrency = (value: number | null | undefined) => {
-    if (!value) return 'N/A';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
   };
 
   // Format date

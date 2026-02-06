@@ -14,17 +14,7 @@ import { analysisApi } from '../../services/api';
 import type { SavedLocation, DemographicsResponse, BrandKey } from '../../types/store';
 import { BRAND_COLORS, BRAND_LABELS, BRAND_LOGOS } from '../../types/store';
 
-// Format numbers with commas
-const formatNumber = (num: number | null): string => {
-  if (num === null) return 'N/A';
-  return num.toLocaleString();
-};
-
-// Format currency
-const formatCurrency = (num: number | null): string => {
-  if (num === null) return 'N/A';
-  return '$' + num.toLocaleString();
-};
+import { formatNumber, formatCurrency } from '../../utils/formatters';
 
 export function ComparePanel() {
   const {

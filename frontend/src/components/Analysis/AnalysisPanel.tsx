@@ -53,17 +53,7 @@ const CATEGORY_ICONS: Record<POICategory, React.ReactNode> = {
   services: <Building2 className="w-4 h-4" />,
 };
 
-// Format numbers with commas
-const formatNumber = (num: number | null): string => {
-  if (num === null) return 'N/A';
-  return num.toLocaleString();
-};
-
-// Format currency
-const formatCurrency = (num: number | null): string => {
-  if (num === null) return 'N/A';
-  return '$' + num.toLocaleString();
-};
+import { formatNumber, formatCurrency } from '../../utils/formatters';
 
 export function AnalysisPanel() {
   const {
@@ -447,145 +437,6 @@ export function AnalysisPanel() {
 
         {analysisResult && !isAnalyzing && (
           <>
-            {/* POI Section - Collapsible */}
-            <div className="mb-4 border rounded-lg overflow-hidden">
-              <button
-                onClick={() => setIsPOIExpanded(!isPOIExpanded)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  {isPOIExpanded ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-500" />
-                  )}
-                  <MapPin className="w-4 h-4 text-purple-600" />
-                  <span className="font-semibold text-gray-700">Points of Interest</span>
-                </div>
-                <span className="text-sm font-medium text-gray-500">
-                  {Object.values(analysisResult.summary).reduce((a, b) => a + b, 0)} total
-                </span>
-              </button>
-
-              {isPOIExpanded && (
-                <div className="p-4 border-t">
-                  {/* Hierarchical POI Category Toggles */}
-                  <div className="space-y-1">
-                    {(['anchors', 'quick_service', 'restaurants', 'retail', 'entertainment', 'services'] as POICategory[]).map(
-                      (category) => {
-                        const isCategoryVisible = visibleCategoriesArray.includes(category);
-                        const isExpanded = expandedPOICategories.has(category);
-                        const categoryPOIs = analysisResult.pois.filter((p) => p.category === category);
-                        const count = categoryPOIs.length;
-                        const visibleCount = categoryPOIs.filter((p) => !hiddenPOIs.has(p.place_id)).length;
-
-                        return (
-                          <div key={category} className="rounded-lg overflow-hidden">
-                            {/* Category Header */}
-                            <div
-                              className={`flex items-center justify-between px-3 py-2 transition-colors ${
-                                isCategoryVisible
-                                  ? 'bg-gray-100 hover:bg-gray-200'
-                                  : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
-                              }`}
-                            >
-                              <button
-                                onClick={() => count > 0 && togglePOICategoryExpanded(category)}
-                                className="flex items-center gap-2 flex-1"
-                                disabled={count === 0}
-                              >
-                                {count > 0 ? (
-                                  isExpanded ? (
-                                    <ChevronDown className="w-3 h-3 text-gray-500" />
-                                  ) : (
-                                    <ChevronRight className="w-3 h-3 text-gray-500" />
-                                  )
-                                ) : (
-                                  <div className="w-3 h-3" />
-                                )}
-                                <div
-                                  className="w-3 h-3 rounded-full"
-                                  style={{
-                                    backgroundColor: isCategoryVisible
-                                      ? POI_CATEGORY_COLORS[category]
-                                      : '#ccc',
-                                  }}
-                                />
-                                {CATEGORY_ICONS[category]}
-                                <span className="text-sm">{POI_CATEGORY_LABELS[category]}</span>
-                              </button>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-500">
-                                  {visibleCount}/{count}
-                                </span>
-                                <button
-                                  onClick={() => togglePOICategory(category)}
-                                  className="p-1 hover:bg-gray-300 rounded"
-                                >
-                                  {isCategoryVisible ? (
-                                    <Eye className="w-4 h-4 text-gray-500" />
-                                  ) : (
-                                    <EyeOff className="w-4 h-4 text-gray-400" />
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Individual POIs (expanded) */}
-                            {isExpanded && isCategoryVisible && count > 0 && (
-                              <div className="bg-gray-50 border-t border-gray-200">
-                                <div className="max-h-40 overflow-y-auto">
-                                  {categoryPOIs.map((poi) => {
-                                    const isHidden = hiddenPOIs.has(poi.place_id);
-                                    return (
-                                      <button
-                                        key={poi.place_id}
-                                        onClick={() => togglePOI(poi.place_id)}
-                                        className={`w-full flex items-center gap-2 text-sm py-1.5 px-4 hover:bg-gray-100 transition-colors ${
-                                          isHidden ? 'text-gray-400' : ''
-                                        }`}
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={!isHidden}
-                                          onChange={() => {}}
-                                          className="w-3 h-3 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                                        />
-                                        <span className="truncate flex-1 text-left">{poi.name}</span>
-                                        {poi.rating && (
-                                          <span className="text-xs text-gray-400">{poi.rating}★</span>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                {/* Show/Hide all in category */}
-                                <div className="flex gap-2 px-4 py-2 border-t border-gray-200">
-                                  <button
-                                    onClick={() => showAllPOIsInCategory(category, analysisResult.pois)}
-                                    className="text-xs text-blue-600 hover:underline"
-                                  >
-                                    Show all
-                                  </button>
-                                  <span className="text-gray-300">|</span>
-                                  <button
-                                    onClick={() => hideAllPOIsInCategory(category, analysisResult.pois)}
-                                    className="text-xs text-blue-600 hover:underline"
-                                  >
-                                    Hide all
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Demographics Section - Collapsible, loads on-demand */}
             <div className="mb-4 border rounded-lg overflow-hidden">
               <button
@@ -736,6 +587,145 @@ export function AnalysisPanel() {
                       )}
                     </>
                   )}
+                </div>
+              )}
+            </div>
+
+            {/* POI Section - Collapsible */}
+            <div className="mb-4 border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setIsPOIExpanded(!isPOIExpanded)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  {isPOIExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-500" />
+                  )}
+                  <MapPin className="w-4 h-4 text-purple-600" />
+                  <span className="font-semibold text-gray-700">Points of Interest</span>
+                </div>
+                <span className="text-sm font-medium text-gray-500">
+                  {Object.values(analysisResult.summary).reduce((a, b) => a + b, 0)} total
+                </span>
+              </button>
+
+              {isPOIExpanded && (
+                <div className="p-4 border-t">
+                  {/* Hierarchical POI Category Toggles */}
+                  <div className="space-y-1">
+                    {(['anchors', 'quick_service', 'restaurants', 'retail', 'entertainment', 'services'] as POICategory[]).map(
+                      (category) => {
+                        const isCategoryVisible = visibleCategoriesArray.includes(category);
+                        const isExpanded = expandedPOICategories.has(category);
+                        const categoryPOIs = analysisResult.pois.filter((p) => p.category === category);
+                        const count = categoryPOIs.length;
+                        const visibleCount = categoryPOIs.filter((p) => !hiddenPOIs.has(p.place_id)).length;
+
+                        return (
+                          <div key={category} className="rounded-lg overflow-hidden">
+                            {/* Category Header */}
+                            <div
+                              className={`flex items-center justify-between px-3 py-2 transition-colors ${
+                                isCategoryVisible
+                                  ? 'bg-gray-100 hover:bg-gray-200'
+                                  : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                              }`}
+                            >
+                              <button
+                                onClick={() => count > 0 && togglePOICategoryExpanded(category)}
+                                className="flex items-center gap-2 flex-1"
+                                disabled={count === 0}
+                              >
+                                {count > 0 ? (
+                                  isExpanded ? (
+                                    <ChevronDown className="w-3 h-3 text-gray-500" />
+                                  ) : (
+                                    <ChevronRight className="w-3 h-3 text-gray-500" />
+                                  )
+                                ) : (
+                                  <div className="w-3 h-3" />
+                                )}
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{
+                                    backgroundColor: isCategoryVisible
+                                      ? POI_CATEGORY_COLORS[category]
+                                      : '#ccc',
+                                  }}
+                                />
+                                {CATEGORY_ICONS[category]}
+                                <span className="text-sm">{POI_CATEGORY_LABELS[category]}</span>
+                              </button>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500">
+                                  {visibleCount}/{count}
+                                </span>
+                                <button
+                                  onClick={() => togglePOICategory(category)}
+                                  className="p-1 hover:bg-gray-300 rounded"
+                                >
+                                  {isCategoryVisible ? (
+                                    <Eye className="w-4 h-4 text-gray-500" />
+                                  ) : (
+                                    <EyeOff className="w-4 h-4 text-gray-400" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Individual POIs (expanded) */}
+                            {isExpanded && isCategoryVisible && count > 0 && (
+                              <div className="bg-gray-50 border-t border-gray-200">
+                                <div className="max-h-40 overflow-y-auto">
+                                  {categoryPOIs.map((poi) => {
+                                    const isHidden = hiddenPOIs.has(poi.place_id);
+                                    return (
+                                      <button
+                                        key={poi.place_id}
+                                        onClick={() => togglePOI(poi.place_id)}
+                                        className={`w-full flex items-center gap-2 text-sm py-1.5 px-4 hover:bg-gray-100 transition-colors ${
+                                          isHidden ? 'text-gray-400' : ''
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={!isHidden}
+                                          onChange={() => {}}
+                                          className="w-3 h-3 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                        />
+                                        <span className="truncate flex-1 text-left">{poi.name}</span>
+                                        {poi.rating && (
+                                          <span className="text-xs text-gray-400">{poi.rating}★</span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {/* Show/Hide all in category */}
+                                <div className="flex gap-2 px-4 py-2 border-t border-gray-200">
+                                  <button
+                                    onClick={() => showAllPOIsInCategory(category, analysisResult.pois)}
+                                    className="text-xs text-blue-600 hover:underline"
+                                  >
+                                    Show all
+                                  </button>
+                                  <span className="text-gray-300">|</span>
+                                  <button
+                                    onClick={() => hideAllPOIsInCategory(category, analysisResult.pois)}
+                                    className="text-xs text-blue-600 hover:underline"
+                                  >
+                                    Hide all
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                    )}
+                  </div>
                 </div>
               )}
             </div>

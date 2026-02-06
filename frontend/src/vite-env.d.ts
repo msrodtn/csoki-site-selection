@@ -2,7 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_URL: string;
-  readonly VITE_GOOGLE_MAPS_API_KEY: string;
+  readonly VITE_MAPBOX_TOKEN: string;
+  readonly VITE_MAPBOX_ACCESS_TOKEN: string;
 }
 
 interface ImportMeta {

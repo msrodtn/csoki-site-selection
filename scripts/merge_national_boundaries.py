@@ -31,15 +31,14 @@ STATES_DIR = BASE_DIR / "states"
 # (all 50 states + DC except Iowa which is in existing data)
 DOWNLOADED_STATES = [
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL",
-    "GA", "HI", "ID", "IL", "IN", "KS", "KY", "LA", "ME", "MD",
+    "GA", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "ME", "MD",
     "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
     "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
     "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
 ]
 
-# Existing 4-state files include Iowa (19), Nebraska (31), Nevada (32), Idaho (16)
-# The downloaded states also include NE, NV, ID so we need to handle overlap
-EXISTING_ONLY_STATES = {"19"}  # Iowa FIPS - only in existing files, not downloaded
+# All states now have enriched per-state files (Iowa was re-downloaded Feb 2026)
+EXISTING_ONLY_STATES = set()  # No longer needed - all states in DOWNLOADED_STATES
 
 
 def load_geojson(filepath: Path) -> list:

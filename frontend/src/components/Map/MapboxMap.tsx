@@ -1414,7 +1414,6 @@ export function MapboxMap() {
             limit: 100,
           });
           setOpportunities(result.opportunities || []);
-          console.log('[CSOKi Opportunities] Fetched:', result.opportunities?.length || 0, 'opportunities with filters:', opportunityFilters);
         } catch (error: any) {
           console.error('[CSOKi Opportunities] Error fetching:', error);
           setOpportunities([]);
@@ -2432,9 +2431,8 @@ export function MapboxMap() {
         <BuildingLayer
           map={mapRef.current}
           visible={showBuildingLayer}
-          onBuildingClick={(building: BuildingInfo) => {
-            console.log('Building clicked:', building);
-            // TODO: Add building info popup or panel
+          onBuildingClick={(_building: BuildingInfo) => {
+            // Building click handler - future: add info popup
           }}
         />
 

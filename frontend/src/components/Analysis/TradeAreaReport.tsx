@@ -41,27 +41,7 @@ interface TradeAreaReportProps {
   locationAddress?: string;
 }
 
-// Format numbers with commas
-const formatNumber = (num: number | null): string => {
-  if (num === null || num === undefined) return 'N/A';
-  return num.toLocaleString();
-};
-
-// Format currency
-const formatCurrency = (num: number | null): string => {
-  if (num === null || num === undefined) return 'N/A';
-  if (num >= 1000000) return '$' + (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return '$' + (num / 1000).toFixed(0) + 'K';
-  return '$' + num.toLocaleString();
-};
-
-// Format compact number
-const formatCompact = (num: number | null): string => {
-  if (num === null || num === undefined) return 'N/A';
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toLocaleString();
-};
+import { formatNumber, formatCurrencyCompact as formatCurrency, formatCompact } from '../../utils/formatters';
 
 export const TradeAreaReport = forwardRef<HTMLDivElement, TradeAreaReportProps>(
   ({ analysisResult, demographicsData, nearestCompetitors, locationName, locationAddress }, ref) => {

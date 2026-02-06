@@ -2,51 +2,58 @@
 
 ## Project Overview
 
-An AI-powered site selection dashboard for Cellular Sales (CSOKi) to identify optimal locations for new retail stores. The platform serves executive leadership with strategic market analysis, competitor mapping, and data-driven location recommendations.
+An AI-powered site selection dashboard for Cellular Sales (CSOKi) to identify optimal locations for new Verizon retail stores. The platform serves executive leadership with strategic market analysis, competitor mapping, property opportunity detection, and data-driven location recommendations.
 
 ### Target Markets
 - **Primary:** Iowa & Nebraska
 - **Secondary:** Nevada & Idaho
+- **Coverage:** All 50 US states for competitor mapping and demographic data
 
 ### Core Value Proposition
-Enable data-driven expansion decisions by visualizing competitor landscapes, demographic opportunities, and market gaps across target regions.
+Enable data-driven expansion decisions by visualizing competitor landscapes, demographic opportunities, property opportunities, and market gaps across target regions.
 
 ---
 
-## Current Status (Updated Feb 3, 2026)
+## Current Status (Updated Feb 2026)
 
 ### Phase 1: COMPLETE
-- [x] Project scaffolding (backend + frontend)
+- [x] Project scaffolding (FastAPI + React/Vite)
 - [x] Database setup with PostGIS on Railway
-- [x] Import all 6 competitor datasets (1,918 stores total)
-- [x] Geocode addresses using US Census Bureau Batch Geocoder (88% success - 1,688 stores)
-- [x] Google Maps visualization with competitor pins
-- [x] Brand toggle filters (6 competitors)
-- [x] Market/state selection
+- [x] Import all 6 competitor datasets (1,918 stores, 1,688 geocoded)
+- [x] Mapbox GL JS map with competitor pins (brand-colored markers)
+- [x] Brand toggle filters, state filtering, drag-to-reorder states
 - [x] Password protection (`!FiveCo`)
-- [x] Production deployment on Railway with custom domain
+- [x] Production deployment on Railway
 
 ### Phase 2: COMPLETE
-- [x] Trade Area Analysis with Google Places API
-- [x] POI categorization (Anchors, Quick Service, Restaurants, Retail)
+- [x] Trade area analysis (Google Places & Mapbox Places POI discovery)
+- [x] Demographics integration (ArcGIS GeoEnrichment, 1/3/5 mi radii)
 - [x] Adjustable analysis radius (0.25, 0.5, 1, 2, 3 miles)
-- [x] Auto-refresh analysis on radius change
 - [x] PDF export of analysis reports
-- [x] City autocomplete search (Google Places Autocomplete)
-- [x] Target market state toggles with drag-to-reorder
-- [x] Store breakdown by brand per state (expandable)
-- [x] Map stability fixes (direct navigation pattern)
+- [x] City autocomplete search (Mapbox Search Box)
+- [x] Map layers: FEMA Flood Zones, Traffic, Transit, Census Tracts, Parcels, Zoning, Buildings
+- [x] Competition density heat maps
+- [x] 3D building layer with interactive click
 
-### Phase 2.5: COMPLETE (Properties For Sale Layer)
-- [x] ATTOM Property API integration for commercial property intelligence
-- [x] Property search by map viewport bounds
-- [x] Opportunity signal detection (tax delinquency, foreclosure, long-term ownership, estate ownership)
-- [x] Opportunity scoring (0-100) for each property
-- [x] Property type classification (retail, land, office, industrial, mixed_use)
-- [x] PropertyInfoCard component with detailed property view
-- [x] ReportAll API integration for parcel details (ownership, zoning, boundaries)
-- [x] Map layer toggle for Properties For Sale
-- [x] Visual distinction: Purple diamonds (opportunities) vs colored circles (active listings)
+### Phase 2.5: COMPLETE (Properties & Listings)
+- [x] ATTOM Property API integration (commercial property intelligence, opportunity signals)
+- [x] ReportAll API integration (parcel details, ownership, zoning, boundaries)
+- [x] Crexi listing integration (automated CSV export with browser automation)
+- [x] Team-contributed property flagging (crowdsource from field reps)
+- [x] URL-based listing import (manual listing entry)
+
+### Phase 3: MOSTLY COMPLETE
+- [x] CSOKi Opportunities layer (ATTOM-filtered, Verizon-family proximity)
+- [x] Opportunity scoring & ranking (empty parcels, vacant, absentee, tax liens, etc.)
+- [x] Drive-time isochrones (Mapbox Isochrone API)
+- [x] Mapbox Matrix API for distance/time calculations
+- [x] Competitor accessibility analysis (drive-time to nearby competitors)
+- [x] StreetLight traffic counts integration
+- [x] Boundary overlays via Mapbox vector tilesets (counties, cities, ZCTAs, census tracts)
+- [x] County choropleth with demographic metrics (population, income, density)
+- [x] Nearest competitor analysis
+- [ ] Location scoring algorithm (planned)
+- [ ] Draw-to-analyze tool (planned)
 
 ### Live URLs
 - **Dashboard:** https://dashboard.fivecodevelopment.com
@@ -57,194 +64,329 @@ Enable data-driven expansion decisions by visualizing competitor landscapes, dem
 
 ## Technical Architecture
 
-### Stack (Implemented)
+### Stack
 - **Backend:** Python 3.11, FastAPI, SQLAlchemy 2.0, GeoAlchemy2
-- **Frontend:** React 18, TypeScript, Google Maps API, TailwindCSS, Zustand
+- **Frontend:** React 18, TypeScript, Vite, TailwindCSS
+- **Maps:** Mapbox GL JS (react-map-gl)
+- **State Management:** Zustand
+- **API Client:** React Query + Axios
 - **Database:** PostgreSQL 15 with PostGIS (Railway hosted)
 - **Hosting:** Railway (backend + frontend + PostgreSQL)
-- **Domain:** GoDaddy DNS → Railway
-- **External APIs:**
-  - Google Maps & Places API (mapping, POIs, autocomplete)
-  - ArcGIS GeoEnrichment (demographics)
-  - ATTOM Property API (commercial property intelligence, opportunity signals)
-  - ReportAll API (parcel details, ownership, zoning, boundaries)
+- **Domain:** GoDaddy DNS -> Railway
 
-### Stack (Planned for Future Phases)
-- **AI/ML:** OpenAI API for conversational features, scikit-learn for scoring models
-- **Cache:** Redis for API response caching
-- **Additional Data:** QuantumListing, Digsy (free CRE listing platforms)
+### External APIs
+| API | Purpose |
+|-----|---------|
+| Mapbox GL JS | Map rendering, search, isochrones, matrix, tilesets |
+| Google Places | POI discovery (trade area analysis) |
+| ArcGIS GeoEnrichment | Demographics (population, income, spending) |
+| ATTOM Property | Commercial property intelligence, opportunity signals |
+| ReportAll | Parcel details, ownership, zoning, boundaries |
+| StreetLight | Traffic count data |
+| Crexi | Commercial listing data (browser automation) |
+| Tavily | AI-powered property search (legacy) |
+
+### Project Structure
+```
+csoki-site-selection/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── __init__.py          # Router registration
+│   │   │   └── routes/
+│   │   │       ├── analysis.py      # Trade area, demographics, properties, matrix, boundaries
+│   │   │       ├── locations.py     # Store CRUD & spatial queries
+│   │   │       ├── opportunities.py # CSOKi opportunity search & scoring
+│   │   │       ├── listings.py      # Crexi/LoopNet listing scraping
+│   │   │       ├── team_properties.py # Team-flagged properties
+│   │   │       └── traffic.py       # Traffic count data by state
+│   │   ├── core/
+│   │   │   ├── config.py            # Environment settings, CORS, API keys
+│   │   │   └── database.py          # PostgreSQL/PostGIS connection
+│   │   ├── models/
+│   │   │   ├── store.py             # Store/competitor locations
+│   │   │   ├── team_property.py     # Team-flagged properties
+│   │   │   └── scraped_listing.py   # Scraped real estate listings
+│   │   ├── services/
+│   │   │   ├── arcgis.py            # ArcGIS GeoEnrichment
+│   │   │   ├── attom.py             # ATTOM property search & opportunities
+│   │   │   ├── crexi_automation.py  # Crexi browser automation
+│   │   │   ├── crexi_parser.py      # Crexi CSV parsing
+│   │   │   ├── data_import.py       # CSV import with geocoding
+│   │   │   ├── geocoding.py         # Geocoding services
+│   │   │   ├── listing_scraper.py   # Listing scraper engine
+│   │   │   ├── mapbox_datasets.py   # Mapbox Datasets API
+│   │   │   ├── mapbox_isochrone.py  # Mapbox Isochrone API
+│   │   │   ├── mapbox_matrix.py     # Mapbox Matrix API
+│   │   │   ├── mapbox_places.py     # Mapbox Places POI search
+│   │   │   ├── places.py            # Google Places POI search
+│   │   │   ├── property_search.py   # Property search logic
+│   │   │   ├── streetlight.py       # StreetLight traffic API
+│   │   │   └── url_import.py        # Import listings from URLs
+│   │   ├── utils/
+│   │   │   └── geo.py               # Shared haversine utility
+│   │   └── main.py                  # FastAPI app, middleware, startup
+│   ├── data/competitors/            # Geocoded store CSVs (6 brands)
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Map/
+│   │   │   │   ├── MapboxMap.tsx         # Main map component (2600+ lines)
+│   │   │   │   ├── MapboxSearchBar.tsx   # Places search autocomplete
+│   │   │   │   ├── MapStyleSwitcher.tsx  # Map style selector
+│   │   │   │   ├── PropertyInfoCard.tsx  # Property detail card
+│   │   │   │   ├── PropertySearchPanel.tsx
+│   │   │   │   ├── TeamPropertyForm.tsx  # Flag properties from field
+│   │   │   │   ├── CrexiLoader.tsx       # Crexi listing loader
+│   │   │   │   ├── URLImportPanel.tsx    # Import listings from URLs
+│   │   │   │   ├── IsochroneControl.tsx  # Drive-time isochrone controls
+│   │   │   │   ├── QuickStatsBar.tsx     # Quick statistics bar
+│   │   │   │   ├── DraggableParcelInfo.tsx
+│   │   │   │   ├── *Legend.tsx           # FEMALegend, HeatMapLegend, etc.
+│   │   │   │   ├── controls/            # NavigationControl, GeolocateControl
+│   │   │   │   └── layers/              # BuildingLayer, POILayer, etc.
+│   │   │   ├── Analysis/
+│   │   │   │   ├── AnalysisPanel.tsx     # Trade area panel (1000+ lines)
+│   │   │   │   ├── ComparePanel.tsx      # Location comparison
+│   │   │   │   ├── CompetitorAccessPanel.tsx
+│   │   │   │   ├── ReportModal.tsx
+│   │   │   │   └── TradeAreaReport.tsx   # PDF report generation
+│   │   │   ├── Sidebar/
+│   │   │   │   ├── Sidebar.tsx           # Main sidebar container
+│   │   │   │   ├── BrandFilter.tsx       # Brand toggle filters
+│   │   │   │   ├── MapLayers.tsx         # Layer toggle controls
+│   │   │   │   └── StateFilter.tsx       # State toggles, drag reorder
+│   │   │   └── Auth/
+│   │   │       └── PasswordGate.tsx      # Password protection
+│   │   ├── config/
+│   │   │   └── traffic-sources.ts        # Traffic data source config
+│   │   ├── hooks/
+│   │   │   └── useStores.ts              # React Query hooks
+│   │   ├── services/
+│   │   │   ├── api.ts                    # Axios API client
+│   │   │   ├── arcgis-traffic.ts         # ArcGIS traffic layer
+│   │   │   └── mapbox-isochrone.ts       # Isochrone service
+│   │   ├── store/
+│   │   │   └── useMapStore.ts            # Zustand state management
+│   │   ├── types/
+│   │   │   └── store.ts                  # TypeScript interfaces
+│   │   └── utils/
+│   │       ├── building-layer-styles.ts
+│   │       ├── listingLinks.ts
+│   │       ├── mapbox-expressions.ts
+│   │       └── poi-layer-styles.ts
+│   ├── package.json
+│   ├── nginx.conf
+│   ├── entrypoint.sh
+│   ├── Dockerfile                        # Development
+│   └── Dockerfile.prod                   # Production (nginx)
+├── scripts/
+│   ├── download_national_boundaries.py   # Per-state GeoJSON download
+│   ├── merge_national_boundaries.py      # Merge into national files
+│   ├── upload_national_tilesets.sh       # Upload to Mapbox Tilesets API
+│   ├── add_population_to_tilesets.py
+│   ├── download-iowa-traffic.js
+│   └── download-traffic-data.js
+├── mapbox-tilesets/                      # GeoJSON/NDJSON for Mapbox uploads
+├── data/                                 # Traffic count data
+├── docker-compose.yml
+├── CLAUDE.md
+├── README.md
+└── MAPBOX_TILESETS.md
+```
 
 ---
 
 ## Data Architecture
 
-### Competitor Data (All Complete)
-| Source | Records | Geocoded | Status |
-|--------|---------|----------|--------|
-| CSOKi (Cellular Sales) | 860 | 749 | ✅ Complete |
-| Russell Cellular | 686 | 593 | ✅ Complete |
-| T-Mobile | 210 | 198 | ✅ Complete |
-| US Cellular | 85 | 79 | ✅ Complete |
-| Verizon Corporate | 40 | 38 | ✅ Complete |
-| Victra | 37 | 31 | ✅ Complete |
-| **Total** | **1,918** | **1,688** | **88% geocoded** |
+### Competitor Data
+| Brand | Records | Geocoded | DB Key |
+|-------|---------|----------|--------|
+| CSOKi (Cellular Sales) | 860 | 749 | `csoki` |
+| Russell Cellular | 686 | 593 | `russell_cellular` |
+| T-Mobile | 210 | 198 | `tmobile` |
+| US Cellular | 85 | 79 | `uscellular` |
+| Verizon Corporate | 40 | 38 | `verizon_corporate` |
+| Victra | 37 | 31 | `victra` |
+| **Total** | **1,918** | **1,688** | |
 
-### Store Data Schema (Implemented)
-```sql
-CREATE TABLE stores (
-    id SERIAL PRIMARY KEY,
-    brand VARCHAR(50) NOT NULL,
-    street VARCHAR(255),
-    city VARCHAR(100),
-    state VARCHAR(2),
-    postal_code VARCHAR(10),
-    latitude FLOAT,
-    longitude FLOAT,
-    location GEOGRAPHY(POINT, 4326),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
+### Database Tables
+- `stores` - Competitor locations with PostGIS geography column
+- `team_properties` - Team-flagged property opportunities
+- `scraped_listings` - Cached Crexi/LoopNet listings
 
-CREATE INDEX idx_stores_brand_state ON stores(brand, state);
--- GeoAlchemy2 auto-creates spatial index for location column
-```
+### Boundary Tilesets (Mapbox)
+Configured in `MapboxMap.tsx` via `BOUNDARY_TILESETS`:
+- **Counties:** National county boundaries with POPULATION, MEDIAN_INCOME, POP_DENSITY
+- **Cities:** City/place boundaries
+- **ZCTAs:** ZIP Code Tabulation Areas
+- **Census Tracts:** Tract-level boundaries
 
-### CSV Data Files (Pre-geocoded)
-Located in `/backend/data/competitors/`:
-- `csoki_all_stores.csv` - 860 stores
-- `russell_cellular_all_stores.csv` - 686 stores
-- `tmobile_stores.csv` - 210 stores
-- `uscellular_stores.csv` - 85 stores
-- `verizon_corporate_stores.csv` - 40 stores
-- `victra_stores.csv` - 37 stores
+Tileset properties: `POPULATION`, `MEDIAN_INCOME`, `POP_DENSITY`, `NAME`, `GEOID`
+
+Data pipeline: `download_national_boundaries.py` -> `merge_national_boundaries.py` -> `upload_national_tilesets.sh`
 
 ---
 
-## Implemented Features
+## API Endpoints
 
-### 1. Interactive Map Dashboard
-- [x] Google Maps with 1,688 geocoded store locations
-- [x] Multi-layer competitor visualization (toggle by brand)
-- [x] Color-coded markers by brand (larger than POI markers)
-- [x] Store info popups on click (address, brand, analyze button)
-- [x] Target market state filtering with toggle visibility
-- [x] Drag-to-reorder state priority in sidebar
-- [x] Store breakdown by brand per state (expandable chevron)
-- [x] Competition density heat maps
-- [ ] Draw custom analysis areas (Phase 3)
-- [ ] Drive-time isochrones (Phase 3)
-
-### 2. Trade Area Analysis
-- [x] Click any store → "Analyze Trade Area" button
-- [x] Google Places API fetches nearby POIs
-- [x] POI categories: Anchors, Quick Service, Restaurants, Retail
-- [x] Visual radius circle on map
-- [x] POI markers with category colors
-- [x] Adjustable radius (0.25, 0.5, 1, 2, 3 miles)
-- [x] Auto-refresh when radius changes
-- [x] Category visibility toggles
-- [x] PDF export with detailed report
-
-### 3. Properties For Sale Layer (NEW - ATTOM Powered)
-- [x] Toggle "Properties For Sale" in Map Layers sidebar
-- [x] Automatic search when layer enabled (uses map viewport bounds)
-- [x] **Opportunity Detection** - Identifies properties likely to sell based on:
-  - Tax delinquency
-  - Foreclosure/pre-foreclosure status
-  - Long-term ownership (15+ years)
-  - Estate/trust ownership
-  - Undervalued assessments
-- [x] **Opportunity Scoring** - 0-100 score based on signal strength
-- [x] **Property Types** - Retail, Land, Office, Industrial, Mixed Use
-- [x] **Visual Markers**:
-  - Purple diamonds = Opportunities (likely to sell, not actively listed)
-  - Colored circles = Active listings (color by property type)
-- [x] **PropertyInfoCard** on marker click showing:
-  - Address, price, size, year built
-  - Opportunity signals with explanations
-  - Owner name and type
-  - "Get Parcel Details" button (ReportAll integration)
-- [x] **ReportAll Integration** for detailed parcel info:
-  - Parcel ID, zoning, land use
-  - Assessed value, acreage
-  - Parcel boundary polygon overlay
-
-### 4. City Search with Autocomplete
-- [x] Google Places Autocomplete as you type
-- [x] Restricted to US cities
-- [x] Dropdown with up to 5 suggestions
-- [x] Click suggestion → map navigates to location
-- [x] Debounced API calls (300ms)
-
-### 5. Map Layers
-- [x] FEMA Flood Zones (zoom 12+)
-- [x] Traffic (real-time)
-- [x] Transit routes
-- [x] Parcel Boundaries (zoom 14+, click for info)
-- [x] Competition Heat Map
-- [x] Business Labels
-- [x] Zoning Colors
-- [x] Properties For Sale (ATTOM)
-
-### 6. Password Protection
-- Simple password gate: `!FiveCo`
-- Uses sessionStorage for session persistence
-
-### 7. API Endpoints (Implemented)
+### Locations (`/api/v1/locations/`)
 ```
-# Store Locations
-GET  /api/v1/locations/              # List all stores with filtering
-GET  /api/v1/locations/brands/       # Get available brand names
-GET  /api/v1/locations/stats/        # Store count by brand with states
-GET  /api/v1/locations/state/{state}/  # Stores in specific state
-POST /api/v1/locations/within-bounds/  # Stores in map viewport
-POST /api/v1/locations/within-radius/  # Stores within radius
+GET    /                              # List stores (brand, state, city, limit, offset)
+GET    /brands/                       # Available brand names
+GET    /stats/                        # Store count by brand with states
+GET    /state/{state}/                # Stores in specific state
+GET    /{store_id}/                   # Get specific store
+POST   /within-bounds/                # Stores in map viewport
+POST   /within-radius/                # Stores within radius of point
+POST   /nearest-competitors/          # Nearest competitor of each brand
+```
 
-# Trade Area Analysis
-POST /api/v1/analysis/trade-area/    # Analyze POIs around location
-POST /api/v1/analysis/demographics/  # ArcGIS demographics data
-POST /api/v1/analysis/parcel/        # ReportAll parcel lookup
-GET  /api/v1/analysis/check-api-key/ # Verify Google Places API key
-GET  /api/v1/analysis/check-arcgis-key/    # Verify ArcGIS API key
-GET  /api/v1/analysis/check-reportall-key/ # Verify ReportAll API key
+### Analysis (`/api/v1/analysis/`)
+```
+# Core Analysis
+POST   /trade-area/                   # Google Places POI analysis
+POST   /mapbox-trade-area/            # Mapbox Places POI analysis
+POST   /demographics/                 # ArcGIS demographics (1/3/5 mi)
+POST   /parcel/                       # ReportAll parcel lookup
+POST   /property-search/              # Property search (legacy Tavily/AI)
 
-# Property Search (ATTOM - NEW)
-POST /api/v1/analysis/properties/search/        # Search by radius
-POST /api/v1/analysis/properties/search-bounds/ # Search by map bounds
-GET  /api/v1/analysis/check-attom-key/          # Verify ATTOM API key
+# ATTOM Properties
+POST   /properties/search/            # ATTOM property search by radius
+POST   /properties/search-bounds/     # ATTOM property search by bounds
 
-# Health
-GET  /health                         # Health check
+# Traffic
+POST   /traffic-counts/               # StreetLight traffic analysis
+POST   /traffic-counts/estimate/      # Estimate segment count
+
+# Drive-Time Matrix
+POST   /matrix/                       # Mapbox Matrix (distance/time)
+POST   /matrix/batched/               # Batched matrix for large datasets
+POST   /competitor-access/            # Drive-time to nearby competitors
+GET    /matrix/cache-stats/           # Matrix cache statistics
+POST   /matrix/clear-cache/           # Clear matrix cache
+
+# Isochrones
+POST   /isochrone/                    # Single point isochrone
+POST   /isochrone/multi/              # Multi-point isochrone
+
+# Boundary Data
+GET    /demographic-boundaries/        # Choropleth data (state, metric, geography)
+GET    /boundaries/counties/           # County boundaries for state
+GET    /boundaries/cities/             # City boundaries for state
+GET    /boundaries/zipcodes/           # ZCTA boundaries for state
+
+# Saved Analyses (Mapbox Datasets)
+POST   /datasets/save/                # Save analysis
+GET    /datasets/                     # List saved analyses
+GET    /datasets/{id}/                # Get saved analysis
+GET    /datasets/{id}/features/       # Get analysis features
+DELETE /datasets/{id}/                # Delete saved analysis
+GET    /datasets/mapbox/              # List Mapbox datasets
+
+# Utilities
+GET    /check-keys/                   # Check all API key status
+POST   /regeocode-stores/             # Re-geocode stores
+GET    /regeocode-status/             # Check geocoding status
+GET    /validate-store-coords/        # Validate store coordinates
+```
+
+### Opportunities (`/api/v1/opportunities/`)
+```
+POST   /search                        # CSOKi-filtered opportunity search
+GET    /stats                         # Opportunity signal metadata
+```
+
+### Listings (`/api/v1/listings/`)
+```
+POST   /scrape                        # Trigger listing scrape
+GET    /scrape/{job_id}               # Scrape job status
+GET    /search                        # Search cached listings
+POST   /search-bounds                 # Search listings in bounds
+GET    /sources                       # Listing source status
+GET    /diagnostics                   # Crexi/Playwright diagnostics
+DELETE /{listing_id}                  # Deactivate listing
+POST   /import-url                    # Import from URL
+POST   /import-urls-batch             # Batch import from URLs
+POST   /fetch-crexi-area              # Fetch Crexi listings for area
+```
+
+### Team Properties (`/api/v1/team-properties/`)
+```
+POST   /                              # Create team property flag
+GET    /                              # List team properties
+GET    /{id}                          # Get specific property
+PUT    /{id}                          # Update team property
+DELETE /{id}                          # Delete team property
+POST   /in-bounds/                    # Properties in map bounds
+```
+
+### Traffic (`/api/v1/traffic/`)
+```
+GET    /states/                       # Available traffic data states
+GET    /{state_code}/                 # Traffic data for state
+DELETE /cache/{state_code}/           # Clear traffic cache
 ```
 
 ---
 
-## Remaining Development Phases
+## CSOKi Opportunities Layer
 
-### Phase 3: Analysis Tools (Priority)
-- [ ] Location scoring algorithm:
-  - Competition Factor (30%): Distance to competitors, density
-  - Demographics (25%): Population, income, age distribution
-  - Traffic (20%): Foot traffic, retail activity
-  - Accessibility (15%): Road proximity, visibility
-  - Market Gaps (10%): Underserved areas
-- [ ] Draw-to-analyze tool (custom polygons)
-- [ ] Drive-time radius analysis (5/10/15 min isochrones)
-- [ ] Integrate additional free listing sources (QuantumListing, Digsy)
-- [ ] Team-contributed property flagging (crowdsource from field reps)
+The Opportunities layer is the core Phase 3 feature. It uses ATTOM property data filtered by CSOKi-specific criteria:
 
-### Phase 4: AI Integration
-- [ ] Conversational assistant (OpenAI/Anthropic integration)
-- [ ] Natural language queries: "Show best opportunities in Des Moines"
-- [ ] AI-generated location recommendations
-- [ ] Insight summarization
+### Filter Criteria
+- **Parcel size:** 0.8-2 acres
+- **Building size:** 2,500-6,000 sqft (if building exists)
+- **Property types:** Retail (preferred), Office (acceptable), Land (empty parcels)
+- **Exclude:** Multi-tenant buildings, shopping centers, strip malls
+- **Proximity:** Must be within 1 mile of a Verizon-family store (Russell Cellular, Victra, Verizon Corporate)
 
-### Phase 5: Reports & Recommendations
-- [ ] **Top 5-10 site prospect recommendations** (main goal)
-- [ ] Executive dashboard view
-- [ ] Enhanced PDF report generation
-- [ ] Saved analyses / bookmarks
-- [ ] Property watchlist (track opportunities over time)
+### Opportunity Ranking (Priority Order)
+| Rank | Signal | Points |
+|------|--------|--------|
+| 1 | Empty parcels (land only) | 100 |
+| 2 | Vacant properties | 80 |
+| 3 | Out-of-state/absentee owners | 60 |
+| 4 | Tax liens/pressure | 50 |
+| 5 | Aging owners (estate/trust) | 40 |
+| 6 | Small single-tenant buildings | 30 |
+| Bonus | Foreclosure/distress | 70 |
+
+### Verizon-Family Brands
+```python
+VERIZON_FAMILY_BRANDS = ["russell_cellular", "victra", "verizon_corporate"]
+```
+
+---
+
+## Environment Variables
+
+### Backend (Railway)
+```env
+DATABASE_URL=postgresql://...              # Railway PostgreSQL (auto-provided)
+
+# Active API Keys
+GOOGLE_PLACES_API_KEY=...                  # POI search (trade area analysis)
+ARCGIS_API_KEY=...                         # Demographics (GeoEnrichment)
+MAPBOX_ACCESS_TOKEN=...                    # Mapbox services (isochrone, matrix, places, datasets)
+ATTOM_API_KEY=...                          # Property intelligence & opportunity signals
+REPORTALL_API_KEY=...                      # Parcel details, ownership, zoning
+STREETLIGHT_API_KEY=...                    # Traffic count data
+TAVILY_API_KEY=...                         # AI-powered property search (legacy)
+CREXI_API_KEY=...                          # Crexi listing access
+
+# Listing Scraper Credentials
+CREXI_USERNAME=... (or CREXI_EMAIL=...)    # Crexi login
+CREXI_PASSWORD=...                         # Crexi password
+```
+
+### Frontend (Railway)
+```env
+VITE_API_URL=https://backend-production-cf26.up.railway.app
+VITE_MAPBOX_TOKEN=...                      # Mapbox GL JS map rendering
+```
 
 ---
 
@@ -252,18 +394,17 @@ GET  /health                         # Health check
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Map Library | Google Maps API | User preference, familiar interface |
-| Geocoding | US Census Batch Geocoder | Free, no API key required, good accuracy |
-| Hosting | Railway | Easy deployment, PostgreSQL + PostGIS support |
+| Map Library | Mapbox GL JS | Vector tiles, custom layers, tilesets, isochrones, matrix API |
+| POI Data | Google Places + Mapbox Places | Dual-source for comprehensive coverage |
+| Demographics | ArcGIS GeoEnrichment | Comprehensive US demographic data |
+| Property Data | ATTOM API | Reliable commercial property intelligence |
+| Parcel Data | ReportAll API | Precise boundaries, ownership, zoning |
+| Traffic Data | StreetLight API | Industry-standard traffic analytics |
+| Boundary Overlays | Mapbox Vector Tilesets | Performant rendering of county/city/ZCTA/tract polygons |
+| Listing Data | Crexi (browser automation) | Primary CRE listing source |
 | State Management | Zustand | Simple, lightweight, React-friendly |
-| API Client | Axios + React Query | Caching, loading states, error handling |
-| Password Auth | Simple sessionStorage | MVP approach, no user management needed yet |
-| Map Navigation | Direct (imperative) | Prevents map jumping on re-renders |
-| POI Data | Google Places API | Real-time, accurate, comprehensive |
-| Search | Google Places Autocomplete | Native integration, US city filtering |
+| Hosting | Railway | Easy deployment, PostgreSQL + PostGIS support |
 | PDF Export | jsPDF | Client-side generation, no server load |
-| Property Data | ATTOM API | Reliable commercial property intelligence, opportunity signals |
-| Parcel Data | ReportAll API | Precise boundaries, ownership, zoning details |
 
 ---
 
@@ -271,100 +412,48 @@ GET  /health                         # Health check
 
 ### Railway Services
 - **backend**: FastAPI app with PostGIS connection
-- **frontend**: React app served via nginx
+- **frontend**: React app served via nginx (Dockerfile.prod)
 - **PostgreSQL**: Railway-managed with PostGIS extension
 
-### Environment Variables (Railway)
-**Backend:**
-- `DATABASE_URL` - Auto-provided by Railway PostgreSQL
-- `CORS_ORIGINS` - Includes production frontend domains
-- `GOOGLE_PLACES_API_KEY` - For trade area analysis, autocomplete
-- `ARCGIS_API_KEY` - For demographics data
-- `REPORTALL_API_KEY` - For parcel details and boundaries
-- `ATTOM_API_KEY` - For commercial property search and opportunity signals
-
-**Frontend:**
-- `VITE_API_URL` - Backend URL
-- `VITE_GOOGLE_MAPS_API_KEY` - Google Maps API key (also enables Places)
-
-### Manual Deployment
+### Deploy
 ```bash
-# From project root
-cd backend && railway service backend && railway up
-cd ../frontend && railway service frontend && railway up
+git push origin main    # Auto-deploys on push
 ```
 
 ---
 
-## Notes for Claude
+## Notes for Development
 
 ### Important Implementation Details
 
-1. **API URL trailing slashes**: All frontend API calls use trailing slashes (`/locations/`) because FastAPI routes are defined with trailing slashes
+1. **API URL trailing slashes**: FastAPI routes defined with trailing slashes; frontend API calls match.
 
-2. **HTTPS Middleware**: Backend uses custom `HTTPSRedirectMiddleware` to handle X-Forwarded-Proto header from Railway proxy
+2. **HTTPS Middleware**: Backend uses custom middleware to handle X-Forwarded-Proto from Railway proxy.
 
-3. **CORS Configuration**: Production domains added to `backend/app/core/config.py`:
-   - https://dashboard.fivecodevelopment.com
-   - https://frontend-production-12b6.up.railway.app
+3. **CORS Configuration** in `backend/app/core/config.py`:
+   - `https://dashboard.fivecodevelopment.com`
+   - `https://frontend-production-12b6.up.railway.app`
+   - `http://localhost:5173` (dev)
+   - `http://localhost:3000` (dev)
 
-4. **Database Auto-Seeding**: On startup, if database is empty, `main.py` automatically imports all CSV files from `/data/competitors/`
+4. **Database Auto-Seeding**: On startup, `main.py` imports all CSVs from `/data/competitors/` if database is empty.
 
-5. **Geocoding**: Pre-geocoded CSV files include `latitude` and `longitude` columns. The batch geocoder script is at `/backend/scripts/batch_geocode.py`
+5. **Map Navigation**: Uses Mapbox GL JS with `react-map-gl`. Map state managed through Zustand store (`useMapStore.ts`).
 
-6. **Brand Filter**: Uses Array.includes() instead of Set.has() for reliable checking after serialization
+6. **Boundary Tilesets**: County/city/ZCTA/tract boundaries use Mapbox vector tilesets (NOT dynamic GeoJSON). Tileset IDs and source-layer names configured in `BOUNDARY_TILESETS` in `MapboxMap.tsx` (~line 88). Source-layer names are set during upload and must be verified in Mapbox Studio.
 
-7. **Map Navigation Pattern (IMPORTANT)**:
-   - The map uses **direct/imperative navigation** via `navigateTo()` in Zustand
-   - The `GoogleMap` component is **uncontrolled** (no `center` or `zoom` props)
-   - Initial position is set only in `onLoad` callback
-   - This prevents the map from jumping when clicking markers or during re-renders
+7. **Demographic Choropleth**: `demographicMetric` state controls county fill color. Values: `'population' | 'income' | 'density'`.
 
-8. **Google Maps Libraries**: The `places` and `visualization` libraries are loaded alongside the map. The libraries array must be defined as a constant outside the component to prevent re-render warnings.
+8. **Census Tracts**: Need pagination (500 per batch) - states like CA/TX have thousands. Tracts use NDJSON format for large-file compatibility with Mapbox Tilesets Service.
 
-9. **Properties For Sale Layer (IMPORTANT)**:
-   - Uses ATTOM API for property intelligence (NOT scraping)
-   - Previous scraping approach was unreliable - replaced with ATTOM
-   - Searches triggered automatically when layer toggled ON
-   - Uses map viewport bounds for geographic filtering
-   - ReportAll provides parcel details on click (separate from ATTOM)
-   - Opportunity signals are calculated from ATTOM data (tax status, ownership duration, foreclosure status, etc.)
+9. **ZCTAs**: Population fetched once nationally (single Census ACS request), not per-state. Need deduplication by GEOID20 since bounding box queries create overlap at borders.
 
-### Key Files to Know
-
-**Backend:**
-- `backend/app/main.py` - FastAPI app with HTTPS middleware
-- `backend/app/core/config.py` - CORS origins, API keys, settings
-- `backend/app/api/routes/locations.py` - Store API endpoints
-- `backend/app/api/routes/analysis.py` - Trade area, demographics, parcel, and property search endpoints
-- `backend/app/services/places.py` - Google Places API integration
-- `backend/app/services/arcgis.py` - ArcGIS demographics integration
-- `backend/app/services/attom.py` - ATTOM property search and opportunity detection
-- `backend/app/services/data_import.py` - CSV import with geocoding
-
-**Frontend:**
-- `frontend/src/components/Map/StoreMap.tsx` - Google Maps component with all layers
-- `frontend/src/components/Map/PropertyInfoCard.tsx` - Property detail card with opportunity signals
-- `frontend/src/components/Map/PropertyLegend.tsx` - Property layer legend
-- `frontend/src/components/Analysis/AnalysisPanel.tsx` - Trade area panel with PDF export
-- `frontend/src/components/Sidebar/SearchBar.tsx` - City autocomplete search
-- `frontend/src/components/Sidebar/MapLayers.tsx` - Layer toggle controls
-- `frontend/src/components/Sidebar/StateFilter.tsx` - State toggles with drag reorder
-- `frontend/src/components/Auth/PasswordGate.tsx` - Password protection
-- `frontend/src/services/api.ts` - API client with axios (includes ATTOM methods)
-- `frontend/src/store/useMapStore.ts` - Zustand state (includes mapInstance, navigateTo)
-- `frontend/src/types/store.ts` - TypeScript types including PropertyListing, OpportunitySignal
-
-### Data Freshness
-- Competitor CSV data can be refreshed by updating files in `/backend/data/competitors/`
-- Clear database and restart backend to re-import
-- Use `batch_geocode.py` script to geocode new addresses
-- Property data from ATTOM is fetched in real-time when layer is enabled
+10. **Shared Haversine**: Single implementation in `backend/app/utils/geo.py` (returns miles). Note: `mapbox_places.py` has its own haversine that returns meters with lat-first parameter order.
 
 ### Brand Colors
 ```typescript
 BRAND_COLORS = {
-  csoki: '#E31837',           // Red (CSOKi brand)
+  csoki: '#E31837',           // Red
   russell_cellular: '#FF6B00', // Orange
   verizon_corporate: '#CD040B', // Verizon Red
   victra: '#000000',           // Black
@@ -373,30 +462,12 @@ BRAND_COLORS = {
 }
 ```
 
-### POI Category Colors
-```typescript
-POI_CATEGORY_COLORS = {
-  anchors: '#8B5CF6',      // Purple
-  quick_service: '#F59E0B', // Amber
-  restaurants: '#10B981',   // Emerald
-  retail: '#3B82F6',        // Blue
-}
-```
-
-### Property Type Colors
-```typescript
-PROPERTY_TYPE_COLORS = {
-  retail: '#22C55E',      // Green
-  land: '#A16207',        // Amber/Brown
-  office: '#3B82F6',      // Blue
-  industrial: '#6B7280',  // Gray
-  mixed_use: '#8B5CF6',   // Purple
-}
-```
-
 ### Opportunity Signal Types
-- `tax_delinquent` - Property has delinquent taxes (HIGH strength)
-- `distress` - Foreclosure/pre-foreclosure status (HIGH strength)
-- `long_term_owner` - Same owner 15+ years (MEDIUM strength)
-- `estate_ownership` - Owned by trust or estate (MEDIUM strength)
-- `undervalued` - Assessed below market value (MEDIUM strength)
+- `tax_delinquent` - Delinquent taxes (HIGH)
+- `tax_pressure` - Recent tax increases (MEDIUM)
+- `distress` - Foreclosure/pre-foreclosure (HIGH)
+- `vacant_property` - Currently unoccupied (HIGH)
+- `absentee_owner` - Out-of-state owner (MEDIUM)
+- `long_term_owner` - Same owner 15+ years (MEDIUM)
+- `estate_ownership` - Trust or estate (MEDIUM)
+- `undervalued` - Assessed below market (MEDIUM)

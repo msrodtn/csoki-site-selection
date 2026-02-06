@@ -114,9 +114,14 @@ export const analysisApi = {
     return data;
   },
 
-  // Check if Places API key is configured
-  checkApiKey: async (): Promise<{ configured: boolean; message: string }> => {
-    const { data } = await api.get('/analysis/check-api-key/');
+  // Check all API key configuration status
+  checkKeys: async (): Promise<{
+    keys: Record<string, boolean>;
+    all_configured: boolean;
+    configured_count: number;
+    total_count: number;
+  }> => {
+    const { data } = await api.get('/analysis/check-keys/');
     return data;
   },
 
@@ -125,16 +130,6 @@ export const analysisApi = {
     const { data } = await api.post('/analysis/demographics/', request);
     return data;
   },
-
-  // Check if ArcGIS API key is configured
-  checkArcGISKey: async (): Promise<{ configured: boolean; message: string }> => {
-    const { data } = await api.get('/analysis/check-arcgis-key/');
-    return data;
-  },
-
-  // ============================================
-  // Streetlight Traffic Counts API
-  // ============================================
 
   // Get traffic counts data from Streetlight
   getTrafficCounts: async (request: TrafficCountsRequest): Promise<TrafficAnalysis> => {
@@ -152,21 +147,9 @@ export const analysisApi = {
     return data;
   },
 
-  // Check if Streetlight API key is configured
-  checkStreetlightKey: async (): Promise<{ configured: boolean; message: string }> => {
-    const { data } = await api.get('/analysis/check-streetlight-key/');
-    return data;
-  },
-
   // Get parcel information from ReportAll
   getParcelInfo: async (request: ParcelRequest): Promise<ParcelInfo> => {
     const { data } = await api.post('/analysis/parcel/', request);
-    return data;
-  },
-
-  // Check if ReportAll API key is configured
-  checkReportAllKey: async (): Promise<{ configured: boolean; message: string }> => {
-    const { data } = await api.get('/analysis/check-reportall-key/');
     return data;
   },
 
@@ -175,22 +158,6 @@ export const analysisApi = {
     const { data } = await api.post('/analysis/property-search/', request);
     return data;
   },
-
-  // Check if property search API keys are configured
-  checkPropertySearchKeys: async (): Promise<{
-    tavily_configured: boolean;
-    openai_configured: boolean;
-    google_configured: boolean;
-    crexi_configured: boolean;
-    all_required_configured: boolean;
-  }> => {
-    const { data } = await api.get('/analysis/check-property-search-keys/');
-    return data;
-  },
-
-  // ============================================
-  // ATTOM-Powered Property Search (New)
-  // ============================================
 
   // Search for properties by radius using ATTOM
   searchPropertiesATTOM: async (request: {
@@ -216,16 +183,6 @@ export const analysisApi = {
     limit?: number;
   }): Promise<PropertySearchResult> => {
     const { data } = await api.post('/analysis/properties/search-bounds/', request);
-    return data;
-  },
-
-  // Check if ATTOM API key is configured
-  checkATTOMKey: async (): Promise<{
-    configured: boolean;
-    valid: boolean;
-    message: string;
-  }> => {
-    const { data } = await api.get('/analysis/check-attom-key/');
     return data;
   },
 
