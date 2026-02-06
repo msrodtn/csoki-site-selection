@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#E31837"/>
+  <text x="256" y="200" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="120" font-weight="bold" fill="white">CS</text>
+  <text x="256" y="320" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="80" font-weight="bold" fill="white">OKi</text>
+  <circle cx="390" cy="380" r="40" fill="none" stroke="white" stroke-width="8"/>
+  <polyline points="370,380 385,395 415,360" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
