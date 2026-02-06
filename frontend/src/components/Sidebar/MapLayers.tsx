@@ -11,7 +11,7 @@ export const MAP_LAYERS = {
     name: 'CSOKi Opportunities',
     icon: Diamond,
     color: '#9333EA',
-    description: 'Filtered: 0.8-2ac or 2.5-6k sqft with signals',
+    description: 'Filtered: 0.8-2ac, 2.5-6k sqft, 1mi+ from VZ family',
   },
   properties_for_sale: {
     id: 'properties_for_sale',

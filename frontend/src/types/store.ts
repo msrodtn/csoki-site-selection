@@ -581,7 +581,10 @@ export interface OpportunitySearchRequest {
   // Opportunity signal filtering
   require_opportunity_signal?: boolean;
   min_opportunity_score?: number;
-  
+
+  // Proximity filter: min distance from Verizon-family stores (default 1 mile)
+  min_verizon_family_distance?: number;
+
   limit?: number;
 }
 
@@ -596,6 +599,7 @@ export interface OpportunitySearchResponse {
     building_size_sqft: string;
     property_types: string[];
     min_opportunity_score: number;
+    min_verizon_family_distance_miles?: number;
   };
 }
 
