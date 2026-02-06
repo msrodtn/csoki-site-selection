@@ -26,7 +26,9 @@ export type BrandKey =
   | 'verizon_corporate'
   | 'victra'
   | 'tmobile'
-  | 'uscellular';
+  | 'uscellular'
+  | 'wireless_zone'
+  | 'tcc';
 
 export const BRAND_COLORS: Record<BrandKey, string> = {
   csoki: '#E31837',
@@ -35,6 +37,8 @@ export const BRAND_COLORS: Record<BrandKey, string> = {
   victra: '#000000',
   tmobile: '#E20074',
   uscellular: '#00A3E0',
+  wireless_zone: '#7C3AED',
+  tcc: '#059669',
 };
 
 export const BRAND_LABELS: Record<BrandKey, string> = {
@@ -44,6 +48,8 @@ export const BRAND_LABELS: Record<BrandKey, string> = {
   victra: 'Victra',
   tmobile: 'T-Mobile',
   uscellular: 'US Cellular',
+  wireless_zone: 'Wireless Zone',
+  tcc: 'TCC (The Cellular Connection)',
 };
 
 // Brand logos - paths relative to /public folder
@@ -54,6 +60,8 @@ export const BRAND_LOGOS: Record<BrandKey, string> = {
   victra: '/logos/victra.jpeg',
   tmobile: '/logos/tmobile.png',
   uscellular: '/logos/uscellular.jpg',
+  wireless_zone: '/logos/verizon.png',
+  tcc: '/logos/verizon.png',
 };
 
 // Trade Area Analysis Types

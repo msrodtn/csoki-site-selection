@@ -17,6 +17,8 @@ BRAND_FILE_MAPPING = {
     "victra_stores.csv": "victra",
     "tmobile_stores.csv": "tmobile",
     "uscellular_stores.csv": "uscellular",
+    "wireless_zone_stores.csv": "wireless_zone",
+    "tcc_stores.csv": "tcc",
 }
 
 

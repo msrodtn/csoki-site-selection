@@ -84,6 +84,8 @@ export const brandColorMatch: ExpressionSpecification = [
   'victra', BRAND_COLORS.victra,
   'tmobile', BRAND_COLORS.tmobile,
   'uscellular', BRAND_COLORS.uscellular,
+  'wireless_zone', BRAND_COLORS.wireless_zone,
+  'tcc', BRAND_COLORS.tcc,
   '#666666', // default fallback
 ];
 
@@ -97,6 +99,8 @@ export const BRAND_COLORS_RGB: Record<BrandKey, [number, number, number]> = {
   victra: [0, 0, 0],
   tmobile: [226, 0, 116],
   uscellular: [0, 163, 224],
+  wireless_zone: [124, 58, 237],
+  tcc: [5, 150, 105],
 };
 
 // ============================================================================
