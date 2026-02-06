@@ -7,7 +7,7 @@ Filters properties based on:
 - Property types: Retail preferred, office acceptable
 - Focus: Empty parcels OR vacant single-tenant buildings
 - Exclude: Multi-tenant buildings
-- Proximity: Must be >= 1 mile from any Verizon-family store
+- Proximity: Must be within 1 mile of a Verizon-family store
   (Russell Cellular, Victra, Verizon Corporate)
 
 Opportunity Signals (Priority Order):
@@ -55,26 +55,26 @@ def _haversine(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return c * 3956  # Earth radius in miles
 
 
-def _filter_by_verizon_family_distance(
+def _filter_by_verizon_family_proximity(
     properties: List[PropertyListing],
     db: Session,
     bounds_min_lat: float,
     bounds_max_lat: float,
     bounds_min_lng: float,
     bounds_max_lng: float,
-    min_distance_miles: float,
+    max_distance_miles: float,
 ) -> List[PropertyListing]:
     """
-    Remove properties that are within min_distance_miles of any
+    Keep only properties that are within max_distance_miles of at least one
     Russell Cellular, Victra, or Verizon Corporate store.
     """
-    if min_distance_miles <= 0:
+    if max_distance_miles <= 0:
         return properties
 
-    # Expand search bounds by ~min_distance_miles to catch stores just outside viewport
+    # Expand search bounds by ~max_distance_miles to catch stores just outside viewport
     # 1 degree latitude ≈ 69 miles
-    lat_buffer = min_distance_miles / 69.0
-    lng_buffer = min_distance_miles / 55.0  # Conservative estimate for mid-US latitudes
+    lat_buffer = max_distance_miles / 69.0
+    lng_buffer = max_distance_miles / 55.0  # Conservative estimate for mid-US latitudes
 
     verizon_stores = db.query(Store).filter(
         Store.brand.in_(VERIZON_FAMILY_BRANDS),
@@ -87,20 +87,17 @@ def _filter_by_verizon_family_distance(
     ).all()
 
     if not verizon_stores:
-        return properties
+        return []
 
     filtered = []
     for prop in properties:
         if prop.latitude is None or prop.longitude is None:
             continue
-        too_close = False
         for store in verizon_stores:
             dist = _haversine(prop.longitude, prop.latitude, store.longitude, store.latitude)
-            if dist < min_distance_miles:
-                too_close = True
+            if dist <= max_distance_miles:
+                filtered.append(prop)
                 break
-        if not too_close:
-            filtered.append(prop)
 
     return filtered
 
@@ -127,12 +124,12 @@ class OpportunitySearchRequest(BaseModel):
     require_opportunity_signal: bool = Field(default=True, description="Only return properties with opportunity signals")
     min_opportunity_score: float = Field(default=0, description="Minimum opportunity score (0-100)")
 
-    # Proximity filter: minimum distance from Verizon-family stores
-    min_verizon_family_distance: float = Field(
+    # Proximity filter: must be within this distance of a Verizon-family store
+    max_verizon_family_distance: float = Field(
         default=1.0,
         ge=0,
         le=10,
-        description="Minimum distance (miles) from Russell Cellular, Victra, or Verizon Corporate stores"
+        description="Max distance (miles) to nearest Russell Cellular, Victra, or Verizon Corporate store"
     )
 
     limit: int = Field(default=100, le=500, description="Maximum results to return")
@@ -295,7 +292,7 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
     - Property types: Retail (preferred), Office (acceptable), Land (empty parcels)
     - Focus: Empty parcels OR vacant single-tenant buildings
     - Exclude: Multi-tenant buildings (estimated via size + property type)
-    - Proximity: Must be >= 1 mile from Verizon-family stores
+    - Proximity: Must be within 1 mile of a Verizon-family store
       (Russell Cellular, Victra, Verizon Corporate)
     
     Results are ranked by opportunity priority:
@@ -360,16 +357,16 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
             min_opportunity_score=request.min_opportunity_score,
         )
         
-        # Filter out properties too close to Verizon-family stores
-        if request.min_verizon_family_distance > 0:
-            filtered_properties = _filter_by_verizon_family_distance(
+        # Keep only properties near a Verizon-family store
+        if request.max_verizon_family_distance > 0:
+            filtered_properties = _filter_by_verizon_family_proximity(
                 properties=filtered_properties,
                 db=db,
                 bounds_min_lat=request.min_lat,
                 bounds_max_lat=request.max_lat,
                 bounds_min_lng=request.min_lng,
                 bounds_max_lng=request.max_lng,
-                min_distance_miles=request.min_verizon_family_distance,
+                max_distance_miles=request.max_verizon_family_distance,
             )
 
         # Calculate priority ranking for each property
@@ -421,7 +418,7 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                     ] if include
                 ],
                 "min_opportunity_score": request.min_opportunity_score,
-                "min_verizon_family_distance_miles": request.min_verizon_family_distance,
+                "max_verizon_family_distance_miles": request.max_verizon_family_distance,
             }
         )
     
@@ -490,6 +487,6 @@ async def get_opportunity_stats():
             "building_size": "2500-6000 sqft (if building exists)",
             "property_types": ["Retail (preferred)", "Office (acceptable)", "Land (empty parcels)"],
             "excludes": ["Multi-tenant buildings", "Shopping centers", "Strip malls"],
-            "min_distance_from_verizon_family": "1 mile from Russell Cellular, Victra, or Verizon Corporate"
+            "proximity_to_verizon_family": "Within 1 mile of Russell Cellular, Victra, or Verizon Corporate"
         }
     }
