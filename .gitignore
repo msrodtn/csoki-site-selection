@@ -37,6 +37,12 @@ frontend/dist/
 *.db
 *.sqlite3
 
+# Mapbox tileset data (large files - uploaded to Mapbox directly)
+mapbox-tilesets/states/
+mapbox-tilesets/national_*
+mapbox-tilesets/tn_*
+mapbox-tilesets/states/_cache/
+
 # Misc
 .claude/
 .env.crexi

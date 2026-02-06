@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "layers": {
+    "national_cities": {
+      "source": "mapbox://tileset-source/msrodtn/national-cities",
+      "minzoom": 4,
+      "maxzoom": 14,
+      "features": {
+        "attributes": {
+          "allowed_output": ["NAME", "GEOID", "POPULATION", "STATE", "ALAND"]
+        }
+      }
+    }
+  }
+}

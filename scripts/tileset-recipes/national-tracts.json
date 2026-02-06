@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "layers": {
+    "national_tracts": {
+      "source": "mapbox://tileset-source/msrodtn/national-tracts",
+      "minzoom": 4,
+      "maxzoom": 14,
+      "features": {
+        "attributes": {
+          "allowed_output": ["NAME", "GEOID", "POPULATION", "MEDIAN_INCOME", "POP_DENSITY"]
+        }
+      }
+    }
+  }
+}

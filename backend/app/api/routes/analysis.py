@@ -1590,12 +1590,19 @@ async def get_multi_contour_isochrone_endpoint(request: MultiContourIsochroneReq
 # Demographic Boundaries API (Census Tracts for Choropleth)
 # =============================================================================
 
-# State FIPS codes for target markets
+# State FIPS codes for all 50 states + DC
 STATE_FIPS = {
-    "IA": "19",
-    "NE": "31",
-    "NV": "32",
-    "ID": "16",
+    "AL": "01", "AK": "02", "AZ": "04", "AR": "05", "CA": "06",
+    "CO": "08", "CT": "09", "DE": "10", "DC": "11", "FL": "12",
+    "GA": "13", "HI": "15", "ID": "16", "IL": "17", "IN": "18",
+    "IA": "19", "KS": "20", "KY": "21", "LA": "22", "ME": "23",
+    "MD": "24", "MA": "25", "MI": "26", "MN": "27", "MS": "28",
+    "MO": "29", "MT": "30", "NE": "31", "NV": "32", "NH": "33",
+    "NJ": "34", "NM": "35", "NY": "36", "NC": "37", "ND": "38",
+    "OH": "39", "OK": "40", "OR": "41", "PA": "42", "RI": "44",
+    "SC": "45", "SD": "46", "TN": "47", "TX": "48", "UT": "49",
+    "VT": "50", "VA": "51", "WA": "53", "WV": "54", "WI": "55",
+    "WY": "56",
 }
 
 # Census TIGER boundary service URLs (free)
@@ -1624,7 +1631,7 @@ ARCGIS_CENSUS_TRACTS_URL = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/
 
 @router.get("/demographic-boundaries/")
 async def get_demographic_boundaries(
-    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+    state: str = Query(..., description="Two-letter state abbreviation (e.g., IA, NE, CA, TX)"),
     metric: str = Query("population", description="Metric to include: population, income, density"),
     geography: str = Query("tract", description="Geography level: tract, county"),
 ):
@@ -1634,7 +1641,7 @@ async def get_demographic_boundaries(
     Uses ACS 2022 data from ArcGIS Living Atlas for accurate Population and Income.
 
     **Parameters:**
-    - `state`: State abbreviation (IA, NE, NV, ID)
+    - `state`: Two-letter state abbreviation (all 50 states + DC supported)
     - `metric`: Demographic metric (population, income, density)
     - `geography`: Geographic level (tract for Census Tracts, county for Counties)
 
@@ -1752,7 +1759,7 @@ async def get_demographic_boundaries(
 
 @router.get("/boundaries/counties/")
 async def get_county_boundaries(
-    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+    state: str = Query(..., description="Two-letter state abbreviation (e.g., IA, NE, CA, TX)"),
 ):
     """
     Fetch county boundaries for a state from Census TIGER.
@@ -1795,7 +1802,7 @@ async def get_county_boundaries(
 
 @router.get("/boundaries/cities/")
 async def get_city_boundaries(
-    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+    state: str = Query(..., description="Two-letter state abbreviation (e.g., IA, NE, CA, TX)"),
 ):
     """
     Fetch city/place boundaries for a state from Census TIGER.
@@ -1838,7 +1845,7 @@ async def get_city_boundaries(
 
 @router.get("/boundaries/zipcodes/")
 async def get_zipcode_boundaries(
-    state: str = Query(..., description="State abbreviation (IA, NE, NV, ID)"),
+    state: str = Query(..., description="Two-letter state abbreviation (e.g., IA, NE, CA, TX)"),
 ):
     """
     Fetch ZIP Code (ZCTA) boundaries for a state from Census TIGER.
@@ -1862,10 +1869,57 @@ async def get_zipcode_boundaries(
 
     # Alternative: Query by state bounding box
     state_bounds = {
+        "AL": {"minX": -88.5, "minY": 30.1, "maxX": -84.9, "maxY": 35.0},
+        "AK": {"minX": -179.2, "minY": 51.2, "maxX": -129.0, "maxY": 71.4},
+        "AZ": {"minX": -114.8, "minY": 31.3, "maxX": -109.0, "maxY": 37.0},
+        "AR": {"minX": -94.6, "minY": 33.0, "maxX": -89.6, "maxY": 36.5},
+        "CA": {"minX": -124.5, "minY": 32.5, "maxX": -114.1, "maxY": 42.0},
+        "CO": {"minX": -109.1, "minY": 36.9, "maxX": -102.0, "maxY": 41.0},
+        "CT": {"minX": -73.7, "minY": 41.0, "maxX": -71.8, "maxY": 42.1},
+        "DE": {"minX": -75.8, "minY": 38.4, "maxX": -75.0, "maxY": 39.8},
+        "DC": {"minX": -77.1, "minY": 38.8, "maxX": -76.9, "maxY": 39.0},
+        "FL": {"minX": -87.6, "minY": 24.4, "maxX": -80.0, "maxY": 31.0},
+        "GA": {"minX": -85.6, "minY": 30.4, "maxX": -80.8, "maxY": 35.0},
+        "HI": {"minX": -160.3, "minY": 18.9, "maxX": -154.8, "maxY": 22.3},
+        "ID": {"minX": -117.3, "minY": 41.9, "maxX": -111.0, "maxY": 49.1},
+        "IL": {"minX": -91.5, "minY": 36.9, "maxX": -87.0, "maxY": 42.5},
+        "IN": {"minX": -88.1, "minY": 37.8, "maxX": -84.8, "maxY": 41.8},
         "IA": {"minX": -96.7, "minY": 40.3, "maxX": -90.1, "maxY": 43.6},
+        "KS": {"minX": -102.1, "minY": 36.9, "maxX": -94.6, "maxY": 40.0},
+        "KY": {"minX": -89.6, "minY": 36.5, "maxX": -81.9, "maxY": 39.2},
+        "LA": {"minX": -94.1, "minY": 28.9, "maxX": -88.8, "maxY": 33.0},
+        "ME": {"minX": -71.1, "minY": 43.0, "maxX": -66.9, "maxY": 47.5},
+        "MD": {"minX": -79.5, "minY": 37.9, "maxX": -75.0, "maxY": 39.7},
+        "MA": {"minX": -73.5, "minY": 41.2, "maxX": -69.9, "maxY": 42.9},
+        "MI": {"minX": -90.4, "minY": 41.7, "maxX": -82.1, "maxY": 48.3},
+        "MN": {"minX": -97.3, "minY": 43.5, "maxX": -89.5, "maxY": 49.4},
+        "MS": {"minX": -91.7, "minY": 30.1, "maxX": -88.1, "maxY": 35.0},
+        "MO": {"minX": -95.8, "minY": 36.0, "maxX": -89.1, "maxY": 40.6},
+        "MT": {"minX": -116.1, "minY": 44.4, "maxX": -104.0, "maxY": 49.0},
         "NE": {"minX": -104.1, "minY": 39.9, "maxX": -95.3, "maxY": 43.1},
         "NV": {"minX": -120.1, "minY": 35.0, "maxX": -114.0, "maxY": 42.1},
-        "ID": {"minX": -117.3, "minY": 41.9, "maxX": -111.0, "maxY": 49.1},
+        "NH": {"minX": -72.6, "minY": 42.7, "maxX": -70.7, "maxY": 45.3},
+        "NJ": {"minX": -75.6, "minY": 38.9, "maxX": -73.9, "maxY": 41.4},
+        "NM": {"minX": -109.1, "minY": 31.3, "maxX": -103.0, "maxY": 37.0},
+        "NY": {"minX": -79.8, "minY": 40.5, "maxX": -71.9, "maxY": 45.0},
+        "NC": {"minX": -84.3, "minY": 33.8, "maxX": -75.5, "maxY": 36.6},
+        "ND": {"minX": -104.1, "minY": 45.9, "maxX": -96.6, "maxY": 49.0},
+        "OH": {"minX": -84.8, "minY": 38.4, "maxX": -80.5, "maxY": 42.0},
+        "OK": {"minX": -103.0, "minY": 33.6, "maxX": -94.4, "maxY": 37.0},
+        "OR": {"minX": -124.6, "minY": 41.9, "maxX": -116.5, "maxY": 46.3},
+        "PA": {"minX": -80.5, "minY": 39.7, "maxX": -74.7, "maxY": 42.3},
+        "RI": {"minX": -71.9, "minY": 41.1, "maxX": -71.1, "maxY": 42.0},
+        "SC": {"minX": -83.4, "minY": 32.0, "maxX": -78.5, "maxY": 35.2},
+        "SD": {"minX": -104.1, "minY": 42.5, "maxX": -96.4, "maxY": 46.0},
+        "TN": {"minX": -90.3, "minY": 35.0, "maxX": -81.6, "maxY": 36.7},
+        "TX": {"minX": -106.7, "minY": 25.8, "maxX": -93.5, "maxY": 36.5},
+        "UT": {"minX": -114.1, "minY": 37.0, "maxX": -109.0, "maxY": 42.0},
+        "VT": {"minX": -73.4, "minY": 42.7, "maxX": -71.5, "maxY": 45.0},
+        "VA": {"minX": -83.7, "minY": 36.5, "maxX": -75.2, "maxY": 39.5},
+        "WA": {"minX": -124.8, "minY": 45.5, "maxX": -116.9, "maxY": 49.0},
+        "WV": {"minX": -82.6, "minY": 37.2, "maxX": -77.7, "maxY": 40.6},
+        "WI": {"minX": -92.9, "minY": 42.5, "maxX": -86.2, "maxY": 47.1},
+        "WY": {"minX": -111.1, "minY": 40.9, "maxX": -104.1, "maxY": 45.0},
     }
 
     bounds = state_bounds[state_upper]
