@@ -1532,7 +1532,6 @@ export function MapboxMap() {
             include_retail: opportunityFilters.includeRetail,
             include_office: opportunityFilters.includeOffice,
             include_land: opportunityFilters.includeLand,
-            require_opportunity_signal: true,
             limit: 100,
           });
           setOpportunities(result.opportunities || []);

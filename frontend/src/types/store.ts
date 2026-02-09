@@ -583,24 +583,22 @@ export interface OpportunitySearchRequest {
   max_lat: number;
   min_lng: number;
   max_lng: number;
-  
+
   // Optional overrides for parcel/building size
   min_parcel_acres?: number;
   max_parcel_acres?: number;
   min_building_sqft?: number;
   max_building_sqft?: number;
-  
+
   // Property type preferences
   include_retail?: boolean;
   include_office?: boolean;
   include_land?: boolean;
-  
-  // Opportunity signal filtering
-  require_opportunity_signal?: boolean;
-  min_opportunity_score?: number;
 
-  // Proximity filter: must be within this distance of a Verizon-family store (default 1 mile)
-  max_verizon_family_distance?: number;
+  // Market viability scoring toggles
+  enable_corporate_distance_scoring?: boolean;
+  enable_population_scoring?: boolean;
+  enable_retail_node_scoring?: boolean;
 
   limit?: number;
 }
@@ -615,8 +613,11 @@ export interface OpportunitySearchResponse {
     parcel_size_acres: string;
     building_size_sqft: string;
     property_types: string[];
-    min_opportunity_score: number;
-    max_verizon_family_distance_miles?: number;
+    scoring: {
+      corporate_distance: boolean;
+      population: boolean;
+      retail_node: boolean;
+    };
   };
 }
 
