@@ -363,6 +363,11 @@ def _calculate_priority_rank(
                 rank_score += 25
                 priority_signals.append("Small single-tenant building")
 
+    # 7. Land use compatibility penalty
+    if _is_excluded_land_use(listing.land_use):
+        rank_score -= 50
+        priority_signals.append(f"Incompatible use ({listing.land_use})")
+
     # Bonus: Distressed properties (foreclosure, etc.)
     if "distress" in signal_types:
         rank_score += 70
@@ -431,12 +436,6 @@ def _filter_properties_for_opportunities(
     filtered = []
 
     for prop in properties:
-        # Land use exclusion - filter out incompatible commercial uses
-        # (gas stations, restaurants, dental offices, etc.)
-        if _is_excluded_land_use(prop.land_use):
-            logger.debug(f"Excluded property {prop.address}: incompatible land use '{prop.land_use}'")
-            continue
-
         # Property type filter
         if prop.property_type == PropertyType.RETAIL and not include_retail:
             continue

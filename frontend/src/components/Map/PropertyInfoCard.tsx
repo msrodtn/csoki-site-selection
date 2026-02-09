@@ -16,6 +16,13 @@ import { analysisApi } from '../../services/api';
 import { PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS } from '../../types/store';
 import { formatCurrencyIntl as formatCurrency } from '../../utils/formatters';
 
+// Mapbox token for satellite thumbnail (Static Images API)
+const MAPBOX_TOKEN =
+  (window as any).RUNTIME_CONFIG?.MAPBOX_TOKEN ||
+  import.meta.env.VITE_MAPBOX_TOKEN ||
+  import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ||
+  '';
+
 interface PropertyInfoCardProps {
   property: PropertyListing;
   onClose: () => void;
@@ -202,6 +209,17 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
 
       {/* Content - Scrollable */}
       <div className="flex-1 overflow-y-auto">
+        {/* Satellite Preview */}
+        {MAPBOX_TOKEN && (
+          <div className="px-4 pt-3">
+            <img
+              src={`https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${property.longitude},${property.latitude},17,0/300x160@2x?access_token=${MAPBOX_TOKEN}`}
+              alt="Satellite view"
+              className="w-full h-32 object-cover rounded-lg border border-gray-200"
+              loading="lazy"
+            />
+          </div>
+        )}
         {/* Address */}
         <div className="px-4 py-3 border-b">
           <div className="flex items-start gap-2">
