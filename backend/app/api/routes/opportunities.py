@@ -55,6 +55,8 @@ from app.services.viewport_cache import (
     get_cached_retail_nodes,
     cache_retail_nodes,
 )
+from app.services.arcgis import fetch_demographics
+from app.services.mapbox_places import fetch_mapbox_pois
 
 logger = logging.getLogger(__name__)
 
@@ -792,9 +794,9 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
 
             filtered_properties = scraped + non_scraped
 
-        # --- Market Viability Data Fetching ---
+        # --- Market Viability Hard Filters + Data Fetching ---
 
-        # Corporate store distances (DB-only, zero API cost)
+        # 1. Corporate store distances (DB-only, zero API cost)
         corporate_distances: dict[str, float] = {}
         corporate_store_count = 0
         if request.enable_corporate_distance_scoring:
@@ -807,12 +809,112 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 bounds_max_lng=request.max_lng,
             )
 
-        # Population data (Phase 2 - will be fetched via ArcGIS with caching)
-        population_data: dict[str, dict] = {}  # property_id -> {pop_1mi, pop_3mi}
+        # 2. HARD FILTER: minimum 3mi gap from Verizon Corporate stores
+        if corporate_distances:
+            before_count = len(filtered_properties)
+            filtered_properties = [
+                p for p in filtered_properties
+                if corporate_distances.get(p.id, 999.0) >= 3.0
+            ]
+            removed = before_count - len(filtered_properties)
+            if removed:
+                logger.info(f"Corporate gap filter removed {removed} properties within 3mi of Verizon Corporate")
 
-        # Retail node data (Phase 3 - will be fetched via Mapbox Places with caching)
-        retail_node_data: dict[str, dict] = {}  # property_id -> {distance, name}
+        # 3. Fetch viewport-center demographics (1 ArcGIS call, cached 24hr)
+        population_data: dict[str, dict] = {}
+        viewport_population = None
+        center_lat = (request.min_lat + request.max_lat) / 2
+        center_lng = (request.min_lng + request.max_lng) / 2
+
+        if request.enable_population_scoring:
+            cached_demo = get_cached_demographics(center_lat, center_lng)
+            if cached_demo:
+                viewport_population = cached_demo
+            else:
+                try:
+                    demo_response = await fetch_demographics(center_lat, center_lng, radii_miles=[1, 3])
+                    viewport_population = {
+                        "pop_1mi": demo_response.radii[0].total_population,
+                        "pop_3mi": demo_response.radii[1].total_population,
+                        "income_3mi": demo_response.radii[1].median_household_income,
+                    }
+                    cache_demographics(center_lat, center_lng, viewport_population)
+                except Exception as e:
+                    logger.warning(f"ArcGIS demographics failed (non-fatal): {e}")
+
+        # 4. HARD FILTER: population >= 12K within 3mi (market viability)
+        if viewport_population and (viewport_population.get("pop_3mi") or 0) < 12000:
+            before_count = len(filtered_properties)
+            filtered_properties = [
+                p for p in filtered_properties
+                if p.property_type == PropertyType.LAND
+                or p.source in (PropertySource.CREXI, PropertySource.LOOPNET)
+            ]
+            removed = before_count - len(filtered_properties)
+            logger.info(
+                f"Low-population market ({viewport_population.get('pop_3mi')} within 3mi). "
+                f"Removed {removed} non-land/non-scraped properties."
+            )
+
+        # Populate population_data for scoring (viewport-level data applied to all properties)
+        if viewport_population:
+            for prop in filtered_properties:
+                population_data[prop.id] = {
+                    "pop_1mi": viewport_population.get("pop_1mi"),
+                    "pop_3mi": viewport_population.get("pop_3mi"),
+                }
+
+        # 5. Fetch retail anchor stores near viewport center (1 Mapbox call, cached 1hr)
+        retail_node_data: dict[str, dict] = {}
         retail_nodes_found = 0
+        anchor_pois: list[dict] = []
+
+        if request.enable_retail_node_scoring:
+            cached_nodes = get_cached_retail_nodes(center_lat, center_lng)
+            if cached_nodes is not None:
+                anchor_pois = cached_nodes
+            else:
+                try:
+                    anchor_result = await fetch_mapbox_pois(
+                        center_lat, center_lng,
+                        radius_meters=2414,  # 1.5 miles — catches anchors slightly outside viewport
+                        categories=["anchors"],
+                    )
+                    anchor_pois = [
+                        {"name": poi.name, "lat": poi.latitude, "lng": poi.longitude}
+                        for poi in anchor_result.pois
+                    ]
+                    cache_retail_nodes(center_lat, center_lng, anchor_pois)
+                except Exception as e:
+                    logger.warning(f"Mapbox anchor search failed (non-fatal): {e}")
+
+        # 6. HARD FILTER: must be within 1mi of a retail anchor
+        if anchor_pois:
+            retail_nodes_found = len(anchor_pois)
+            surviving = []
+            for prop in filtered_properties:
+                nearest_dist = None
+                nearest_name = None
+                for anchor in anchor_pois:
+                    d = haversine(prop.longitude, prop.latitude, anchor["lng"], anchor["lat"])
+                    if nearest_dist is None or d < nearest_dist:
+                        nearest_dist = d
+                        nearest_name = anchor["name"]
+                retail_node_data[prop.id] = {"distance": nearest_dist, "name": nearest_name}
+
+                # LAND and scraped listings exempt from anchor proximity requirement
+                is_exempt = (
+                    prop.property_type == PropertyType.LAND
+                    or prop.source in (PropertySource.CREXI, PropertySource.LOOPNET)
+                )
+                if is_exempt or (nearest_dist is not None and nearest_dist <= 1.0):
+                    surviving.append(prop)
+                else:
+                    logger.debug(
+                        f"Filtered no anchor proximity: {prop.address} "
+                        f"(nearest: {nearest_dist:.2f}mi to {nearest_name})"
+                    )
+            filtered_properties = surviving
 
         # Calculate priority ranking for each property with market viability data
         ranked_opportunities = []
