@@ -308,7 +308,8 @@ def _calculate_priority_rank(
     3. Out-of-state/absentee owners - 60 points
     4. Tax liens/pressure - 50 points
     5. Aging owners (65+) - 40 points
-    6. Small single-tenant buildings - 30 points
+    6. Small single-tenant buildings - 25-40 points (land-use aware)
+    7. Occupied building penalty - -150 points (no vacancy indicators)
 
     Market Viability (additive):
     - Corporate store gap: up to +20 points
@@ -363,10 +364,24 @@ def _calculate_priority_rank(
                 rank_score += 25
                 priority_signals.append("Small single-tenant building")
 
-    # 7. Land use compatibility penalty
-    if _is_excluded_land_use(listing.land_use):
-        rank_score -= 50
-        priority_signals.append(f"Incompatible use ({listing.land_use})")
+    # 7. Occupied building penalty
+    # Core rule: we want EMPTY PARCELS and FOR-LEASE buildings, not active businesses.
+    # Any built structure without vacancy indicators is likely occupied → heavy penalty.
+    if listing.property_type != PropertyType.LAND:
+        has_vacancy = "vacant_property" in signal_types
+        has_boosted_use = _is_boosted_land_use(listing.land_use)  # "vacant", "former", "closed", etc.
+        if has_vacancy or has_boosted_use:
+            # Vacant/for-lease building — this is a valid opportunity, small boost
+            if not has_vacancy:  # boosted land use but no ATTOM vacancy signal
+                rank_score += 20
+                priority_signals.append(f"Potential vacancy ({listing.land_use})")
+        else:
+            # Occupied building — not what we're looking for
+            rank_score -= 150
+            if listing.land_use:
+                priority_signals.append(f"Occupied building ({listing.land_use})")
+            else:
+                priority_signals.append("Occupied building (no vacancy indicators)")
 
     # Bonus: Distressed properties (foreclosure, etc.)
     if "distress" in signal_types:
