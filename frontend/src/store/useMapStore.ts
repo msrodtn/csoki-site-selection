@@ -111,8 +111,8 @@ interface MapState {
   setLayerVisible: (layer: string, visible: boolean) => void;
 
   // Property source sub-toggles (for Properties For Sale layer)
-  visiblePropertySources: Set<'attom' | 'team' | 'scraped'>;
-  togglePropertySource: (source: 'attom' | 'team' | 'scraped') => void;
+  visiblePropertySources: Set<'attom' | 'team'>;
+  togglePropertySource: (source: 'attom' | 'team') => void;
 
   // Boundary type sub-toggles (for Boundaries Explorer layer)
   visibleBoundaryTypes: Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts'>;
@@ -465,7 +465,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     }),
 
   // Property source sub-toggles - all visible by default
-  visiblePropertySources: new Set<'attom' | 'team' | 'scraped'>(['attom', 'team', 'scraped']),
+  visiblePropertySources: new Set<'attom' | 'team'>(['attom', 'team']),
   togglePropertySource: (source) =>
     set((state) => {
       const newSources = new Set(state.visiblePropertySources);

@@ -11,14 +11,14 @@ export const MAP_LAYERS = {
     name: 'CSOKi Opportunities',
     icon: Diamond,
     color: '#9333EA',
-    description: 'Filtered: 0.8-2ac, 2.5-6k sqft, within 1mi of VZ family',
+    description: 'ATTOM opportunities + Crexi/LoopNet listings, scored & ranked',
   },
   properties_for_sale: {
     id: 'properties_for_sale',
     name: 'Active Listings',
     icon: DollarSign,
     color: '#22C55E',
-    description: 'Crexi, LoopNet & team-flagged properties',
+    description: 'ATTOM all-properties & team-flagged',
     hasSubToggles: true,
   },
   boundaries: {
@@ -77,13 +77,6 @@ export const MAP_LAYERS = {
 
 // Sub-toggle definitions for Properties For Sale layer
 const PROPERTY_SUB_TOGGLES = [
-  {
-    id: 'scraped' as const,
-    name: 'Active Listings',
-    icon: Search,
-    color: '#3B82F6', // Blue
-    description: 'Crexi & LoopNet listings',
-  },
   {
     id: 'attom' as const,
     name: 'Opportunities',
@@ -251,13 +244,13 @@ function InlineCrexiSearch() {
   };
 
   return (
-    <div className="ml-6 mt-2 p-3 bg-blue-50 rounded-lg border-l-2 border-blue-300">
+    <div className="ml-6 mt-2 p-3 bg-purple-50 rounded-lg border-l-2 border-purple-300">
       <div className="flex items-center gap-2 mb-2">
-        <Search className="w-3 h-3 text-blue-600" />
-        <span className="text-xs font-medium text-blue-800">Crexi Import</span>
+        <Search className="w-3 h-3 text-purple-600" />
+        <span className="text-xs font-medium text-purple-800">Crexi Import</span>
       </div>
       <label className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs font-medium cursor-pointer transition-colors ${
-        isUploading ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'
+        isUploading ? 'bg-gray-300 text-gray-500' : 'bg-purple-600 text-white hover:bg-purple-700'
       }`}>
         {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
         {isUploading ? 'Uploading...' : 'Upload Crexi CSV'}
@@ -427,11 +420,9 @@ export function MapLayers() {
                 </div>
               )}
 
-              {/* Inline Crexi Search for Active Listings layer */}
-              {layer.id === 'properties_for_sale' && isActive && <InlineCrexiSearch />}
-
-              {/* Inline Opportunities Filter for CSOKi Opportunities layer */}
+              {/* Inline Opportunities Filter + Crexi Import for CSOKi Opportunities layer */}
               {layer.id === 'csoki_opportunities' && isActive && <InlineOpportunitiesFilter />}
+              {layer.id === 'csoki_opportunities' && isActive && <InlineCrexiSearch />}
             </div>
           );
         })}

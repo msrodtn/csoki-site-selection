@@ -22,7 +22,7 @@ import * as turf from '@turf/turf';
 import { wktToGeoJSON } from '@terraformer/wkt';
 import { useStores } from '../../hooks/useStores';
 import { useMapStore } from '../../store/useMapStore';
-import { analysisApi, teamPropertiesApi, listingsApi, opportunitiesApi } from '../../services/api';
+import { analysisApi, teamPropertiesApi, opportunitiesApi } from '../../services/api';
 import {
   BRAND_COLORS,
   BRAND_LABELS,
@@ -38,7 +38,6 @@ import {
   type PropertyListing,
   type TeamProperty,
   type ParcelInfo,
-  type ScrapedListing,
   type OpportunityRanking,
 } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
@@ -365,40 +364,6 @@ function TeamPropertyMarker({
           stroke={isSelected ? 'white' : '#EA580C'}
           strokeWidth={isSelected ? 3 : 2}
         />
-      </svg>
-    </Marker>
-  );
-}
-
-// Scraped listing marker component
-function ScrapedListingMarker({
-  listing,
-  isSelected,
-  onClick,
-}: {
-  listing: ScrapedListing;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  if (!listing.latitude || !listing.longitude) return null;
-
-  const size = isSelected ? 36 : 28;
-  const color = isSelected ? '#1D4ED8' : '#3B82F6';
-
-  return (
-    <Marker
-      longitude={listing.longitude}
-      latitude={listing.latitude}
-      anchor="center"
-      onClick={(e: MarkerEvent<MouseEvent>) => {
-        e.originalEvent.stopPropagation();
-        onClick();
-      }}
-      style={{ zIndex: isSelected ? 1700 : 300 }}
-    >
-      <svg width={size} height={size} viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="10" fill={color} stroke="white" strokeWidth="2" />
-        <text x="12" y="16" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold">$</text>
       </svg>
     </Marker>
   );
@@ -754,10 +719,6 @@ export function MapboxMap() {
   // Team property form state
   const [showTeamPropertyForm, setShowTeamPropertyForm] = useState(false);
   const [teamPropertyFormCoords, setTeamPropertyFormCoords] = useState<{ lat: number; lng: number } | null>(null);
-
-  // Scraped listings state
-  const [scrapedListings, setScrapedListings] = useState<ScrapedListing[]>([]);
-  const [isLoadingScrapedListings, setIsLoadingScrapedListings] = useState(false);
 
   // CSOKi Opportunities state
   const [opportunities, setOpportunities] = useState<OpportunityRanking[]>([]);
@@ -1480,36 +1441,6 @@ export function MapboxMap() {
       setSelectedTeamProperty(null);
     }
   }, [visibleLayersArray.includes('properties_for_sale'), mapBounds]);
-
-  // Scraped listings when toggle is enabled
-  useEffect(() => {
-    const showScraped = visiblePropertySources.has('scraped');
-
-    if (showScraped && mapBounds) {
-      const fetchScrapedListings = async () => {
-        setIsLoadingScrapedListings(true);
-        try {
-          const result = await listingsApi.searchByBounds({
-            min_lat: mapBounds.south,
-            max_lat: mapBounds.north,
-            min_lng: mapBounds.west,
-            max_lng: mapBounds.east,
-            limit: 100,
-          });
-          setScrapedListings(result.listings || []);
-        } catch (error: any) {
-          console.error('[ScrapedListings] Error fetching:', error);
-          setScrapedListings([]);
-        } finally {
-          setIsLoadingScrapedListings(false);
-        }
-      };
-
-      fetchScrapedListings();
-    } else if (!showScraped) {
-      setScrapedListings([]);
-    }
-  }, [visiblePropertySources, mapBounds]);
 
   // CSOKi Opportunities when layer is toggled or filters change
   // Debounced to avoid burning ATTOM API calls on every pan/zoom
@@ -2474,18 +2405,6 @@ export function MapboxMap() {
           />
         ))}
 
-        {/* Scraped listing markers */}
-        {visiblePropertySources.has('scraped') && scrapedListings.map((listing) => (
-          <ScrapedListingMarker
-            key={`scraped-${listing.id}`}
-            listing={listing}
-            isSelected={false}
-            onClick={() => {
-              // No popup for scraped listings per user request
-            }}
-          />
-        ))}
-
         {/* CSOKi Opportunity markers (top 5 pulse) */}
         {visibleLayersArray.includes('csoki_opportunities') && opportunities.map((opp) => (
           <PulsingOpportunityMarker
@@ -2727,17 +2646,9 @@ export function MapboxMap() {
         </div>
       )}
 
-      {/* Scraped Listings loading indicator */}
-      {isLoadingScrapedListings && visiblePropertySources.has('scraped') && (
-        <div className="absolute bottom-32 right-6 z-40 bg-blue-100 text-blue-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
-          <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full" />
-          Loading active listings...
-        </div>
-      )}
-
       {/* CSOKi Opportunities loading indicator */}
       {isLoadingOpportunities && visibleLayersArray.includes('csoki_opportunities') && (
-        <div className="absolute bottom-44 right-6 z-40 bg-purple-100 text-purple-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
+        <div className="absolute bottom-32 right-6 z-40 bg-purple-100 text-purple-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
           <div className="animate-spin w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full" />
           Loading CSOKi opportunities...
         </div>

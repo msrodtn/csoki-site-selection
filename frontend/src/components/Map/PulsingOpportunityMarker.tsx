@@ -35,6 +35,8 @@ export function PulsingOpportunityMarker({
 
   const size = getZoomBasedSize(zoom, isSelected);
   const isPulsing = opportunity.rank <= PULSE_THRESHOLD;
+  const isListing = prop.source === 'crexi' || prop.source === 'loopnet';
+  const markerColor = isListing ? '#16A34A' : '#9333EA'; // Green for listings, purple for ATTOM
 
   return (
     <Marker
@@ -59,11 +61,11 @@ export function PulsingOpportunityMarker({
             style={{
               width: size,
               height: size,
-              backgroundColor: '#9333EA',
+              backgroundColor: markerColor,
             }}
           />
         )}
-        {/* Purple diamond with rank number */}
+        {/* Diamond marker: purple for ATTOM opportunities, green for active listings */}
         <svg
           width={size}
           height={size}
@@ -72,7 +74,7 @@ export function PulsingOpportunityMarker({
         >
           <path
             d="M12 2 L22 12 L12 22 L2 12 Z"
-            fill="#9333EA"
+            fill={markerColor}
             stroke="white"
             strokeWidth="1.5"
             opacity={isSelected ? 1 : 0.85}
@@ -85,7 +87,7 @@ export function PulsingOpportunityMarker({
             fontSize="10"
             fontWeight="bold"
           >
-            {opportunity.rank}
+            {isListing ? '$' : opportunity.rank}
           </text>
         </svg>
       </div>
