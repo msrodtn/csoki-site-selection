@@ -171,8 +171,8 @@ def _fetch_scraped_listings(
     }
 
     for row in rows:
-        # Apply size filters
-        if row.lot_size_acres:
+        # Apply size filters (lot size only applies to land — buildings are sqft-filtered)
+        if row.lot_size_acres and row.property_type == "land":
             if row.lot_size_acres < min_parcel_acres or row.lot_size_acres > max_parcel_acres:
                 continue
         if row.sqft and row.property_type != "land":
@@ -182,7 +182,8 @@ def _fetch_scraped_listings(
                 continue
 
         source = source_map.get(row.source, PropertySource.CREXI)
-        prop_type = type_map.get(row.property_type, PropertyType.UNKNOWN)
+        # Default to RETAIL for scraped listings (from commercial listing sites)
+        prop_type = type_map.get(row.property_type, PropertyType.RETAIL if row.property_type else PropertyType.UNKNOWN)
         source_label = row.source.title() if row.source else "Listing"
 
         listing = PropertyListing(
@@ -282,8 +283,9 @@ def _filter_by_verizon_family_proximity(
         Store.longitude <= bounds_max_lng + lng_buffer,
     ).all()
 
-    if not verizon_stores:
-        return []
+    if len(verizon_stores) <= 3:
+        logger.info(f"Sparse VZ market ({len(verizon_stores)} stores in viewport) — skipping proximity filter")
+        return properties
 
     filtered = []
     for prop in properties:
@@ -608,8 +610,9 @@ def _filter_properties_for_opportunities(
                     logger.debug(f"Filtered occupied building: {prop.address} ({prop.land_use})")
                     continue
         
-        # Parcel size filter
-        if prop.lot_size_acres:
+        # Parcel size filter (scraped listings already size-filtered during import)
+        is_scraped = prop.source in (PropertySource.CREXI, PropertySource.LOOPNET)
+        if prop.lot_size_acres and not is_scraped:
             if prop.lot_size_acres < min_parcel_acres or prop.lot_size_acres > max_parcel_acres:
                 continue
         
@@ -737,9 +740,13 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
         )
         
         # Keep only properties near a Verizon-family store
+        # Scraped listings (user-curated imports) always bypass this filter
         if request.max_verizon_family_distance > 0:
-            filtered_properties = _filter_by_verizon_family_proximity(
-                properties=filtered_properties,
+            scraped = [p for p in filtered_properties if p.source in (PropertySource.CREXI, PropertySource.LOOPNET)]
+            non_scraped = [p for p in filtered_properties if p.source not in (PropertySource.CREXI, PropertySource.LOOPNET)]
+
+            non_scraped = _filter_by_verizon_family_proximity(
+                properties=non_scraped,
                 db=db,
                 bounds_min_lat=request.min_lat,
                 bounds_max_lat=request.max_lat,
@@ -747,6 +754,8 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 bounds_max_lng=request.max_lng,
                 max_distance_miles=request.max_verizon_family_distance,
             )
+
+            filtered_properties = scraped + non_scraped
 
         # --- Market Viability Data Fetching ---
 
