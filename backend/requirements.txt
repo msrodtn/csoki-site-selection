@@ -12,6 +12,7 @@ geoalchemy2==0.14.3
 # Data processing
 pandas==2.2.0
 numpy==1.26.3
+openpyxl==3.1.2
 
 # Geocoding
 geopy==2.4.1

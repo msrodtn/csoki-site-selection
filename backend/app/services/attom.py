@@ -416,8 +416,11 @@ async def search_properties_by_bounds(
     """
     Search for properties within geographic bounds.
 
-    Converts bounds to center point + radius and calls search_properties_by_radius.
+    Makes separate ATTOM API calls per property type so that each type
+    gets its own 100-result allocation (vacant land doesn't get crowded
+    out by occupied retail/office in metro areas).
     """
+    import asyncio
     import math
 
     # Calculate center point
@@ -435,14 +438,51 @@ async def search_properties_by_bounds(
     # Cap radius at ATTOM's max of 20 miles
     approx_radius = min(approx_radius, 20.0)
 
-    # Delegate to radius-based search
-    return await search_properties_by_radius(
-        latitude=center_lat,
-        longitude=center_lng,
+    types_to_search = property_types or [
+        PropertyType.RETAIL, PropertyType.OFFICE, PropertyType.LAND,
+    ]
+
+    # Per-type limit: divide evenly but ensure at least 50 per type
+    per_type_limit = max(50, limit // len(types_to_search))
+
+    # Fire all type searches concurrently
+    tasks = [
+        _search_attom_api(
+            latitude=center_lat,
+            longitude=center_lng,
+            radius_miles=approx_radius,
+            property_types=[pt],
+            min_opportunity_score=min_opportunity_score,
+            limit=per_type_limit,
+        )
+        for pt in types_to_search
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Merge all results
+    all_properties: list[PropertyListing] = []
+    seen_ids: set[str] = set()
+    for r in results:
+        if isinstance(r, Exception):
+            print(f"[ATTOM] One property-type search failed: {r}")
+            continue
+        for prop in r.properties:
+            if prop.id not in seen_ids:
+                seen_ids.add(prop.id)
+                all_properties.append(prop)
+
+    # Sort by opportunity score descending
+    all_properties.sort(key=lambda p: p.opportunity_score or 0, reverse=True)
+
+    return PropertySearchResult(
+        center_latitude=center_lat,
+        center_longitude=center_lng,
         radius_miles=approx_radius,
-        property_types=property_types,
-        min_opportunity_score=min_opportunity_score,
-        limit=limit,
+        properties=all_properties,
+        total_found=len(all_properties),
+        sources=["ATTOM"],
+        search_timestamp=datetime.now().isoformat(),
     )
 
 
