@@ -10,6 +10,7 @@ from app.api.routes import (
     listings,
     opportunities,
     traffic,
+    feedback,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,4 @@ api_router.include_router(team_properties.router)
 api_router.include_router(listings.router)
 api_router.include_router(opportunities.router)
 api_router.include_router(traffic.router, prefix="/traffic", tags=["traffic"])
+api_router.include_router(feedback.router)
