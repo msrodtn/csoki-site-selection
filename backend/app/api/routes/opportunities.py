@@ -309,7 +309,8 @@ def _calculate_priority_rank(
     4. Tax liens/pressure - 50 points
     5. Aging owners (65+) - 40 points
     6. Small single-tenant buildings - 25-40 points (land-use aware)
-    7. Occupied building penalty - -150 points (no vacancy indicators)
+    7. Vacancy boost for buildings - 10-20 points
+    Note: Occupied buildings are hard-filtered before scoring.
 
     Market Viability (additive):
     - Corporate store gap: up to +20 points
@@ -364,24 +365,16 @@ def _calculate_priority_rank(
                 rank_score += 25
                 priority_signals.append("Small single-tenant building")
 
-    # 7. Occupied building penalty
-    # Core rule: we want EMPTY PARCELS and FOR-LEASE buildings, not active businesses.
-    # Any built structure without vacancy indicators is likely occupied → heavy penalty.
+    # 7. Vacancy boost for buildings (occupied buildings are hard-filtered upstream)
     if listing.property_type != PropertyType.LAND:
         has_vacancy = "vacant_property" in signal_types
-        has_boosted_use = _is_boosted_land_use(listing.land_use)  # "vacant", "former", "closed", etc.
-        if has_vacancy or has_boosted_use:
-            # Vacant/for-lease building — this is a valid opportunity, small boost
-            if not has_vacancy:  # boosted land use but no ATTOM vacancy signal
-                rank_score += 20
-                priority_signals.append(f"Potential vacancy ({listing.land_use})")
-        else:
-            # Occupied building — not what we're looking for
-            rank_score -= 150
-            if listing.land_use:
-                priority_signals.append(f"Occupied building ({listing.land_use})")
-            else:
-                priority_signals.append("Occupied building (no vacancy indicators)")
+        has_boosted_use = _is_boosted_land_use(listing.land_use)
+        if has_vacancy and has_boosted_use:
+            rank_score += 20
+            priority_signals.append(f"Confirmed vacant ({listing.land_use})")
+        elif has_boosted_use and not has_vacancy:
+            rank_score += 10
+            priority_signals.append(f"Potential vacancy ({listing.land_use})")
 
     # Bonus: Distressed properties (foreclosure, etc.)
     if "distress" in signal_types:
@@ -462,6 +455,16 @@ def _filter_properties_for_opportunities(
         # Only retail, office, and land
         if prop.property_type not in (PropertyType.RETAIL, PropertyType.OFFICE, PropertyType.LAND):
             continue
+
+        # Hard filter: occupied buildings are NOT opportunities.
+        # Only empty parcels (LAND) and buildings with vacancy indicators pass through.
+        if prop.property_type != PropertyType.LAND:
+            prop_signal_types = {s.signal_type for s in prop.opportunity_signals}
+            has_vacancy = "vacant_property" in prop_signal_types
+            has_boosted_use = _is_boosted_land_use(prop.land_use)
+            if not has_vacancy and not has_boosted_use:
+                logger.debug(f"Filtered occupied building: {prop.address} ({prop.land_use})")
+                continue
         
         # Parcel size filter
         if prop.lot_size_acres:
