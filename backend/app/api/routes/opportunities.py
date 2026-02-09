@@ -17,7 +17,16 @@ Opportunity Signals (Priority Order):
 4. Tax liens/pressure
 5. Aging owners (65+)
 6. Small single-tenant buildings
+
+Market Viability Scoring (additive):
+- Verizon Corporate store distance (3-5mi gap preferred)
+- Population threshold (12K+ within 1-3mi radius)
+- Major retail node proximity (within 0.5mi of anchors)
 """
+
+import asyncio
+import logging
+import math
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -38,11 +47,75 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.store import Store
 from app.utils.geo import haversine
+from app.services.viewport_cache import (
+    get_cached_demographics,
+    cache_demographics,
+    get_cached_retail_nodes,
+    cache_retail_nodes,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
 # Verizon-family brands that CSOKi opportunities must be distant from
 VERIZON_FAMILY_BRANDS = ["russell_cellular", "victra", "verizon_corporate"]
+
+# Land use keywords indicating incompatible commercial uses (can't convert to wireless retail)
+EXCLUDED_LAND_USE_KEYWORDS = {
+    # Gas/Auto
+    "gas station", "service station", "auto repair", "car wash", "tire",
+    "oil change", "auto body", "auto dealer", "parking garage", "parking lot",
+    "auto parts", "auto service",
+    # Food/Drink
+    "restaurant", "fast food", "bar ", "tavern", "brewery", "pizza",
+    "coffee shop", "bakery", "deli", "liquor store", "ice cream", "donut",
+    # Medical
+    "dental", "medical", "hospital", "clinic", "veterinar", "pharmacy",
+    "optom", "chiropract", "urgent care", "dialysis", "physician",
+    # Finance
+    "bank", "credit union",
+    # Lodging
+    "hotel", "motel", "inn ", "resort",
+    # Religious/Civic
+    "church", "mosque", "temple", "synagogue", "worship", "funeral",
+    "cemetery", "mortuary", "cremator",
+    # Industrial/Utility
+    "warehouse", "storage", "industrial", "manufacturing", "plant ",
+    "utility", "water treatment",
+    # Government
+    "government", "post office", "fire station", "police", "library",
+    "courthouse",
+    # Education
+    "school", "university", "college", "daycare", "child care",
+    # Other incompatible
+    "laundromat", "dry clean", "salon", "barber", "tattoo", "nail salon",
+    "gym", "fitness", "bowling", "theater", "cinema", "nightclub",
+    "car dealer", "grocery", "supermarket", "convenience store",
+}
+
+# Land use keywords indicating especially promising conversion candidates
+BOOSTED_LAND_USE_KEYWORDS = {
+    "vacant", "former", "closed", "abandoned", "retail store", "commercial",
+    "general retail", "strip", "shopping", "storefront", "office building",
+    "professional office", "mixed use",
+}
+
+
+def _is_excluded_land_use(land_use: str | None) -> bool:
+    """Check if a property's land use indicates an incompatible commercial use."""
+    if not land_use:
+        return False
+    land_use_lower = land_use.lower()
+    return any(keyword in land_use_lower for keyword in EXCLUDED_LAND_USE_KEYWORDS)
+
+
+def _is_boosted_land_use(land_use: str | None) -> bool:
+    """Check if a property's land use indicates an especially promising conversion candidate."""
+    if not land_use:
+        return False
+    land_use_lower = land_use.lower()
+    return any(keyword in land_use_lower for keyword in BOOSTED_LAND_USE_KEYWORDS)
 
 
 def _filter_by_verizon_family_proximity(
@@ -122,6 +195,20 @@ class OpportunitySearchRequest(BaseModel):
         description="Max distance (miles) to nearest Russell Cellular, Victra, or Verizon Corporate store"
     )
 
+    # Market viability scoring toggles
+    enable_corporate_distance_scoring: bool = Field(
+        default=True,
+        description="Score based on distance from Verizon Corporate stores (farther = better)"
+    )
+    enable_population_scoring: bool = Field(
+        default=True,
+        description="Score based on population density (12K+ within 1-3mi)"
+    )
+    enable_retail_node_scoring: bool = Field(
+        default=True,
+        description="Score based on proximity to major retail anchors (within 0.5mi)"
+    )
+
     limit: int = Field(default=100, le=500, description="Maximum results to return")
 
 
@@ -131,6 +218,14 @@ class OpportunityRanking(BaseModel):
     rank: int  # 1-based ranking (1 = highest priority)
     priority_signals: List[str]  # Which high-priority signals are present
     signal_count: int  # Total number of signals
+
+    # Market viability enrichment
+    nearest_corporate_store_miles: Optional[float] = None
+    nearest_retail_node_miles: Optional[float] = None
+    nearest_retail_node_name: Optional[str] = None
+    area_population_1mi: Optional[int] = None
+    area_population_3mi: Optional[int] = None
+    market_viability_score: Optional[float] = None
 
 
 class OpportunitySearchResponse(BaseModel):
@@ -142,42 +237,104 @@ class OpportunitySearchResponse(BaseModel):
     search_timestamp: str
     filters_applied: dict
 
+    # Market viability metadata
+    corporate_stores_in_area: int = 0
+    retail_nodes_found: int = 0
+    viewport_population_center: Optional[dict] = None
 
-def _calculate_priority_rank(listing: PropertyListing) -> tuple[int, List[str]]:
+
+def _calculate_corporate_store_distances(
+    properties: List[PropertyListing],
+    db: Session,
+    bounds_min_lat: float,
+    bounds_max_lat: float,
+    bounds_min_lng: float,
+    bounds_max_lng: float,
+) -> tuple[dict[str, float], int]:
     """
-    Calculate priority rank based on opportunity signals.
-    
+    Calculate distance from each property to the nearest Verizon Corporate store.
+
+    Returns:
+        (distance_map, store_count) where distance_map is {property_id: miles}
+    """
+    # Search with a generous buffer to catch corporate stores just outside viewport
+    buffer_miles = 10.0
+    lat_buffer = buffer_miles / 69.0
+    lng_buffer = buffer_miles / 55.0
+
+    corporate_stores = db.query(Store).filter(
+        Store.brand == "verizon_corporate",
+        Store.latitude.isnot(None),
+        Store.longitude.isnot(None),
+        Store.latitude >= bounds_min_lat - lat_buffer,
+        Store.latitude <= bounds_max_lat + lat_buffer,
+        Store.longitude >= bounds_min_lng - lng_buffer,
+        Store.longitude <= bounds_max_lng + lng_buffer,
+    ).all()
+
+    distance_map: dict[str, float] = {}
+    for prop in properties:
+        if prop.latitude is None or prop.longitude is None:
+            continue
+        if not corporate_stores:
+            # No corporate stores nearby - maximum gap
+            distance_map[prop.id] = 999.0
+            continue
+        min_dist = min(
+            haversine(prop.longitude, prop.latitude, store.longitude, store.latitude)
+            for store in corporate_stores
+        )
+        distance_map[prop.id] = round(min_dist, 2)
+
+    return distance_map, len(corporate_stores)
+
+
+def _calculate_priority_rank(
+    listing: PropertyListing,
+    nearest_corporate_distance: Optional[float] = None,
+    nearest_retail_node_distance: Optional[float] = None,
+    area_population_1mi: Optional[int] = None,
+    area_population_3mi: Optional[int] = None,
+) -> tuple[int, List[str]]:
+    """
+    Calculate priority rank based on opportunity signals and market viability.
+
     Returns (rank_score, priority_signals)
     Higher rank_score = higher priority
-    
-    Priority Order:
+
+    Property Signals:
     1. Empty parcels (land only) - 100 points
     2. Vacant properties - 80 points
     3. Out-of-state/absentee owners - 60 points
     4. Tax liens/pressure - 50 points
     5. Aging owners (65+) - 40 points
     6. Small single-tenant buildings - 30 points
+
+    Market Viability (additive):
+    - Corporate store gap: up to +20 points
+    - Population density: up to +25 points
+    - Retail node proximity: up to +25 points
     """
     rank_score = 0
     priority_signals = []
-    
+
     signal_types = {s.signal_type for s in listing.opportunity_signals}
-    
+
     # 1. Empty parcels (land only)
     if listing.property_type == PropertyType.LAND:
         rank_score += 100
         priority_signals.append("Empty parcel (land only)")
-    
+
     # 2. Vacant properties
     if "vacant_property" in signal_types:
         rank_score += 80
         priority_signals.append("Vacant property")
-    
+
     # 3. Out-of-state/absentee owners
     if "absentee_owner" in signal_types:
         rank_score += 60
         priority_signals.append("Out-of-state owner")
-    
+
     # 4. Tax liens/pressure
     if "tax_delinquent" in signal_types:
         rank_score += 50
@@ -185,25 +342,76 @@ def _calculate_priority_rank(listing: PropertyListing) -> tuple[int, List[str]]:
     elif "tax_pressure" in signal_types:
         rank_score += 40
         priority_signals.append("Tax pressure")
-    
+
     # 5. Aging owners - check signal descriptions for age mentions
     for signal in listing.opportunity_signals:
         if "estate" in signal.signal_type or "trust" in signal.signal_type:
             rank_score += 40
             priority_signals.append("Estate/trust ownership")
             break
-    
-    # 6. Small single-tenant buildings
+
+    # 6. Small single-tenant buildings (land-use-aware scoring)
     if listing.property_type in (PropertyType.RETAIL, PropertyType.OFFICE):
         if listing.sqft and 2500 <= listing.sqft <= 6000:
-            rank_score += 30
-            priority_signals.append("Small single-tenant building")
-    
+            if _is_boosted_land_use(listing.land_use):
+                rank_score += 40
+                priority_signals.append("Ideal small building (vacant/retail)")
+            elif listing.land_use:
+                rank_score += 30
+                priority_signals.append(f"Small single-tenant building ({listing.land_use})")
+            else:
+                rank_score += 25
+                priority_signals.append("Small single-tenant building")
+
     # Bonus: Distressed properties (foreclosure, etc.)
     if "distress" in signal_types:
         rank_score += 70
         priority_signals.append("Foreclosure/distress")
-    
+
+    # --- Market Viability Scoring ---
+
+    # Verizon Corporate store distance scoring
+    if nearest_corporate_distance is not None:
+        # Determine if this is a high-pop or low-pop market
+        is_high_pop = (area_population_3mi or 0) >= 12000
+        min_threshold = 3.0 if is_high_pop else 5.0
+
+        if nearest_corporate_distance >= 7.0:
+            rank_score += 20
+            priority_signals.append(f"Excellent corporate gap ({nearest_corporate_distance:.1f}mi)")
+        elif nearest_corporate_distance >= 5.0:
+            rank_score += 15
+            priority_signals.append(f"Strong corporate gap ({nearest_corporate_distance:.1f}mi)")
+        elif nearest_corporate_distance >= min_threshold:
+            rank_score += 10
+            priority_signals.append(f"Adequate corporate gap ({nearest_corporate_distance:.1f}mi)")
+
+    # Population density scoring
+    if area_population_1mi is not None and area_population_1mi >= 12000:
+        rank_score += 20
+        priority_signals.append(f"Strong population density ({area_population_1mi:,} within 1mi)")
+        if (area_population_3mi or 0) >= 25000:
+            rank_score += 5
+            priority_signals.append(f"High-density market ({area_population_3mi:,} within 3mi)")
+    elif area_population_3mi is not None and area_population_3mi >= 12000:
+        rank_score += 10
+        priority_signals.append(f"Viable population ({area_population_3mi:,} within 3mi)")
+        if area_population_3mi >= 25000:
+            rank_score += 5
+            priority_signals.append(f"High-density market ({area_population_3mi:,} within 3mi)")
+
+    # Retail node proximity scoring
+    if nearest_retail_node_distance is not None:
+        if nearest_retail_node_distance <= 0.25:
+            rank_score += 25
+            priority_signals.append("Adjacent to major retail anchor")
+        elif nearest_retail_node_distance <= 0.5:
+            rank_score += 15
+            priority_signals.append("Near major retail anchor (<0.5mi)")
+        elif nearest_retail_node_distance <= 1.0:
+            rank_score += 5
+            priority_signals.append("Retail anchor within 1mi")
+
     return rank_score, priority_signals
 
 
@@ -221,8 +429,14 @@ def _filter_properties_for_opportunities(
 ) -> List[PropertyListing]:
     """Apply CSOKi-specific filters to property list."""
     filtered = []
-    
+
     for prop in properties:
+        # Land use exclusion - filter out incompatible commercial uses
+        # (gas stations, restaurants, dental offices, etc.)
+        if _is_excluded_land_use(prop.land_use):
+            logger.debug(f"Excluded property {prop.address}: incompatible land use '{prop.land_use}'")
+            continue
+
         # Property type filter
         if prop.property_type == PropertyType.RETAIL and not include_retail:
             continue
@@ -359,23 +573,60 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 max_distance_miles=request.max_verizon_family_distance,
             )
 
-        # Calculate priority ranking for each property
+        # --- Market Viability Data Fetching ---
+
+        # Corporate store distances (DB-only, zero API cost)
+        corporate_distances: dict[str, float] = {}
+        corporate_store_count = 0
+        if request.enable_corporate_distance_scoring:
+            corporate_distances, corporate_store_count = _calculate_corporate_store_distances(
+                properties=filtered_properties,
+                db=db,
+                bounds_min_lat=request.min_lat,
+                bounds_max_lat=request.max_lat,
+                bounds_min_lng=request.min_lng,
+                bounds_max_lng=request.max_lng,
+            )
+
+        # Population data (Phase 2 - will be fetched via ArcGIS with caching)
+        population_data: dict[str, dict] = {}  # property_id -> {pop_1mi, pop_3mi}
+
+        # Retail node data (Phase 3 - will be fetched via Mapbox Places with caching)
+        retail_node_data: dict[str, dict] = {}  # property_id -> {distance, name}
+        retail_nodes_found = 0
+
+        # Calculate priority ranking for each property with market viability data
         ranked_opportunities = []
         for prop in filtered_properties:
-            rank_score, priority_signals = _calculate_priority_rank(prop)
+            corp_dist = corporate_distances.get(prop.id)
+            pop_info = population_data.get(prop.id, {})
+            retail_info = retail_node_data.get(prop.id, {})
+
+            rank_score, priority_signals = _calculate_priority_rank(
+                prop,
+                nearest_corporate_distance=corp_dist,
+                nearest_retail_node_distance=retail_info.get("distance"),
+                area_population_1mi=pop_info.get("pop_1mi"),
+                area_population_3mi=pop_info.get("pop_3mi"),
+            )
             ranked_opportunities.append({
                 "property": prop,
                 "rank_score": rank_score,
                 "priority_signals": priority_signals,
                 "signal_count": len(prop.opportunity_signals),
+                "nearest_corporate_store_miles": corp_dist,
+                "nearest_retail_node_miles": retail_info.get("distance"),
+                "nearest_retail_node_name": retail_info.get("name"),
+                "area_population_1mi": pop_info.get("pop_1mi"),
+                "area_population_3mi": pop_info.get("pop_3mi"),
             })
-        
+
         # Sort by rank score (highest first)
         ranked_opportunities.sort(key=lambda x: x["rank_score"], reverse=True)
-        
+
         # Apply limit after ranking
         ranked_opportunities = ranked_opportunities[:request.limit]
-        
+
         # Convert to response format with 1-based ranking
         opportunities = [
             OpportunityRanking(
@@ -383,14 +634,19 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 rank=idx + 1,
                 priority_signals=opp["priority_signals"],
                 signal_count=opp["signal_count"],
+                nearest_corporate_store_miles=opp["nearest_corporate_store_miles"],
+                nearest_retail_node_miles=opp["nearest_retail_node_miles"],
+                nearest_retail_node_name=opp["nearest_retail_node_name"],
+                area_population_1mi=opp["area_population_1mi"],
+                area_population_3mi=opp["area_population_3mi"],
             )
             for idx, opp in enumerate(ranked_opportunities)
         ]
-        
+
         # Calculate center point
         center_lat = (request.min_lat + request.max_lat) / 2
         center_lng = (request.min_lng + request.max_lng) / 2
-        
+
         return OpportunitySearchResponse(
             center_latitude=center_lat,
             center_longitude=center_lng,
@@ -409,7 +665,12 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 ],
                 "min_opportunity_score": request.min_opportunity_score,
                 "max_verizon_family_distance_miles": request.max_verizon_family_distance,
-            }
+                "corporate_distance_scoring": request.enable_corporate_distance_scoring,
+                "population_scoring": request.enable_population_scoring,
+                "retail_node_scoring": request.enable_retail_node_scoring,
+            },
+            corporate_stores_in_area=corporate_store_count,
+            retail_nodes_found=retail_nodes_found,
         )
     
     except ValueError as e:
@@ -478,5 +739,24 @@ async def get_opportunity_stats():
             "property_types": ["Retail (preferred)", "Office (acceptable)", "Land (empty parcels)"],
             "excludes": ["Multi-tenant buildings", "Shopping centers", "Strip malls"],
             "proximity_to_verizon_family": "Within 1 mile of Russell Cellular, Victra, or Verizon Corporate"
+        },
+        "market_viability_scoring": {
+            "corporate_store_distance": [
+                {"condition": "7+ miles from Verizon Corporate", "points": 20, "label": "Excellent corporate gap"},
+                {"condition": "5-7 miles from Verizon Corporate", "points": 15, "label": "Strong corporate gap"},
+                {"condition": "3-5 miles (high-pop) or 5+ miles (low-pop)", "points": 10, "label": "Adequate corporate gap"},
+                {"condition": "Below threshold", "points": 0, "label": "No bonus"},
+            ],
+            "population_threshold": [
+                {"condition": "12K+ within 1 mile", "points": 20, "label": "Strong population density"},
+                {"condition": "25K+ within 3 miles (bonus)", "points": 5, "label": "High-density market"},
+                {"condition": "12K+ within 3 miles only", "points": 10, "label": "Viable population"},
+            ],
+            "retail_node_proximity": [
+                {"condition": "Major retail anchor within 0.25mi", "points": 25, "label": "Adjacent to major retail anchor"},
+                {"condition": "Major retail anchor within 0.5mi", "points": 15, "label": "Near major retail anchor"},
+                {"condition": "Major retail anchor within 1.0mi", "points": 5, "label": "Retail anchor within 1mi"},
+            ],
+            "population_threshold_note": "High-pop market = 12K+ within 3mi (3mi corporate gap acceptable). Low-pop = under 12K (5mi corporate gap expected).",
         }
     }

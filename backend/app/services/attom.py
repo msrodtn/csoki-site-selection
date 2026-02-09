@@ -89,6 +89,9 @@ class PropertyListing(BaseModel):
     # External links
     external_url: Optional[str] = None
 
+    # Land use classification from ATTOM (e.g., "Gas Station/Mini Mart", "Retail Store (NEC)")
+    land_use: Optional[str] = None
+
     # Raw data for debugging
     raw_data: Optional[dict] = None
 
@@ -651,6 +654,7 @@ async def _search_attom_api(
                             listing_type="opportunity",  # ATTOM provides opportunity data, not active listings
                             opportunity_signals=signals,
                             opportunity_score=opp_score,
+                            land_use=land_use,
                             raw_data=prop if settings.DEBUG else None,
                         )
 

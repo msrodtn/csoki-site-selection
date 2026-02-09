@@ -350,6 +350,9 @@ export interface PropertyListing {
   // External links
   external_url: string | null;
 
+  // Land use classification from ATTOM (e.g., "Gas Station/Mini Mart", "Retail Store (NEC)")
+  land_use: string | null;
+
   // Legacy fields for backwards compatibility
   price_numeric?: number | null;
   sqft_numeric?: number | null;

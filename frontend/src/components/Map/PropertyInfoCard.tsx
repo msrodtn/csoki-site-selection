@@ -186,6 +186,9 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
             <div className="text-sm font-semibold" style={{ color: propertyTypeColor }}>
               {PROPERTY_TYPE_LABELS[property.property_type] || 'Property'}
             </div>
+            {property.land_use && (
+              <div className="text-xs text-gray-400 italic">{property.land_use}</div>
+            )}
           </div>
         </div>
         <button
