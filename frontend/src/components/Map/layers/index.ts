@@ -39,3 +39,5 @@ export {
   type BuildingLayerProps,
   type BuildingInfo,
 } from './BuildingLayer';
+
+export { MeasurementLayer } from './MeasurementLayer';

@@ -195,6 +195,21 @@ interface MapState {
   isDrawMode: boolean;
   setIsDrawMode: (active: boolean) => void;
 
+  // Measurement tool
+  isMeasureMode: boolean;
+  setIsMeasureMode: (active: boolean) => void;
+  measureType: 'line' | 'polygon';
+  setMeasureType: (type: 'line' | 'polygon') => void;
+  measureUnit: 'feet' | 'miles' | 'km' | 'meters';
+  setMeasureUnit: (unit: 'feet' | 'miles' | 'km' | 'meters') => void;
+  measureAreaUnit: 'sqft' | 'acres' | 'sqmiles';
+  setMeasureAreaUnit: (unit: 'sqft' | 'acres' | 'sqmiles') => void;
+  measurePoints: [number, number][];
+  addMeasurePoint: (point: [number, number]) => void;
+  clearMeasurement: () => void;
+  isMeasurementComplete: boolean;
+  setIsMeasurementComplete: (complete: boolean) => void;
+
   // Clear analysis
   clearAnalysis: () => void;
 
@@ -579,6 +594,27 @@ export const useMapStore = create<MapState>((set, get) => ({
   setDrawnPolygon: (polygon) => set({ drawnPolygon: polygon }),
   isDrawMode: false,
   setIsDrawMode: (active) => set({ isDrawMode: active }),
+
+  // Measurement tool
+  isMeasureMode: false,
+  setIsMeasureMode: (active) =>
+    set({
+      isMeasureMode: active,
+      // Clear existing measurement when activating
+      ...(active ? { measurePoints: [], isMeasurementComplete: false, isDrawMode: false } : {}),
+    }),
+  measureType: 'line',
+  setMeasureType: (type) => set({ measureType: type, measurePoints: [], isMeasurementComplete: false }),
+  measureUnit: 'feet',
+  setMeasureUnit: (unit) => set({ measureUnit: unit }),
+  measureAreaUnit: 'acres',
+  setMeasureAreaUnit: (unit) => set({ measureAreaUnit: unit }),
+  measurePoints: [],
+  addMeasurePoint: (point) =>
+    set((state) => ({ measurePoints: [...state.measurePoints, point] })),
+  clearMeasurement: () => set({ measurePoints: [], isMeasurementComplete: false }),
+  isMeasurementComplete: false,
+  setIsMeasurementComplete: (complete) => set({ isMeasurementComplete: complete }),
 
   // Clear all analysis state
   clearAnalysis: () =>

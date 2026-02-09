@@ -64,7 +64,8 @@ import { MapboxOverlay } from '@deck.gl/mapbox';
 import { createCompetitorArcLayer } from './layers/CompetitorArcLayer';
 import { POILayer } from './layers/POILayer';
 import { BuildingLayer, type BuildingInfo } from './layers/BuildingLayer';
-import { NavigationControl, GeolocateControl, ScreenshotControl, DrawControl } from './controls';
+import { NavigationControl, GeolocateControl, ScreenshotControl, DrawControl, MeasurementControl } from './controls';
+import { MeasurementLayer } from './layers/MeasurementLayer';
 import { PulsingOpportunityMarker } from './PulsingOpportunityMarker';
 
 // Feature flag for native POI layers (set to true to use new performant layers)
@@ -708,6 +709,12 @@ export function MapboxMap() {
     setDrawnPolygon,
     isDrawMode,
     setIsDrawMode,
+    // Measurement
+    isMeasureMode,
+    setIsMeasureMode,
+    addMeasurePoint,
+    measurePoints,
+    clearMeasurement,
   } = useMapStore();
 
   // Local state
@@ -1070,8 +1077,14 @@ export function MapboxMap() {
 
   // Handle map click
   const handleMapClick = useCallback(async (e: mapboxgl.MapMouseEvent) => {
+    // Measurement mode intercept — consume click before any other logic
+    if (isMeasureMode && e.lngLat) {
+      addMeasurePoint([e.lngLat.lng, e.lngLat.lat]);
+      return;
+    }
+
     const map = mapRef.current?.getMap();
-    
+
     // Check if click was on a cluster (only if layer exists)
     if (map && map.getLayer('clusters')) {
       const features = map.queryRenderedFeatures(e.point, {
@@ -1149,7 +1162,28 @@ export function MapboxMap() {
       setParcelError(null);
       setParcelClickPosition(null);
     }
-  }, [setSelectedStore, visibleLayersArray, viewState.zoom, isochroneSettings, setArcSettings, setShowCompetitorAccessPanel]);
+  }, [setSelectedStore, visibleLayersArray, viewState.zoom, isochroneSettings, setArcSettings, setShowCompetitorAccessPanel, isMeasureMode, addMeasurePoint]);
+
+  // Handle double-click to complete measurement
+  const handleMapDblClick = useCallback((e: mapboxgl.MapMouseEvent) => {
+    if (!isMeasureMode) return;
+    e.preventDefault();
+    // The dblclick is preceded by two click events that each added a point.
+    // Remove the last duplicate point from the second click of the double-click.
+    const correctedPoints = measurePoints.slice(0, -1);
+    useMapStore.setState({
+      measurePoints: correctedPoints,
+      isMeasurementComplete: true,
+      isMeasureMode: false,
+    });
+  }, [isMeasureMode, measurePoints]);
+
+  // Crosshair cursor when measurement mode is active
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    map.getCanvas().style.cursor = isMeasureMode ? 'crosshair' : '';
+  }, [isMeasureMode]);
 
   // Handle right-click for flagging property
   const handleMapRightClick = useCallback((e: mapboxgl.MapMouseEvent) => {
@@ -1744,6 +1778,8 @@ export function MapboxMap() {
         onMoveEnd={onMoveEnd}
         onLoad={onLoad}
         onClick={handleMapClick}
+        onDblClick={handleMapDblClick}
+        doubleClickZoom={!isMeasureMode}
         onContextMenu={handleMapRightClick}
         onMouseMove={handleTrafficMouseMove}
         onMouseLeave={handleTrafficMouseLeave}
@@ -1766,7 +1802,10 @@ export function MapboxMap() {
         <DrawControl
           map={mapRef.current}
           isDrawMode={isDrawMode}
-          onDrawModeChange={setIsDrawMode}
+          onDrawModeChange={(active) => {
+            setIsDrawMode(active);
+            if (active) { clearMeasurement(); setIsMeasureMode(false); }
+          }}
           onPolygonCreated={runPolygonAnalysis}
           onPolygonCleared={() => {
             setDrawnPolygon(null);
@@ -1774,6 +1813,8 @@ export function MapboxMap() {
           }}
           hasPolygon={!!drawnPolygon}
         />
+        <MeasurementControl />
+        <MeasurementLayer />
 
         {/* Traffic Layer */}
         {visibleLayersArray.includes('traffic') && (

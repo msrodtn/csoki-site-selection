@@ -24,3 +24,5 @@ export {
   DrawControl,
   type DrawControlProps,
 } from './DrawControl';
+
+export { MeasurementControl } from './MeasurementControl';
