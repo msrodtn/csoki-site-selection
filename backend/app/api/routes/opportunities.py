@@ -41,11 +41,13 @@ from app.services.attom import (
     PropertyListing,
     GeoBounds,
     PropertyType,
+    PropertySource,
     OpportunitySignal,
 )
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.store import Store
+from app.models.scraped_listing import ScrapedListing
 from app.utils.geo import haversine
 from app.services.viewport_cache import (
     get_cached_demographics,
@@ -116,6 +118,137 @@ def _is_boosted_land_use(land_use: str | None) -> bool:
         return False
     land_use_lower = land_use.lower()
     return any(keyword in land_use_lower for keyword in BOOSTED_LAND_USE_KEYWORDS)
+
+
+def _fetch_scraped_listings(
+    db: Session,
+    bounds: GeoBounds,
+    min_parcel_acres: float,
+    max_parcel_acres: float,
+    min_building_sqft: Optional[float],
+    max_building_sqft: Optional[float],
+    include_retail: bool,
+    include_office: bool,
+    include_land: bool,
+) -> List[PropertyListing]:
+    """
+    Fetch active scraped listings (Crexi/LoopNet) within map bounds
+    and convert them to PropertyListing objects for the opportunity pipeline.
+    """
+    query = db.query(ScrapedListing).filter(
+        ScrapedListing.is_active == True,
+        ScrapedListing.latitude.isnot(None),
+        ScrapedListing.longitude.isnot(None),
+        ScrapedListing.latitude >= bounds.min_lat,
+        ScrapedListing.latitude <= bounds.max_lat,
+        ScrapedListing.longitude >= bounds.min_lng,
+        ScrapedListing.longitude <= bounds.max_lng,
+    )
+
+    # Property type filter
+    allowed_types = []
+    if include_retail:
+        allowed_types.append("retail")
+    if include_office:
+        allowed_types.append("office")
+    if include_land:
+        allowed_types.append("land")
+    if allowed_types:
+        query = query.filter(ScrapedListing.property_type.in_(allowed_types))
+
+    rows = query.limit(200).all()
+    properties = []
+
+    # Map source string to PropertySource enum
+    source_map = {"crexi": PropertySource.CREXI, "loopnet": PropertySource.LOOPNET}
+    # Map property_type string to PropertyType enum
+    type_map = {
+        "retail": PropertyType.RETAIL,
+        "office": PropertyType.OFFICE,
+        "land": PropertyType.LAND,
+        "industrial": PropertyType.INDUSTRIAL,
+        "mixed_use": PropertyType.MIXED_USE,
+    }
+
+    for row in rows:
+        # Apply size filters
+        if row.lot_size_acres:
+            if row.lot_size_acres < min_parcel_acres or row.lot_size_acres > max_parcel_acres:
+                continue
+        if row.sqft and row.property_type != "land":
+            if min_building_sqft and row.sqft < min_building_sqft:
+                continue
+            if max_building_sqft and row.sqft > max_building_sqft:
+                continue
+
+        source = source_map.get(row.source, PropertySource.CREXI)
+        prop_type = type_map.get(row.property_type, PropertyType.UNKNOWN)
+        source_label = row.source.title() if row.source else "Listing"
+
+        listing = PropertyListing(
+            id=f"scraped-{row.id}",
+            address=row.address or f"{row.city}, {row.state}",
+            city=row.city,
+            state=row.state,
+            zip_code=row.postal_code,
+            latitude=row.latitude,
+            longitude=row.longitude,
+            property_type=prop_type,
+            price=row.price,
+            price_display=row.price_display,
+            sqft=row.sqft,
+            lot_size_acres=row.lot_size_acres,
+            year_built=row.year_built,
+            source=source,
+            listing_type="active_listing",
+            opportunity_signals=[
+                OpportunitySignal(
+                    signal_type="active_listing",
+                    description=f"Actively listed for lease/sale on {source_label}",
+                    strength="high",
+                )
+            ],
+            opportunity_score=80.0,
+            listing_url=row.listing_url,
+            broker_name=row.broker_name,
+            broker_company=row.broker_company,
+            listing_images=row.images if isinstance(row.images, list) else None,
+        )
+        properties.append(listing)
+
+    logger.info(f"Fetched {len(properties)} scraped listings within bounds")
+    return properties
+
+
+def _merge_and_deduplicate(
+    attom_properties: List[PropertyListing],
+    scraped_properties: List[PropertyListing],
+) -> List[PropertyListing]:
+    """
+    Merge ATTOM and scraped properties, deduplicating by proximity.
+    If a scraped listing is within ~50m of an ATTOM property, keep the scraped version.
+    """
+    if not scraped_properties:
+        return attom_properties
+
+    # Build set of scraped locations for quick proximity check
+    scraped_coords = [(p.latitude, p.longitude) for p in scraped_properties]
+
+    deduplicated_attom = []
+    for prop in attom_properties:
+        is_duplicate = False
+        for slat, slng in scraped_coords:
+            if abs(prop.latitude - slat) < 0.0005 and abs(prop.longitude - slng) < 0.0005:
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            deduplicated_attom.append(prop)
+
+    removed = len(attom_properties) - len(deduplicated_attom)
+    if removed > 0:
+        logger.info(f"Dedup: removed {removed} ATTOM properties overlapping with scraped listings")
+
+    return scraped_properties + deduplicated_attom
 
 
 def _filter_by_verizon_family_proximity(
@@ -322,6 +455,12 @@ def _calculate_priority_rank(
 
     signal_types = {s.signal_type for s in listing.opportunity_signals}
 
+    # 0. Active listing bonus — confirmed for-lease is the best possible signal
+    if listing.source in (PropertySource.CREXI, PropertySource.LOOPNET):
+        rank_score += 120
+        source_label = listing.source.value.title()
+        priority_signals.append(f"Active listing ({source_label})")
+
     # 1. Empty parcels (land only)
     if listing.property_type == PropertyType.LAND:
         rank_score += 100
@@ -457,14 +596,17 @@ def _filter_properties_for_opportunities(
             continue
 
         # Hard filter: occupied buildings are NOT opportunities.
-        # Only empty parcels (LAND) and buildings with vacancy indicators pass through.
+        # Only empty parcels (LAND), buildings with vacancy indicators,
+        # and scraped listings (confirmed for-lease) pass through.
         if prop.property_type != PropertyType.LAND:
-            prop_signal_types = {s.signal_type for s in prop.opportunity_signals}
-            has_vacancy = "vacant_property" in prop_signal_types
-            has_boosted_use = _is_boosted_land_use(prop.land_use)
-            if not has_vacancy and not has_boosted_use:
-                logger.debug(f"Filtered occupied building: {prop.address} ({prop.land_use})")
-                continue
+            is_scraped = prop.source in (PropertySource.CREXI, PropertySource.LOOPNET)
+            if not is_scraped:
+                prop_signal_types = {s.signal_type for s in prop.opportunity_signals}
+                has_vacancy = "vacant_property" in prop_signal_types
+                has_boosted_use = _is_boosted_land_use(prop.land_use)
+                if not has_vacancy and not has_boosted_use:
+                    logger.debug(f"Filtered occupied building: {prop.address} ({prop.land_use})")
+                    continue
         
         # Parcel size filter
         if prop.lot_size_acres:
@@ -563,10 +705,26 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
             min_opportunity_score=0,  # We'll filter after
             limit=request.limit * 2,  # Request extra to account for filtering
         )
-        
+
+        # Also fetch scraped listings (Crexi/LoopNet) — confirmed for-lease
+        scraped_properties = _fetch_scraped_listings(
+            db=db,
+            bounds=bounds,
+            min_parcel_acres=request.min_parcel_acres,
+            max_parcel_acres=request.max_parcel_acres,
+            min_building_sqft=request.min_building_sqft,
+            max_building_sqft=request.max_building_sqft,
+            include_retail=request.include_retail,
+            include_office=request.include_office,
+            include_land=request.include_land,
+        )
+
+        # Merge sources, deduplicating overlapping properties
+        all_properties = _merge_and_deduplicate(result.properties, scraped_properties)
+
         # Apply CSOKi-specific filters
         filtered_properties = _filter_properties_for_opportunities(
-            properties=result.properties,
+            properties=all_properties,
             min_parcel_acres=request.min_parcel_acres,
             max_parcel_acres=request.max_parcel_acres,
             min_building_sqft=request.min_building_sqft,

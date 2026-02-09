@@ -43,6 +43,8 @@ const SOURCE_LABELS: Record<string, string> = {
   reportall: 'ReportAll',
   quantumlisting: 'QuantumListing',
   team_contributed: 'Team Contributed',
+  crexi: 'Crexi Listing',
+  loopnet: 'LoopNet Listing',
 };
 
 export function PropertyInfoCard({ property, onClose, initialPosition, onPositionChange, opportunityRank, opportunitySignals }: PropertyInfoCardProps) {
@@ -187,8 +189,8 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
             </div>
           )}
           <div>
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              {isOpportunity ? 'Opportunity' : 'Active Listing'}
+            <div className="text-xs font-medium uppercase tracking-wide" style={{ color: (property.source === 'crexi' || property.source === 'loopnet') ? '#16A34A' : '#6B7280' }}>
+              {(property.source === 'crexi' || property.source === 'loopnet') ? 'For Lease / Sale' : isOpportunity ? 'Opportunity' : 'Active Listing'}
             </div>
             <div className="text-sm font-semibold" style={{ color: propertyTypeColor }}>
               {PROPERTY_TYPE_LABELS[property.property_type] || 'Property'}
@@ -241,6 +243,29 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
             </div>
           </div>
         </div>
+
+        {/* Listing Info (Crexi/LoopNet) */}
+        {(property.listing_url || property.broker_name) && (
+          <div className="px-4 py-3 border-b bg-green-50">
+            {property.broker_name && (
+              <div className="text-sm text-gray-700">
+                <span className="font-medium">Broker:</span> {property.broker_name}
+                {property.broker_company && ` — ${property.broker_company}`}
+              </div>
+            )}
+            {property.listing_url && (
+              <a
+                href={property.listing_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 mt-1 text-sm text-blue-600 hover:text-blue-800"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                View on {property.source === 'crexi' ? 'Crexi' : property.source === 'loopnet' ? 'LoopNet' : 'Listing Site'}
+              </a>
+            )}
+          </div>
+        )}
 
         {/* Key Metrics */}
         <div className="px-4 py-3 border-b grid grid-cols-2 gap-3">

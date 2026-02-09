@@ -39,6 +39,8 @@ class PropertySource(str, Enum):
     REPORTALL = "reportall"
     QUANTUMLISTING = "quantumlisting"
     TEAM_CONTRIBUTED = "team_contributed"
+    CREXI = "crexi"
+    LOOPNET = "loopnet"
 
 
 class OpportunitySignal(BaseModel):
@@ -91,6 +93,12 @@ class PropertyListing(BaseModel):
 
     # Land use classification from ATTOM (e.g., "Gas Station/Mini Mart", "Retail Store (NEC)")
     land_use: Optional[str] = None
+
+    # Listing metadata (for scraped Crexi/LoopNet properties)
+    listing_url: Optional[str] = None
+    broker_name: Optional[str] = None
+    broker_company: Optional[str] = None
+    listing_images: Optional[List[str]] = None
 
     # Raw data for debugging
     raw_data: Optional[dict] = None

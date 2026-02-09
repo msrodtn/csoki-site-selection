@@ -302,7 +302,7 @@ export interface ParcelRequest {
 // Property Search Types (ATTOM-powered property intelligence)
 export type PropertyType = 'retail' | 'land' | 'office' | 'industrial' | 'mixed_use' | 'unknown';
 
-export type PropertySource = 'attom' | 'reportall' | 'quantumlisting' | 'team_contributed';
+export type PropertySource = 'attom' | 'reportall' | 'quantumlisting' | 'team_contributed' | 'crexi' | 'loopnet';
 
 export interface OpportunitySignal {
   signal_type: string;  // e.g., "tax_delinquent", "owner_age", "vacancy", "distress"
@@ -352,6 +352,12 @@ export interface PropertyListing {
 
   // Land use classification from ATTOM (e.g., "Gas Station/Mini Mart", "Retail Store (NEC)")
   land_use: string | null;
+
+  // Listing metadata (scraped Crexi/LoopNet)
+  listing_url?: string | null;
+  broker_name?: string | null;
+  broker_company?: string | null;
+  listing_images?: string[] | null;
 
   // Legacy fields for backwards compatibility
   price_numeric?: number | null;
