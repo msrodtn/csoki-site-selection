@@ -248,26 +248,19 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
 
     # ========== MEDIUM-VALUE SIGNALS ==========
 
-    # Check ownership duration (long-term owners more likely to sell)
+    # Check ownership duration (long-term owners may be more willing to sell)
     last_sale = sale.get("saleTransDate")
     if last_sale:
         try:
             sale_date = datetime.strptime(last_sale[:10], "%Y-%m-%d")
             years_owned = (datetime.now() - sale_date).days / 365
-            if years_owned > 15:
+            if years_owned > 20:
                 signals.append(OpportunitySignal(
                     signal_type="long_term_owner",
                     description=f"Same owner for {int(years_owned)}+ years",
-                    strength="medium"
-                ))
-                score += 15
-            elif years_owned > 10:
-                signals.append(OpportunitySignal(
-                    signal_type="established_owner",
-                    description=f"Owned for {int(years_owned)} years",
                     strength="low"
                 ))
-                score += 5
+                score += 8
         except (ValueError, TypeError):
             pass
 
@@ -323,7 +316,7 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
 
     # ========== NEW ENHANCED SIGNALS (Added Feb 4, 2026) ==========
 
-    # Check building age (older buildings = renovation/redevelopment opportunity)
+    # Check building age (supplementary info — old building alone is not an opportunity)
     building = property_data.get("building", {})
     year_built = building.get("yearBuilt") or summary.get("yearBuilt")
     if year_built:
@@ -332,17 +325,10 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
             if building_age >= 50:
                 signals.append(OpportunitySignal(
                     signal_type="aging_building",
-                    description=f"Built {year_built} ({building_age} years old) - renovation opportunity",
-                    strength="medium"
-                ))
-                score += 15
-            elif building_age >= 30:
-                signals.append(OpportunitySignal(
-                    signal_type="mature_building",
-                    description=f"Built {year_built} - potential for updates",
+                    description=f"Built {year_built} ({building_age} years old)",
                     strength="low"
                 ))
-                score += 5
+                score += 8
         except (ValueError, TypeError):
             pass
 
@@ -401,61 +387,8 @@ def _calculate_opportunity_signals(property_data: dict) -> tuple[List[Opportunit
         ))
         score += 10
 
-    # ========== FALLBACK SIGNALS (ensure something always shows) ==========
-
-    # Property type indicator as baseline signal
-    prop_type = summary.get("proptype") or summary.get("propertyType") or ""
-    prop_indicator = summary.get("propIndicator")
-
-    if not signals:  # Only add fallback if no other signals
-        # Commercial property indicator with better descriptions
-        if prop_indicator in ("20", "25", "27", "50", "80"):
-            type_descriptions = {
-                "20": "Commercial property - general use",
-                "25": "Retail-zoned property - high visibility location",
-                "27": "Office building - professional space opportunity",
-                "50": "Industrial property - warehouse/manufacturing potential",
-                "80": "Vacant land - development opportunity"
-            }
-            signals.append(OpportunitySignal(
-                signal_type="commercial_zoning",
-                description=type_descriptions.get(prop_indicator, "Commercial property"),
-                strength="low"
-            ))
-            score += 8
-
-        # If still no signals, add context-aware opportunity indicator
-        if not signals:
-            if lot_sqft and float(lot_sqft) > 21780:  # More than 0.5 acres
-                signals.append(OpportunitySignal(
-                    signal_type="land_opportunity",
-                    description="Sizeable commercial parcel in your search area",
-                    strength="low"
-                ))
-                score += 10
-            elif assessed_value or market_value:
-                value = market_value or assessed_value
-                if value and value < 500_000:
-                    signals.append(OpportunitySignal(
-                        signal_type="entry_level",
-                        description="Entry-level commercial property - lower barrier to entry",
-                        strength="low"
-                    ))
-                    score += 8
-                else:
-                    signals.append(OpportunitySignal(
-                        signal_type="market_listing",
-                        description="Commercial property in target market",
-                        strength="low"
-                    ))
-                    score += 5
-
     # Cap score at 100
     score = min(score, 100)
-
-    # Ensure minimum score if we have signals
-    if signals and score < 5:
-        score = 5
 
     print(f"[ATTOM Signal Debug] Generated {len(signals)} signals with score {score}")
 

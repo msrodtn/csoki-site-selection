@@ -96,11 +96,15 @@ EXCLUDED_LAND_USE_KEYWORDS = {
     "car dealer", "grocery", "supermarket", "convenience store",
 }
 
-# Land use keywords indicating especially promising conversion candidates
-BOOSTED_LAND_USE_KEYWORDS = {
-    "vacant", "former", "closed", "abandoned", "retail store", "commercial",
-    "general retail", "strip", "shopping", "storefront", "office building",
-    "professional office", "mixed use",
+# Land use keywords indicating the property IS available (bypass occupied-building check)
+AVAILABILITY_LAND_USE_KEYWORDS = {
+    "vacant", "former", "closed", "abandoned", "demolished", "unused",
+}
+
+# Land use keywords indicating a desirable format (scoring bonus only, NOT availability evidence)
+DESIRABLE_FORMAT_KEYWORDS = {
+    "retail store", "commercial", "general retail", "strip", "shopping",
+    "storefront", "office building", "professional office", "mixed use",
 }
 
 
@@ -112,12 +116,20 @@ def _is_excluded_land_use(land_use: str | None) -> bool:
     return any(keyword in land_use_lower for keyword in EXCLUDED_LAND_USE_KEYWORDS)
 
 
-def _is_boosted_land_use(land_use: str | None) -> bool:
-    """Check if a property's land use indicates an especially promising conversion candidate."""
+def _has_availability_keywords(land_use: str | None) -> bool:
+    """Check if land use text indicates the property is available (vacant, former, closed, etc.)."""
     if not land_use:
         return False
     land_use_lower = land_use.lower()
-    return any(keyword in land_use_lower for keyword in BOOSTED_LAND_USE_KEYWORDS)
+    return any(keyword in land_use_lower for keyword in AVAILABILITY_LAND_USE_KEYWORDS)
+
+
+def _is_desirable_format(land_use: str | None) -> bool:
+    """Check if land use indicates a desirable building format for Verizon retail."""
+    if not land_use:
+        return False
+    land_use_lower = land_use.lower()
+    return any(keyword in land_use_lower for keyword in DESIRABLE_FORMAT_KEYWORDS)
 
 
 def _fetch_scraped_listings(
@@ -493,29 +505,29 @@ def _calculate_priority_rank(
             priority_signals.append("Estate/trust ownership")
             break
 
-    # 6. Small single-tenant buildings (land-use-aware scoring)
+    # 6. Small single-tenant buildings (format-aware scoring)
     if listing.property_type in (PropertyType.RETAIL, PropertyType.OFFICE):
         if listing.sqft and 2500 <= listing.sqft <= 6000:
-            if _is_boosted_land_use(listing.land_use):
+            if _has_availability_keywords(listing.land_use):
                 rank_score += 40
-                priority_signals.append("Ideal small building (vacant/retail)")
-            elif listing.land_use:
+                priority_signals.append("Ideal small building (vacant/available)")
+            elif _is_desirable_format(listing.land_use):
                 rank_score += 30
-                priority_signals.append(f"Small single-tenant building ({listing.land_use})")
+                priority_signals.append(f"Desirable format ({listing.land_use})")
             else:
                 rank_score += 25
                 priority_signals.append("Small single-tenant building")
 
-    # 7. Vacancy boost for buildings (occupied buildings are hard-filtered upstream)
+    # 7. Vacancy boost for buildings
     if listing.property_type != PropertyType.LAND:
         has_vacancy = "vacant_property" in signal_types
-        has_boosted_use = _is_boosted_land_use(listing.land_use)
-        if has_vacancy and has_boosted_use:
+        has_availability = _has_availability_keywords(listing.land_use)
+        if has_vacancy and has_availability:
             rank_score += 20
             priority_signals.append(f"Confirmed vacant ({listing.land_use})")
-        elif has_boosted_use and not has_vacancy:
-            rank_score += 10
-            priority_signals.append(f"Potential vacancy ({listing.land_use})")
+        elif has_vacancy:
+            rank_score += 15
+            priority_signals.append("Confirmed vacant")
 
     # Bonus: Distressed properties (foreclosure, etc.)
     if "distress" in signal_types:
@@ -584,6 +596,8 @@ def _filter_properties_for_opportunities(
     """Apply CSOKi-specific filters to property list."""
     filtered = []
 
+    current_year = datetime.now().year
+
     for prop in properties:
         # Property type filter
         if prop.property_type == PropertyType.RETAIL and not include_retail:
@@ -592,26 +606,44 @@ def _filter_properties_for_opportunities(
             continue
         if prop.property_type == PropertyType.LAND and not include_land:
             continue
-        
+
         # Only retail, office, and land
         if prop.property_type not in (PropertyType.RETAIL, PropertyType.OFFICE, PropertyType.LAND):
             continue
 
+        is_scraped = prop.source in (PropertySource.CREXI, PropertySource.LOOPNET)
+
+        # Hard filter: incompatible land uses (gas stations, restaurants, medical, etc.)
+        # Scraped listings bypass this (their land_use is None)
+        if _is_excluded_land_use(prop.land_use):
+            logger.debug(f"Filtered excluded land use: {prop.address} ({prop.land_use})")
+            continue
+
         # Hard filter: occupied buildings are NOT opportunities.
-        # Only empty parcels (LAND), buildings with vacancy indicators,
+        # Only empty parcels (LAND), buildings with vacancy/availability evidence,
         # and scraped listings (confirmed for-lease) pass through.
         if prop.property_type != PropertyType.LAND:
-            is_scraped = prop.source in (PropertySource.CREXI, PropertySource.LOOPNET)
             if not is_scraped:
                 prop_signal_types = {s.signal_type for s in prop.opportunity_signals}
                 has_vacancy = "vacant_property" in prop_signal_types
-                has_boosted_use = _is_boosted_land_use(prop.land_use)
-                if not has_vacancy and not has_boosted_use:
+                has_availability_keyword = _has_availability_keywords(prop.land_use)
+                if not has_vacancy and not has_availability_keyword:
                     logger.debug(f"Filtered occupied building: {prop.address} ({prop.land_use})")
+                    continue
+
+        # Hard filter: established businesses (20+ year-old occupied buildings)
+        # Must have vacancy, distress, or availability evidence to pass
+        if prop.property_type != PropertyType.LAND and not is_scraped:
+            if prop.year_built and (current_year - prop.year_built) > 20:
+                prop_signal_types = {s.signal_type for s in prop.opportunity_signals}
+                has_vacancy = "vacant_property" in prop_signal_types
+                has_distress = bool(prop_signal_types & {"tax_delinquent", "distress", "estate_ownership"})
+                has_availability = _has_availability_keywords(prop.land_use)
+                if not has_vacancy and not has_distress and not has_availability:
+                    logger.debug(f"Filtered established business: {prop.address} (built {prop.year_built})")
                     continue
         
         # Parcel size filter (scraped listings already size-filtered during import)
-        is_scraped = prop.source in (PropertySource.CREXI, PropertySource.LOOPNET)
         if prop.lot_size_acres and not is_scraped:
             if prop.lot_size_acres < min_parcel_acres or prop.lot_size_acres > max_parcel_acres:
                 continue
@@ -634,9 +666,12 @@ def _filter_properties_for_opportunities(
             if any(term in signal_descriptions for term in ["multi", "center", "plaza", "strip"]):
                 continue
         
-        # Opportunity signal filter
-        if require_opportunity_signal and not prop.opportunity_signals:
-            continue
+        # Opportunity signal filter — require at least one HIGH or MEDIUM strength signal
+        # LAND properties are exempt (empty land is inherently an opportunity)
+        if require_opportunity_signal and prop.property_type != PropertyType.LAND:
+            meaningful = [s for s in prop.opportunity_signals if s.strength in ("high", "medium")]
+            if not meaningful:
+                continue
         
         # Minimum opportunity score
         if prop.opportunity_score and prop.opportunity_score < min_opportunity_score:
