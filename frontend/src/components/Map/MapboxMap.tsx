@@ -712,8 +712,6 @@ export function MapboxMap() {
     // Measurement
     isMeasureMode,
     setIsMeasureMode,
-    addMeasurePoint,
-    measurePoints,
     clearMeasurement,
   } = useMapStore();
 
@@ -1077,9 +1075,11 @@ export function MapboxMap() {
 
   // Handle map click
   const handleMapClick = useCallback(async (e: mapboxgl.MapMouseEvent) => {
-    // Measurement mode intercept — consume click before any other logic
-    if (isMeasureMode && e.lngLat) {
-      addMeasurePoint([e.lngLat.lng, e.lngLat.lat]);
+    // Measurement mode intercept — read directly from store to avoid stale closures
+    // (@vis.gl/react-mapbox may not re-register the onClick handler on every render)
+    const storeState = useMapStore.getState();
+    if (storeState.isMeasureMode && e.lngLat) {
+      storeState.addMeasurePoint([e.lngLat.lng, e.lngLat.lat]);
       return;
     }
 
@@ -1162,21 +1162,23 @@ export function MapboxMap() {
       setParcelError(null);
       setParcelClickPosition(null);
     }
-  }, [setSelectedStore, visibleLayersArray, viewState.zoom, isochroneSettings, setArcSettings, setShowCompetitorAccessPanel, isMeasureMode, addMeasurePoint]);
+  }, [setSelectedStore, visibleLayersArray, viewState.zoom, isochroneSettings, setArcSettings, setShowCompetitorAccessPanel]);
 
   // Handle double-click to complete measurement
   const handleMapDblClick = useCallback((e: mapboxgl.MapMouseEvent) => {
-    if (!isMeasureMode) return;
+    // Read directly from store to avoid stale closures
+    const storeState = useMapStore.getState();
+    if (!storeState.isMeasureMode) return;
     e.preventDefault();
     // The dblclick is preceded by two click events that each added a point.
     // Remove the last duplicate point from the second click of the double-click.
-    const correctedPoints = measurePoints.slice(0, -1);
+    const correctedPoints = storeState.measurePoints.slice(0, -1);
     useMapStore.setState({
       measurePoints: correctedPoints,
       isMeasurementComplete: true,
       isMeasureMode: false,
     });
-  }, [isMeasureMode, measurePoints]);
+  }, []);
 
   // Crosshair cursor when measurement mode is active
   useEffect(() => {
