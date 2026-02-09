@@ -443,6 +443,30 @@ export const listingsApi = {
     const { data } = await api.post('/listings/fetch-crexi-area', request);
     return data;
   },
+
+  // Upload a Crexi CSV/Excel export for parsing and import
+  uploadCrexiCSV: async (file: File): Promise<{
+    success: boolean;
+    imported: number;
+    updated: number;
+    total_filtered: number;
+    empty_land_count: number;
+    small_building_count: number;
+    cached: boolean;
+    cache_age_minutes: number | null;
+    timestamp: string;
+    expires_at: string;
+    location: string;
+    message: string | null;
+  }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post('/listings/upload-crexi-csv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    });
+    return data;
+  },
 };
 
 // ============================================

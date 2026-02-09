@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, Loader2 } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import { listingsApi } from '../../services/api';
 
@@ -227,43 +227,26 @@ function InlineOpportunitiesFilter() {
   );
 }
 
-// Inline Crexi Search Component
+// Inline Crexi CSV Upload Component
 function InlineCrexiSearch() {
-  const [location, setLocation] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [result, setResult] = useState<{ total_filtered: number; cached: boolean } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [result, setResult] = useState<{ total_filtered: number; location: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [diagnostics, setDiagnostics] = useState<{
-    playwrightAvailable: boolean;
-    crexiLoaded: boolean;
-    credentialsSet: boolean;
-  } | null>(null);
 
-  useEffect(() => {
-    listingsApi.getDiagnostics().then((data) => {
-      setDiagnostics({
-        playwrightAvailable: data.playwright.available,
-        crexiLoaded: data.crexi.automation_loaded,
-        credentialsSet: data.crexi.credentials.username_set && data.crexi.credentials.password_set,
-      });
-    }).catch(() => {
-      setDiagnostics({ playwrightAvailable: false, crexiLoaded: false, credentialsSet: false });
-    });
-  }, []);
-
-  const isReady = diagnostics?.playwrightAvailable && diagnostics?.crexiLoaded && diagnostics?.credentialsSet;
-
-  const handleSearch = async () => {
-    if (!location.trim()) return;
-    setIsSearching(true);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
     setError(null);
+    setResult(null);
     try {
-      const response = await listingsApi.fetchCrexiArea({ location: location.trim() });
-      setResult({ total_filtered: response.total_filtered, cached: response.cached });
+      const response = await listingsApi.uploadCrexiCSV(file);
+      setResult({ total_filtered: response.total_filtered, location: response.location });
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Search failed');
+      setError(err.response?.data?.detail || 'Upload failed');
     } finally {
-      setIsSearching(false);
+      setIsUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -271,44 +254,19 @@ function InlineCrexiSearch() {
     <div className="ml-6 mt-2 p-3 bg-blue-50 rounded-lg border-l-2 border-blue-300">
       <div className="flex items-center gap-2 mb-2">
         <Search className="w-3 h-3 text-blue-600" />
-        <span className="text-xs font-medium text-blue-800">Crexi Search</span>
-        {diagnostics && (
-          <span className={`ml-auto ${isReady ? 'text-green-600' : 'text-amber-600'}`}>
-            {isReady ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-          </span>
-        )}
+        <span className="text-xs font-medium text-blue-800">Crexi Import</span>
       </div>
-
-      {isReady ? (
-        <>
-          <div className="flex gap-1 mb-2">
-            <input
-              type="text"
-              placeholder="Des Moines, IA"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              disabled={isSearching}
-              className="flex-1 px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-blue-500"
-            />
-            <button
-              onClick={handleSearch}
-              disabled={isSearching || !location.trim()}
-              className="px-2 py-1 bg-blue-600 text-white rounded text-xs disabled:bg-gray-400"
-            >
-              {isSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Go'}
-            </button>
-          </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          {result && (
-            <p className="text-xs text-gray-600">
-              Found {result.total_filtered} opportunities {result.cached && '(cached)'}
-            </p>
-          )}
-        </>
-      ) : (
-        <p className="text-xs text-gray-500">
-          {!diagnostics?.playwrightAvailable ? 'Playwright unavailable' : 'Crexi credentials not set'}
+      <label className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs font-medium cursor-pointer transition-colors ${
+        isUploading ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'
+      }`}>
+        {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+        {isUploading ? 'Uploading...' : 'Upload Crexi CSV'}
+        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} className="hidden" disabled={isUploading} />
+      </label>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {result && (
+        <p className="text-xs text-gray-600 mt-1">
+          Imported {result.total_filtered} listings ({result.location})
         </p>
       )}
     </div>

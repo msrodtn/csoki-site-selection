@@ -1,20 +1,17 @@
 /**
- * Crexi Loader - Automated Crexi CSV export with adjustable filters
- * 
- * Allows users to load Crexi listings for a location with automated export.
- * Includes filter controls for acreage and square footage ranges.
- * 
- * Created by Subagent - Feb 4, 2026
+ * Crexi Loader - Upload Crexi CSV/Excel exports for import.
+ *
+ * User exports CSV from Crexi.com, uploads here, backend parses and
+ * filters to empty land (0.8-2ac) and small buildings (2500-6000 sqft).
  */
 
-import React, { useState } from 'react';
-import { X, Download, CheckCircle, AlertCircle, Loader, RefreshCw, MapPin, Sliders } from 'lucide-react';
-import api from '../../services/api';
+import React, { useState, useRef, useCallback } from 'react';
+import { X, Upload, CheckCircle, AlertCircle, Loader, FileSpreadsheet, ExternalLink } from 'lucide-react';
+import { listingsApi } from '../../services/api';
 
 interface CrexiLoaderProps {
   onClose: () => void;
   onSuccess?: (count: number) => void;
-  defaultLocation?: string;
 }
 
 interface CrexiAreaResponse {
@@ -25,82 +22,66 @@ interface CrexiAreaResponse {
   empty_land_count: number;
   small_building_count: number;
   cached: boolean;
-  cache_age_minutes?: number;
+  cache_age_minutes: number | null;
   timestamp: string;
   expires_at: string;
   location: string;
-  message?: string;
+  message: string | null;
 }
 
-export const CrexiLoader: React.FC<CrexiLoaderProps> = ({
-  onClose,
-  onSuccess,
-  defaultLocation = ''
-}) => {
-  const [location, setLocation] = useState(defaultLocation);
-  const [loading, setLoading] = useState(false);
+export const CrexiLoader: React.FC<CrexiLoaderProps> = ({ onClose, onSuccess }) => {
+  const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<CrexiAreaResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  
-  // Filter state (future enhancement - not yet implemented in backend)
-  const [minAcres, setMinAcres] = useState(0.8);
-  const [maxAcres, setMaxAcres] = useState(2.0);
-  const [minSqft, setMinSqft] = useState(2500);
-  const [maxSqft, setMaxSqft] = useState(6000);
-  const [propertyTypes, setPropertyTypes] = useState<string[]>(['Land', 'Retail', 'Office']);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleLoad = async (forceRefresh: boolean = false) => {
-    if (!location.trim()) {
-      setError('Please enter a location');
+  const handleFile = useCallback(async (file: File) => {
+    const validExtensions = ['.xlsx', '.xls', '.csv'];
+    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+    if (!validExtensions.includes(ext)) {
+      setError(`Invalid file type "${ext}". Please upload an .xlsx, .xls, or .csv file.`);
       return;
     }
 
-    setLoading(true);
+    setFileName(file.name);
+    setUploading(true);
     setError(null);
     setResult(null);
 
     try {
-      const response = await api.post('/listings/fetch-crexi-area', {
-        location: location.trim(),
-        property_types: propertyTypes.length > 0 ? propertyTypes : null,
-        force_refresh: forceRefresh
-      });
-
-      setResult(response.data);
-      
-      if (response.data.success && onSuccess) {
-        onSuccess(response.data.total_filtered);
+      const response = await listingsApi.uploadCrexiCSV(file);
+      setResult(response);
+      if (response.success && onSuccess) {
+        onSuccess(response.total_filtered);
       }
     } catch (err: any) {
-      console.error('Crexi load error:', err);
-      const errorMsg = err.response?.data?.detail || err.message || 'Failed to load Crexi listings';
-      setError(errorMsg);
+      console.error('Crexi upload error:', err);
+      setError(err.response?.data?.detail || err.message || 'Failed to upload Crexi CSV');
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
+  }, [onSuccess]);
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
   };
 
-  const handleRefresh = () => {
-    handleLoad(true);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
   };
 
-  const formatCacheAge = (minutes?: number): string => {
-    if (!minutes) return 'just now';
-    if (minutes < 60) return `${minutes} minutes ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-    const days = Math.floor(hours / 24);
-    return `${days} day${days > 1 ? 's' : ''} ago`;
-  };
-
-  const togglePropertyType = (type: string) => {
-    setPropertyTypes(prev => 
-      prev.includes(type) 
-        ? prev.filter(t => t !== type)
-        : [...prev, type]
-    );
-  };
+  const handleDragLeave = () => setIsDragging(false);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -109,159 +90,77 @@ export const CrexiLoader: React.FC<CrexiLoaderProps> = ({
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
-              <Download className="w-5 h-5 text-emerald-600" />
+              <Upload className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Load Crexi Listings</h2>
-              <p className="text-sm text-gray-500">Automated CSV export with smart filtering</p>
+              <h2 className="text-xl font-semibold text-gray-900">Import Crexi Listings</h2>
+              <p className="text-sm text-gray-500">Upload a CSV export from Crexi.com</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Location Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <MapPin className="w-4 h-4 inline mr-1" />
-              Location
-            </label>
-            <input
-              type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g., Des Moines, IA or 50309"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              disabled={loading}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Enter a city/state or ZIP code to search
+          {/* Instructions */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm font-medium text-blue-900 mb-2">How to export from Crexi:</p>
+            <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+              <li>Go to <a href="https://www.crexi.com/properties" target="_blank" rel="noopener noreferrer" className="underline font-medium inline-flex items-center gap-1">Crexi.com/properties <ExternalLink className="w-3 h-3 inline" /></a></li>
+              <li>Search your target market and apply filters (Land, Retail, Office)</li>
+              <li>Click the <strong>Export</strong> button to download the Excel file</li>
+              <li>Upload that file below</li>
+            </ol>
+            <p className="text-xs text-blue-600 mt-2">
+              Auto-filters to: empty land (0.8-2 acres) and small buildings (2,500-6,000 sqft, single-tenant)
             </p>
           </div>
 
-          {/* Property Types */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Property Types
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {['Land', 'Retail', 'Office', 'Industrial'].map(type => (
-                <button
-                  key={type}
-                  onClick={() => togglePropertyType(type)}
-                  disabled={loading}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    propertyTypes.includes(type)
-                      ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-400'
-                      : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-                  }`}
-                >
-                  {type}
-                </button>
-              ))}
-            </div>
+          {/* Drop Zone */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={() => fileInputRef.current?.click()}
+            className={`
+              border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
+              ${isDragging
+                ? 'border-emerald-400 bg-emerald-50'
+                : uploading
+                  ? 'border-gray-300 bg-gray-50 cursor-wait'
+                  : 'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50/50'
+              }
+            `}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleFileInput}
+              className="hidden"
+              disabled={uploading}
+            />
+            {uploading ? (
+              <div className="flex flex-col items-center gap-3">
+                <Loader className="w-8 h-8 text-emerald-500 animate-spin" />
+                <p className="text-sm text-gray-600">Uploading and parsing {fileName}...</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <FileSpreadsheet className="w-10 h-10 text-gray-400" />
+                <div>
+                  <p className="text-sm font-medium text-gray-700">
+                    {fileName ? `Selected: ${fileName}` : 'Drop Crexi export here or click to browse'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Accepts .xlsx, .xls, or .csv</p>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Advanced Filters Toggle */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
-          >
-            <Sliders className="w-4 h-4" />
-            Advanced Filters {showFilters ? '▼' : '▶'}
-          </button>
-
-          {/* Advanced Filters (Collapsible) */}
-          {showFilters && (
-            <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Empty Land: {minAcres} - {maxAcres} acres
-                </label>
-                <div className="flex gap-4 items-center">
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="3"
-                    step="0.1"
-                    value={minAcres}
-                    onChange={(e) => setMinAcres(parseFloat(e.target.value))}
-                    className="flex-1"
-                  />
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="3"
-                    step="0.1"
-                    value={maxAcres}
-                    onChange={(e) => setMaxAcres(parseFloat(e.target.value))}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Small Buildings: {minSqft.toLocaleString()} - {maxSqft.toLocaleString()} sqft
-                </label>
-                <div className="flex gap-4 items-center">
-                  <input
-                    type="range"
-                    min="1000"
-                    max="10000"
-                    step="100"
-                    value={minSqft}
-                    onChange={(e) => setMinSqft(parseInt(e.target.value))}
-                    className="flex-1"
-                  />
-                  <input
-                    type="range"
-                    min="1000"
-                    max="10000"
-                    step="100"
-                    value={maxSqft}
-                    onChange={(e) => setMaxSqft(parseInt(e.target.value))}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-
-              <p className="text-xs text-amber-600">
-                ⚠️ Note: Advanced filter controls are UI-only. Backend uses fixed criteria (0.8-2 acres, 2500-6000 sqft).
-              </p>
-            </div>
-          )}
-
-          {/* Load Button */}
-          <button
-            onClick={() => handleLoad(false)}
-            disabled={loading || !location.trim()}
-            className={`w-full py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${
-              loading || !location.trim()
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-emerald-600 text-white hover:bg-emerald-700'
-            }`}
-          >
-            {loading ? (
-              <>
-                <Loader className="w-5 h-5 animate-spin" />
-                Loading... (~60 seconds)
-              </>
-            ) : (
-              <>
-                <Download className="w-5 h-5" />
-                Load Crexi Listings
-              </>
-            )}
-          </button>
-
-          {/* Error Message */}
+          {/* Error */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -279,24 +178,15 @@ export const CrexiLoader: React.FC<CrexiLoaderProps> = ({
                 <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-emerald-900">
-                    {result.message || 'Success!'}
+                    {result.message || 'Import complete!'}
                   </p>
                   <p className="text-sm text-emerald-700 mt-1">
-                    Loaded <strong>{result.total_filtered}</strong> properties from Crexi
+                    <strong>{result.total_filtered}</strong> properties match criteria in {result.location}
                   </p>
                 </div>
-                {result.cached && (
-                  <button
-                    onClick={handleRefresh}
-                    className="text-emerald-600 hover:text-emerald-700 flex items-center gap-1 text-sm"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Refresh
-                  </button>
-                )}
               </div>
 
-              {/* Stats Breakdown */}
+              {/* Stats */}
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <div className="bg-white rounded-lg p-3">
                   <p className="text-xs text-gray-500">Empty Land</p>
@@ -306,48 +196,30 @@ export const CrexiLoader: React.FC<CrexiLoaderProps> = ({
                 <div className="bg-white rounded-lg p-3">
                   <p className="text-xs text-gray-500">Small Buildings</p>
                   <p className="text-2xl font-bold text-emerald-600">{result.small_building_count}</p>
-                  <p className="text-xs text-gray-500">2500-6000 sqft</p>
+                  <p className="text-xs text-gray-500">2,500-6,000 sqft</p>
                 </div>
               </div>
 
-              {/* Cache Info */}
-              {result.cached && (
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <div className="w-2 h-2 bg-emerald-400 rounded-full"></div>
-                  Last updated {formatCacheAge(result.cache_age_minutes)}
-                  <span className="text-gray-400">•</span>
-                  <span>Expires {new Date(result.expires_at).toLocaleTimeString()}</span>
-                </div>
-              )}
-
-              {/* Action Info */}
               {result.imported > 0 && (
                 <p className="text-xs text-emerald-600">
-                  ✓ {result.imported} new propert{result.imported === 1 ? 'y' : 'ies'} added to database
+                  + {result.imported} new propert{result.imported === 1 ? 'y' : 'ies'} added to database
                 </p>
               )}
               {result.updated > 0 && (
                 <p className="text-xs text-emerald-600">
-                  ✓ {result.updated} propert{result.updated === 1 ? 'y' : 'ies'} updated
+                  + {result.updated} propert{result.updated === 1 ? 'y' : 'ies'} updated
                 </p>
               )}
+
+              <p className="text-xs text-gray-500">
+                Listings will appear on the map when you toggle the CSOKi Opportunities layer.
+              </p>
             </div>
           )}
-
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm font-medium text-blue-900 mb-2">How it works:</p>
-            <ul className="text-sm text-blue-700 space-y-1">
-              <li>• Automatically logs into Crexi and exports CSV data</li>
-              <li>• Filters for empty land (0.8-2 acres) OR small buildings (2500-6000 sqft)</li>
-              <li>• Results cached for 24 hours per location</li>
-              <li>• Properties appear as green pins on the map</li>
-            </ul>
-          </div>
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end">
           <button
             onClick={onClose}
             className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"

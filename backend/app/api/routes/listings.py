@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.models.scraped_listing import ScrapedListing
 from app.services.listing_scraper import ListingScraperService, ScrapedProperty
+from app.services.crexi_parser import parse_crexi_csv, filter_opportunities, import_to_database
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 logger = logging.getLogger(__name__)
@@ -1029,3 +1030,105 @@ async def fetch_crexi_area_endpoint(
             status_code=500,
             detail=f"Failed to fetch Crexi data: {str(e)}"
         )
+
+
+# ============================================================================
+# Crexi CSV Upload (Replaces fragile Playwright automation)
+# ============================================================================
+
+
+@router.post("/upload-crexi-csv", response_model=CrexiAreaResponse)
+async def upload_crexi_csv(
+    file: UploadFile = File(...),
+    location: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a Crexi CSV/Excel export and import matching listings.
+
+    Workflow:
+    1. User exports CSV from Crexi.com manually
+    2. User uploads the file here
+    3. Backend parses, filters (0.8-2ac land, 2500-6000 sqft buildings), and imports
+
+    Accepts .xlsx, .xls, and .csv files in Crexi's 24-column export format.
+    """
+    import tempfile
+    import os
+
+    # Validate file type
+    filename = file.filename or ""
+    valid_extensions = (".xlsx", ".xls", ".csv")
+    if not any(filename.lower().endswith(ext) for ext in valid_extensions):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Accepted formats: {', '.join(valid_extensions)}"
+        )
+
+    # Save upload to temp file
+    suffix = os.path.splitext(filename)[1]
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        content = await file.read()
+        tmp.write(content)
+        tmp.close()
+
+        # Parse using existing Crexi parser
+        listings = parse_crexi_csv(tmp.name)
+
+        if not listings:
+            return CrexiAreaResponse(
+                success=True,
+                imported=0,
+                updated=0,
+                total_filtered=0,
+                empty_land_count=0,
+                small_building_count=0,
+                cached=False,
+                cache_age_minutes=0,
+                timestamp=datetime.utcnow().isoformat(),
+                expires_at=(datetime.utcnow() + timedelta(hours=24)).isoformat(),
+                location=location or "Unknown",
+                message="CSV parsed but contained no listings. Check that the file is a Crexi export.",
+            )
+
+        # Filter to opportunities
+        filtered, stats = filter_opportunities(listings)
+
+        # Derive location from CSV data if not provided
+        if not location.strip() and filtered:
+            first = filtered[0]
+            location = f"{first.city}, {first.state}" if first.city and first.state else first.city or "Unknown"
+        elif not location.strip():
+            first = listings[0]
+            location = f"{first.city}, {first.state}" if first.city and first.state else first.city or "Unknown"
+
+        # Import to database
+        result = import_to_database(filtered, location, db)
+
+        return CrexiAreaResponse(
+            success=True,
+            imported=result.total_imported,
+            updated=result.total_updated,
+            total_filtered=result.total_filtered,
+            empty_land_count=result.empty_land_count,
+            small_building_count=result.small_building_count,
+            cached=False,
+            cache_age_minutes=0,
+            timestamp=result.timestamp.isoformat(),
+            expires_at=(result.timestamp + timedelta(hours=24)).isoformat(),
+            location=location,
+            message=(
+                f"Parsed {len(listings)} listings, {result.total_filtered} match criteria. "
+                f"Imported {result.total_imported} new, updated {result.total_updated}."
+            ),
+        )
+
+    except ValueError as e:
+        logger.error(f"CSV parse error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"CSV upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
+    finally:
+        os.unlink(tmp.name)
