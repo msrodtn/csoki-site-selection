@@ -64,7 +64,8 @@ import { MapboxOverlay } from '@deck.gl/mapbox';
 import { createCompetitorArcLayer } from './layers/CompetitorArcLayer';
 import { POILayer } from './layers/POILayer';
 import { BuildingLayer, type BuildingInfo } from './layers/BuildingLayer';
-import { NavigationControl, GeolocateControl } from './controls';
+import { NavigationControl, GeolocateControl, ScreenshotControl, DrawControl } from './controls';
+import { PulsingOpportunityMarker } from './PulsingOpportunityMarker';
 
 // Feature flag for native POI layers (set to true to use new performant layers)
 const USE_NATIVE_POI_LAYERS = true;
@@ -702,6 +703,11 @@ export function MapboxMap() {
     opportunityFilters,
     // Building layer state
     showBuildingLayer,
+    // Draw-to-analyze
+    drawnPolygon,
+    setDrawnPolygon,
+    isDrawMode,
+    setIsDrawMode,
   } = useMapStore();
 
   // Local state
@@ -1004,6 +1010,57 @@ export function MapboxMap() {
     runAnalysis(selectedStore.latitude, selectedStore.longitude, analysisRadius);
   }, [selectedStore, analysisRadius, runAnalysis, setAnalyzedStore]);
 
+  // Handle drawn polygon analysis
+  const runPolygonAnalysis = useCallback(async (polygon: GeoJSON.Feature) => {
+    setDrawnPolygon(polygon);
+    setSelectedStore(null);
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    setShowAnalysisPanel(true);
+    setAnalyzedStore(null);
+
+    try {
+      const centroid = turf.centroid(polygon as turf.AllGeoJSON);
+      const [lng, lat] = centroid.geometry.coordinates;
+      const areaM2 = turf.area(polygon as turf.AllGeoJSON);
+      // Equivalent radius in miles (circle with same area)
+      const equivalentRadiusMiles = Math.sqrt(areaM2 / Math.PI) / 1609.34;
+      // Fetch slightly larger radius to ensure we get all edge POIs
+      const fetchRadius = Math.max(equivalentRadiusMiles * 1.3, 0.5);
+
+      analysisCenterRef.current = { lat, lng };
+
+      const result = await analysisApi.analyzeTradeArea({
+        latitude: lat,
+        longitude: lng,
+        radius_miles: fetchRadius,
+      });
+
+      // Filter POIs to only those inside the drawn polygon
+      const filteredPois = result.pois.filter((poi) => {
+        const pt = turf.point([poi.longitude, poi.latitude]);
+        return turf.booleanPointInPolygon(pt, polygon as GeoJSON.Feature<GeoJSON.Polygon>);
+      });
+
+      // Recompute summary counts
+      const summary: Record<string, number> = {};
+      for (const poi of filteredPois) {
+        summary[poi.category] = (summary[poi.category] || 0) + 1;
+      }
+
+      setAnalysisResult({
+        ...result,
+        pois: filteredPois,
+        summary,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to analyze area';
+      setAnalysisError(message);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [setSelectedStore, setAnalysisResult, setIsAnalyzing, setAnalysisError, setShowAnalysisPanel, setAnalyzedStore, setDrawnPolygon]);
+
   // Auto-refresh analysis when radius changes
   useEffect(() => {
     if (analysisCenterRef.current && analysisResult) {
@@ -1110,7 +1167,16 @@ export function MapboxMap() {
     const map = mapRef.current?.getMap();
     if (map) {
       setMapInstance(map);
-      
+
+      // Globe atmosphere
+      map.setFog({
+        color: 'rgb(186, 210, 235)',
+        'high-color': 'rgb(36, 92, 223)',
+        'horizon-blend': 0.02,
+        'space-color': 'rgb(11, 11, 25)',
+        'star-intensity': 0.6,
+      });
+
       // Change cursor on cluster hover (only add if layer exists)
       const addClusterHoverEffects = () => {
         if (map.getLayer('clusters')) {
@@ -1131,6 +1197,26 @@ export function MapboxMap() {
       }
     }
   }, [setMapInstance]);
+
+  // Re-apply fog after map style changes (setFog resets on style load)
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const applyFog = () => {
+      map.setFog({
+        color: 'rgb(186, 210, 235)',
+        'high-color': 'rgb(36, 92, 223)',
+        'horizon-blend': 0.02,
+        'space-color': 'rgb(11, 11, 25)',
+        'star-intensity': 0.6,
+      });
+    };
+    if (map.isStyleLoaded()) {
+      applyFog();
+    } else {
+      map.once('style.load', applyFog);
+    }
+  }, [mapStyle]);
 
   // Update bounds on move
   const onMoveEnd = useCallback(() => {
@@ -1652,6 +1738,8 @@ export function MapboxMap() {
       <Map
         ref={mapRef}
         {...viewState}
+        projection="globe"
+        preserveDrawingBuffer={true}
         onMove={(evt: ViewStateChangeEvent) => setViewState(evt.viewState)}
         onMoveEnd={onMoveEnd}
         onLoad={onLoad}
@@ -1674,6 +1762,18 @@ export function MapboxMap() {
         <NavigationControl map={mapRef.current} position="top-right" />
         <ScaleControl position="bottom-right" />
         <GeolocateControl map={mapRef.current} position="top-right" />
+        <ScreenshotControl map={mapRef.current} />
+        <DrawControl
+          map={mapRef.current}
+          isDrawMode={isDrawMode}
+          onDrawModeChange={setIsDrawMode}
+          onPolygonCreated={runPolygonAnalysis}
+          onPolygonCleared={() => {
+            setDrawnPolygon(null);
+            setIsDrawMode(false);
+          }}
+          hasPolygon={!!drawnPolygon}
+        />
 
         {/* Traffic Layer */}
         {visibleLayersArray.includes('traffic') && (
@@ -1895,6 +1995,30 @@ export function MapboxMap() {
               paint={{
                 'line-color': getIsochroneColor(isochroneSettings.mode),
                 'line-width': 2,
+                'line-opacity': 0.8,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Drawn Analysis Polygon */}
+        {drawnPolygon && (
+          <Source id="drawn-polygon" type="geojson" data={drawnPolygon}>
+            <Layer
+              id="drawn-polygon-fill"
+              type="fill"
+              paint={{
+                'fill-color': '#3B82F6',
+                'fill-opacity': 0.1,
+              }}
+            />
+            <Layer
+              id="drawn-polygon-outline"
+              type="line"
+              paint={{
+                'line-color': '#3B82F6',
+                'line-width': 2.5,
+                'line-dasharray': [3, 2],
                 'line-opacity': 0.8,
               }}
             />
@@ -2320,58 +2444,21 @@ export function MapboxMap() {
           />
         ))}
 
-        {/* CSOKi Opportunity markers */}
-        {visibleLayersArray.includes('csoki_opportunities') && opportunities.map((opp) => {
-          const prop = opp.property;
-          if (!prop.latitude || !prop.longitude) return null;
-
-          const isSelected = selectedOpportunity?.property.id === prop.id;
-          const size = getZoomBasedSize(viewState.zoom, isSelected);
-
-          return (
-            <Marker
-              key={`opportunity-${prop.id}`}
-              longitude={prop.longitude}
-              latitude={prop.latitude}
-              anchor="center"
-              onClick={(e: MarkerEvent<MouseEvent>) => {
-                e.originalEvent.stopPropagation();
-                setSelectedOpportunity(opp);
-                setSelectedProperty(null);
-                setSelectedTeamProperty(null);
-              }}
-              style={{ zIndex: isSelected ? 1500 : 300 }}
-            >
-              <div
-                className="cursor-pointer transition-transform duration-150"
-                style={{
-                  transform: isSelected ? 'scale(1.3)' : 'scale(1)',
-                }}
-              >
-                {/* Purple diamond with rank number */}
-                <svg width={size} height={size} viewBox="0 0 24 24">
-                  <path
-                    d="M12 2 L22 12 L12 22 L2 12 Z"
-                    fill="#9333EA"
-                    stroke="white"
-                    strokeWidth="1.5"
-                    opacity={isSelected ? 1 : 0.85}
-                  />
-                  <text
-                    x="12"
-                    y="15"
-                    textAnchor="middle"
-                    fill="white"
-                    fontSize="10"
-                    fontWeight="bold"
-                  >
-                    {opp.rank}
-                  </text>
-                </svg>
-              </div>
-            </Marker>
-          );
-        })}
+        {/* CSOKi Opportunity markers (top 5 pulse) */}
+        {visibleLayersArray.includes('csoki_opportunities') && opportunities.map((opp) => (
+          <PulsingOpportunityMarker
+            key={`opportunity-${opp.property.id}`}
+            opportunity={opp}
+            isSelected={selectedOpportunity?.property.id === opp.property.id}
+            zoom={viewState.zoom}
+            onClick={(e: MarkerEvent<MouseEvent>) => {
+              e.originalEvent.stopPropagation();
+              setSelectedOpportunity(opp);
+              setSelectedProperty(null);
+              setSelectedTeamProperty(null);
+            }}
+          />
+        ))}
 
         {/* POI Cluster markers (shown when zoomed out) */}
         {showPOIClusters && poiClusters.map((cluster) => (

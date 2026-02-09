@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import * as turf from '@turf/turf';
 import {
   X,
   Eye,
@@ -103,6 +104,8 @@ export function AnalysisPanel() {
     setShowComparePanel,
     // Analyzed store (captured when analysis started, persists even if selectedStore changes)
     analyzedStore,
+    // Draw-to-analyze polygon
+    drawnPolygon,
   } = useMapStore();
 
   // Collapsible section states
@@ -375,8 +378,27 @@ export function AnalysisPanel() {
           </button>
         </div>
 
-        {/* Store Info */}
-        {analyzedStore && (
+        {/* Store Info or Custom Polygon Info */}
+        {drawnPolygon ? (
+          <div className="px-4 pb-3 flex items-center gap-3 border-t border-white/20 pt-3">
+            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0 shadow-md">
+              <MapPin className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm">Custom Analysis Area</div>
+              <div className="text-white/70 text-xs">
+                {(() => {
+                  const areaM2 = turf.area(drawnPolygon as turf.AllGeoJSON);
+                  const areaAcres = areaM2 / 4046.86;
+                  const areaSqMi = areaM2 / 2589988;
+                  return areaSqMi >= 1
+                    ? `${areaSqMi.toFixed(1)} sq mi`
+                    : `${areaAcres.toFixed(0)} acres`;
+                })()}
+              </div>
+            </div>
+          </div>
+        ) : analyzedStore ? (
           <div className="px-4 pb-3 flex items-center gap-3 border-t border-white/20 pt-3">
             {BRAND_LOGOS[analyzedStore.brand as BrandKey] && (
               <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-md">
@@ -396,7 +418,7 @@ export function AnalysisPanel() {
               </div>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Content */}

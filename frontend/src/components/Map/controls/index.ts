@@ -14,3 +14,13 @@ export {
   GeolocateControl,
   type GeolocateControlProps,
 } from './GeolocateControl';
+
+export {
+  ScreenshotControl,
+  type ScreenshotControlProps,
+} from './ScreenshotControl';
+
+export {
+  DrawControl,
+  type DrawControlProps,
+} from './DrawControl';

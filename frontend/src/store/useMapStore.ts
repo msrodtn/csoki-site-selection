@@ -189,6 +189,12 @@ interface MapState {
   };
   setOpportunityFilters: (filters: Partial<MapState['opportunityFilters']>) => void;
 
+  // Draw-to-analyze polygon
+  drawnPolygon: GeoJSON.Feature | null;
+  setDrawnPolygon: (polygon: GeoJSON.Feature | null) => void;
+  isDrawMode: boolean;
+  setIsDrawMode: (active: boolean) => void;
+
   // Clear analysis
   clearAnalysis: () => void;
 
@@ -568,6 +574,12 @@ export const useMapStore = create<MapState>((set, get) => ({
       opportunityFilters: { ...state.opportunityFilters, ...filters },
     })),
 
+  // Draw-to-analyze polygon
+  drawnPolygon: null,
+  setDrawnPolygon: (polygon) => set({ drawnPolygon: polygon }),
+  isDrawMode: false,
+  setIsDrawMode: (active) => set({ isDrawMode: active }),
+
   // Clear all analysis state
   clearAnalysis: () =>
     set({
@@ -584,6 +596,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       expandedPOICategories: new Set<POICategory>(),
       selectedPOIId: null,
       hoveredPOIId: null,
+      drawnPolygon: null,
+      isDrawMode: false,
     }),
 
   // ============================================
