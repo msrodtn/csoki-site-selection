@@ -1512,11 +1512,12 @@ export function MapboxMap() {
   }, [visiblePropertySources, mapBounds]);
 
   // CSOKi Opportunities when layer is toggled or filters change
+  // Debounced to avoid burning ATTOM API calls on every pan/zoom
   useEffect(() => {
     const showOpportunities = visibleLayersArray.includes('csoki_opportunities');
 
     if (showOpportunities && mapBounds) {
-      const fetchOpportunities = async () => {
+      const debounceTimer = setTimeout(async () => {
         setIsLoadingOpportunities(true);
         try {
           const result = await opportunitiesApi.search({
@@ -1524,7 +1525,6 @@ export function MapboxMap() {
             max_lat: mapBounds.north,
             min_lng: mapBounds.west,
             max_lng: mapBounds.east,
-            // Use filter values from store instead of hardcoded defaults
             min_parcel_acres: opportunityFilters.minParcelAcres,
             max_parcel_acres: opportunityFilters.maxParcelAcres,
             min_building_sqft: opportunityFilters.minBuildingSqft,
@@ -1541,9 +1541,9 @@ export function MapboxMap() {
         } finally {
           setIsLoadingOpportunities(false);
         }
-      };
+      }, 800);  // Wait 800ms after last bounds change before fetching
 
-      fetchOpportunities();
+      return () => clearTimeout(debounceTimer);
     } else if (!showOpportunities) {
       setOpportunities([]);
       setSelectedOpportunity(null);

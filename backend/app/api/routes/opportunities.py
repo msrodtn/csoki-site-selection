@@ -46,6 +46,8 @@ from app.services.viewport_cache import (
     cache_demographics,
     get_cached_retail_nodes,
     cache_retail_nodes,
+    get_cached_attom,
+    cache_attom,
 )
 from app.services.arcgis import fetch_demographics
 from app.services.mapbox_places import fetch_mapbox_pois
@@ -701,13 +703,26 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
         )
 
     try:
-        # 1. Search ATTOM API
-        result: PropertySearchResult = await attom_search_bounds(
-            bounds=bounds,
-            property_types=property_types,
-            min_opportunity_score=0,
-            limit=request.limit * 2,
+        # 1. Search ATTOM API (cached 1hr by viewport bounds)
+        type_key = "|".join(sorted(pt.value for pt in property_types))
+        cached_attom_props = get_cached_attom(
+            request.min_lat, request.max_lat, request.min_lng, request.max_lng, type_key
         )
+        if cached_attom_props is not None:
+            logger.info(f"ATTOM cache hit: {len(cached_attom_props)} properties")
+            attom_properties = cached_attom_props
+        else:
+            result: PropertySearchResult = await attom_search_bounds(
+                bounds=bounds,
+                property_types=property_types,
+                min_opportunity_score=0,
+                limit=request.limit * 2,
+            )
+            attom_properties = result.properties
+            cache_attom(
+                request.min_lat, request.max_lat, request.min_lng, request.max_lng,
+                attom_properties, type_key
+            )
 
         # 2. Fetch scraped listings (Crexi/LoopNet)
         scraped_properties = _fetch_scraped_listings(
@@ -723,7 +738,7 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
         )
 
         # 3. Merge + deduplicate
-        all_properties = _merge_and_deduplicate(result.properties, scraped_properties)
+        all_properties = _merge_and_deduplicate(attom_properties, scraped_properties)
 
         # 4. Apply eligibility filter
         filtered_properties = _filter_properties_for_opportunities(
