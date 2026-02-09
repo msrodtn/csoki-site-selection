@@ -668,11 +668,11 @@ def _filter_properties_for_opportunities(
             if any(term in signal_descriptions for term in ["multi", "center", "plaza", "strip"]):
                 continue
         
-        # Opportunity signal filter — require at least one HIGH or MEDIUM strength signal
+        # Opportunity signal filter — require at least one signal of any strength
         # LAND properties are exempt (empty land is inherently an opportunity)
+        # Ranking handles quality differentiation (HIGH/MEDIUM score higher)
         if require_opportunity_signal and prop.property_type != PropertyType.LAND:
-            meaningful = [s for s in prop.opportunity_signals if s.strength in ("high", "medium")]
-            if not meaningful:
+            if not prop.opportunity_signals:
                 continue
         
         # Minimum opportunity score
