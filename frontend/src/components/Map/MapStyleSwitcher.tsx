@@ -36,16 +36,10 @@ export const MAP_STYLES: MapStyle[] = [
     description: 'Classic street map',
   },
   {
-    id: 'satellite',
-    name: 'Satellite',
-    url: 'mapbox://styles/mapbox/satellite-v9',
-    description: 'Aerial imagery',
-  },
-  {
     id: 'satellite-streets',
-    name: 'Hybrid',
+    name: 'Satellite',
     url: 'mapbox://styles/mapbox/satellite-streets-v12',
-    description: 'Satellite with street labels',
+    description: 'Aerial imagery with labels and POIs',
   },
   {
     id: 'outdoors',
