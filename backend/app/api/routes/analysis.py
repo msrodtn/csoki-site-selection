@@ -291,6 +291,53 @@ async def check_streetlight_api_key():
     }
 
 
+@router.get("/traffic-counts/usage/")
+async def get_streetlight_usage():
+    """
+    Get StreetLight API segment quota usage.
+    Non-billable endpoint for monitoring remaining quota.
+    """
+    if not settings.STREETLIGHT_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Streetlight API key not configured."
+        )
+
+    try:
+        client = StreetlightClient()
+        url = f"{client.base_url}/usage"
+
+        # Scope to trial period (started Feb 10, 2026, expires Mar 10, 2026)
+        params = {"term_start": "2026-02-10T00:00:00.000Z"}
+
+        async with httpx.AsyncClient() as http:
+            response = await http.get(
+                url, headers=client.headers, params=params, timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        # Sum up billable segments from all jobs
+        total_used = 0
+        jobs = data.get("jobs", [])
+        for job in jobs:
+            if job.get("is_billable", False):
+                total_used += job.get("segments_queried", 0)
+
+        return {
+            "total_quota": 1000,  # Trial quota (expires Mar 10, 2026)
+            "segments_used": total_used,
+            "segments_remaining": max(0, 1000 - total_used),
+            "job_count": len(jobs),
+        }
+    except httpx.HTTPStatusError as e:
+        logger.error(f"StreetLight usage API error: {e}")
+        raise HTTPException(status_code=502, detail="Failed to fetch usage data from StreetLight")
+    except Exception as e:
+        logger.exception("Error fetching StreetLight usage")
+        raise HTTPException(status_code=500, detail=f"Error fetching usage: {str(e)}")
+
+
 # =============================================================================
 # Mapbox POI Search (Proof of Concept)
 # =============================================================================

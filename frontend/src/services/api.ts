@@ -149,6 +149,17 @@ export const analysisApi = {
     return data;
   },
 
+  // Get StreetLight API quota usage (non-billable)
+  getTrafficQuotaUsage: async (): Promise<{
+    total_quota: number;
+    segments_used: number;
+    segments_remaining: number;
+    job_count: number;
+  }> => {
+    const { data } = await api.get('/analysis/traffic-counts/usage/');
+    return data;
+  },
+
   // Get parcel information from ReportAll
   getParcelInfo: async (request: ParcelRequest): Promise<ParcelInfo> => {
     const { data } = await api.post('/analysis/parcel/', request);

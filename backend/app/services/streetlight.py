@@ -6,6 +6,7 @@ for site selection analysis. Uses the SATC (Streetlight Advanced Traffic Counts)
 
 API Documentation: https://developer.streetlightdata.com/docs/intro-to-the-advanced-traffic-counts-api
 """
+import asyncio
 import httpx
 from typing import Optional, Literal
 from pydantic import BaseModel
@@ -225,8 +226,8 @@ class StreetlightClient:
         """
         url = f"{self.base_url}/geometry"
 
-        # Convert miles to meters for radius (max 5 miles / 8 km)
-        radius_meters = min(radius_miles * 1609.34, 8000)
+        # Clamp radius to max 5 miles
+        clamped_radius = min(radius_miles, 5.0)
 
         payload = {
             "geometry": {
@@ -235,8 +236,8 @@ class StreetlightClient:
                         "type": "point",
                         "coordinates": [longitude, latitude]
                     },
-                    "distance": radius_meters,
-                    "distance_unit": "m"
+                    "buffer": clamped_radius,
+                    "unit": "mile"
                 }
             },
             "mode": mode.value,
@@ -311,8 +312,8 @@ class StreetlightClient:
         """
         url = f"{self.base_url}/metrics"
 
-        # Convert miles to meters for radius
-        radius_meters = min(radius_miles * 1609.34, 8000)
+        # Clamp radius to max 5 miles
+        clamped_radius = min(radius_miles, 5.0)
 
         # Default fields for site selection analysis
         if fields is None:
@@ -338,8 +339,8 @@ class StreetlightClient:
                         "type": "point",
                         "coordinates": [longitude, latitude]
                     },
-                    "distance": radius_meters,
-                    "distance_unit": "m"
+                    "buffer": clamped_radius,
+                    "unit": "mile"
                 }
             },
             "fields": fields,
@@ -410,15 +411,60 @@ async def fetch_traffic_counts(
     # Validate radius (Streetlight max is 5 miles / 8 km)
     radius_miles = min(max(radius_miles, 0.25), 5.0)
 
-    # Fetch base traffic metrics with demographics (lbs_plus)
-    metrics_data = await client.get_metrics(
-        latitude=latitude,
-        longitude=longitude,
-        radius_miles=radius_miles,
-        source=DataSource.LBS_PLUS if include_demographics else DataSource.AGPS,
-        year=year,
-        month=month
-    )
+    # Auto-detect most recent available month to minimize quota usage
+    # (quota = segments × date_months, so 1 month keeps it 1:1)
+    if not year:
+        try:
+            date_info = await client.check_date_ranges()
+            if date_info.months:
+                latest = date_info.months[-1]  # Most recent month
+                year = latest.get("year")
+                month = latest.get("month")
+        except Exception as e:
+            print(f"Date range check failed (non-fatal): {e}")
+            # Continue without date filtering — API will use its default
+
+    # Fetch metrics (billable) and geometry (free) concurrently
+    geometry_lookup: dict[str, dict] = {}
+    try:
+        metrics_data, geometry_data = await asyncio.gather(
+            client.get_metrics(
+                latitude=latitude,
+                longitude=longitude,
+                radius_miles=radius_miles,
+                source=DataSource.LBS_PLUS if include_demographics else DataSource.AGPS,
+                year=year,
+                month=month
+            ),
+            client.get_geometry(
+                latitude=latitude,
+                longitude=longitude,
+                radius_miles=radius_miles,
+            ),
+        )
+
+        # Build segment_id -> GeoJSON geometry lookup from geometry response
+        geo_columns = geometry_data.get("columns", [])
+        geo_rows = geometry_data.get("data", [])
+        if geo_columns and geo_rows:
+            sid_idx = geo_columns.index("segment_id") if "segment_id" in geo_columns else 0
+            geo_idx = geo_columns.index("geometry") if "geometry" in geo_columns else 1
+            for row in geo_rows:
+                seg_id = str(row[sid_idx])
+                geom = row[geo_idx]
+                if isinstance(geom, dict) and geom.get("type") == "LineString":
+                    geometry_lookup[seg_id] = geom
+    except Exception as e:
+        # If geometry fetch fails, fall back to metrics-only (no map segments)
+        print(f"Geometry fetch failed (non-fatal): {e}")
+        metrics_data = await client.get_metrics(
+            latitude=latitude,
+            longitude=longitude,
+            radius_miles=radius_miles,
+            source=DataSource.LBS_PLUS if include_demographics else DataSource.AGPS,
+            year=year,
+            month=month
+        )
 
     # Parse segment data
     segments = []
@@ -427,11 +473,13 @@ async def fetch_traffic_counts(
 
     for row in data_rows:
         row_dict = dict(zip(columns, row))
+        seg_id = str(row_dict.get("segment_id", ""))
         segment = SegmentMetrics(
-            segment_id=str(row_dict.get("segment_id", "")),
+            segment_id=seg_id,
             trips_volume=safe_int(row_dict.get("trips_volume")),
             vmt=safe_float(row_dict.get("vmt")),
             avg_speed=safe_float(row_dict.get("avg_speed")),
+            geometry=geometry_lookup.get(seg_id),
             year_month=row_dict.get("year_month"),
             day_type=row_dict.get("day_type"),
             day_part=row_dict.get("day_part")

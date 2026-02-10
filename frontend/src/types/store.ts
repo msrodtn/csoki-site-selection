@@ -213,6 +213,18 @@ export interface PowerTrainBreakdown {
   other: number | null;
 }
 
+export interface SegmentMetrics {
+  segment_id: string;
+  trips_volume: number | null;
+  vmt: number | null;
+  avg_speed: number | null;
+  free_flow_speed: number | null;
+  geometry: {
+    type: 'LineString';
+    coordinates: number[][];
+  } | null;
+}
+
 export interface TrafficAnalysis {
   latitude: number;
   longitude: number;
@@ -235,6 +247,9 @@ export interface TrafficAnalysis {
   // Vehicle attributes
   vehicle_class_breakdown: VehicleClassBreakdown | null;
   power_train_breakdown: PowerTrainBreakdown | null;
+
+  // Individual segment data (for map visualization)
+  segments: SegmentMetrics[] | null;
 
   // Metadata
   data_source: string;

@@ -114,6 +114,13 @@ export function AnalysisPanel() {
   const [isTrafficExpanded, setIsTrafficExpanded] = useState(false);
   const [isCompetitorsExpanded, setIsCompetitorsExpanded] = useState(false);
 
+  // Traffic quota estimation state
+  const [trafficEstimate, setTrafficEstimate] = useState<{
+    segment_count: number;
+    quota_remaining: number | null;
+  } | null>(null);
+  const [isEstimating, setIsEstimating] = useState(false);
+
   // Report modal state
   const [showReportModal, setShowReportModal] = useState(false);
 
@@ -212,37 +219,76 @@ export function AnalysisPanel() {
     return demographicsData.radii.find((r) => r.radius_miles === selectedDemographicsRadius) || null;
   }, [demographicsData, selectedDemographicsRadius]);
 
-  // Load traffic counts on-demand when section is expanded
+  // Load traffic estimation on-demand when section is expanded (non-billable)
   const handleTrafficExpand = useCallback(async () => {
     const newExpanded = !isTrafficExpanded;
     setIsTrafficExpanded(newExpanded);
 
-    // Load traffic data if expanding and no data yet
-    if (newExpanded && !trafficData && !isTrafficLoading && analysisResult) {
-      setIsTrafficLoading(true);
+    // If already have data, just toggle - no refetch needed
+    if (trafficData) return;
+
+    // Fetch estimation (free) when expanding for the first time
+    if (newExpanded && !trafficEstimate && !isEstimating && !isTrafficLoading && analysisResult) {
+      setIsEstimating(true);
       setTrafficError(null);
 
       try {
-        const data = await analysisApi.getTrafficCounts({
-          latitude: analysisResult.center_latitude,
-          longitude: analysisResult.center_longitude,
-          radius_miles: 1.0,
-          include_demographics: true,
-          include_vehicle_attributes: false,
+        // Fetch estimate and quota usage in parallel (both non-billable)
+        const [estimate, usage] = await Promise.all([
+          analysisApi.estimateTrafficSegments({
+            latitude: analysisResult.center_latitude,
+            longitude: analysisResult.center_longitude,
+            radius_miles: 1.0,
+          }),
+          analysisApi.getTrafficQuotaUsage().catch(() => null),
+        ]);
+
+        setTrafficEstimate({
+          segment_count: estimate.segment_count,
+          quota_remaining: usage?.segments_remaining ?? null,
         });
-        setTrafficData(data);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to load traffic counts';
+        const message = error instanceof Error ? error.message : 'Failed to estimate segments';
         setTrafficError(message);
       } finally {
-        setIsTrafficLoading(false);
+        setIsEstimating(false);
       }
     }
   }, [
     isTrafficExpanded,
     trafficData,
+    trafficEstimate,
+    isEstimating,
     isTrafficLoading,
     analysisResult,
+    setTrafficError,
+  ]);
+
+  // Confirm and fetch traffic data (BILLABLE - only called after user confirmation)
+  const handleTrafficConfirm = useCallback(async () => {
+    if (!analysisResult || isTrafficLoading) return;
+
+    setIsTrafficLoading(true);
+    setTrafficError(null);
+
+    try {
+      const data = await analysisApi.getTrafficCounts({
+        latitude: analysisResult.center_latitude,
+        longitude: analysisResult.center_longitude,
+        radius_miles: 1.0,
+        include_demographics: true,
+        include_vehicle_attributes: false,
+      });
+      setTrafficData(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load traffic counts';
+      setTrafficError(message);
+    } finally {
+      setIsTrafficLoading(false);
+    }
+  }, [
+    analysisResult,
+    isTrafficLoading,
     setIsTrafficLoading,
     setTrafficError,
     setTrafficData,
@@ -772,6 +818,46 @@ export function AnalysisPanel() {
 
               {isTrafficExpanded && (
                 <div className="p-4 border-t">
+                  {/* Estimation step (non-billable) */}
+                  {isEstimating && (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-5 h-5 text-amber-600 animate-spin" />
+                      <span className="ml-2 text-sm text-gray-600">Estimating segments...</span>
+                    </div>
+                  )}
+
+                  {/* Confirmation step - show estimate before billing */}
+                  {trafficEstimate && !trafficData && !isTrafficLoading && !trafficError && (
+                    <div className="space-y-3">
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <div className="text-sm font-medium text-amber-800 mb-1">
+                          Quota Confirmation
+                        </div>
+                        <div className="text-sm text-amber-700">
+                          This query will use <span className="font-bold">{trafficEstimate.segment_count}</span> of your{' '}
+                          {trafficEstimate.quota_remaining !== null ? (
+                            <span className="font-bold">{trafficEstimate.quota_remaining.toLocaleString()}</span>
+                          ) : (
+                            '1,000'
+                          )}{' '}
+                          remaining segments.
+                        </div>
+                        {trafficEstimate.quota_remaining !== null && trafficEstimate.segment_count > trafficEstimate.quota_remaining && (
+                          <div className="text-xs text-red-600 font-medium mt-1">
+                            Not enough quota remaining for this query.
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleTrafficConfirm}
+                        disabled={trafficEstimate.quota_remaining !== null && trafficEstimate.segment_count > trafficEstimate.quota_remaining}
+                        className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        Fetch Traffic Data ({trafficEstimate.segment_count} segments)
+                      </button>
+                    </div>
+                  )}
+
                   {isTrafficLoading && (
                     <div className="flex items-center justify-center py-4">
                       <Loader2 className="w-5 h-5 text-amber-600 animate-spin" />

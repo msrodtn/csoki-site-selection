@@ -678,6 +678,8 @@ export function MapboxMap() {
     isMeasureMode,
     setIsMeasureMode,
     clearMeasurement,
+    // Traffic Counts (Streetlight)
+    trafficData,
   } = useMapStore();
 
   // Local state
@@ -731,6 +733,16 @@ export function MapboxMap() {
     latitude: number;
     aadt: number;
     route: string;
+  } | null>(null);
+
+  // StreetLight segment hover state
+  const [hoveredStreetlightSegment, setHoveredStreetlightSegment] = useState<{
+    longitude: number;
+    latitude: number;
+    trips_volume: number;
+    avg_speed: number;
+    vmt: number;
+    segment_id: string;
   } | null>(null);
 
   // Census Tracts hover state (now using vector tileset)
@@ -983,6 +995,31 @@ export function MapboxMap() {
       features,
     };
   }, [arcSettings.siteLocation, competitorAccessResult]);
+
+  // GeoJSON for StreetLight traffic segments (analysis-triggered)
+  const streetlightSegmentsGeoJSON = useMemo((): GeoJSON.FeatureCollection | null => {
+    if (!trafficData?.segments?.length) return null;
+
+    const features: GeoJSON.Feature[] = trafficData.segments
+      .filter((seg) => seg.geometry !== null)
+      .map((seg) => ({
+        type: 'Feature' as const,
+        properties: {
+          segment_id: seg.segment_id,
+          trips_volume: seg.trips_volume ?? 0,
+          avg_speed: seg.avg_speed ?? 0,
+          vmt: seg.vmt ?? 0,
+        },
+        geometry: seg.geometry!,
+      }));
+
+    if (features.length === 0) return null;
+
+    return {
+      type: 'FeatureCollection' as const,
+      features,
+    };
+  }, [trafficData]);
 
   // Run trade area analysis
   const runAnalysis = useCallback(async (lat: number, lng: number, radius: number) => {
@@ -1275,6 +1312,29 @@ export function MapboxMap() {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
+    // Handle StreetLight analysis segments (takes priority)
+    if (map.getLayer('streetlight-segments-line')) {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['streetlight-segments-line'],
+      });
+
+      if (features && features.length > 0) {
+        const feature = features[0];
+        map.getCanvas().style.cursor = 'pointer';
+        setHoveredStreetlightSegment({
+          longitude: e.lngLat.lng,
+          latitude: e.lngLat.lat,
+          trips_volume: feature.properties?.trips_volume || 0,
+          avg_speed: feature.properties?.avg_speed || 0,
+          vmt: feature.properties?.vmt || 0,
+          segment_id: feature.properties?.segment_id || '',
+        });
+        return;
+      } else {
+        setHoveredStreetlightSegment(null);
+      }
+    }
+
     // Handle traffic counts layer
     if (map.getLayer('traffic-counts-layer')) {
       const features = map.queryRenderedFeatures(e.point, {
@@ -1413,6 +1473,7 @@ export function MapboxMap() {
     setHoveredZipId(null);
     setHoveredZipInfo(null);
     setHoveredTraffic(null);
+    setHoveredStreetlightSegment(null);
   }, []);
 
   // Property search when layer is toggled
@@ -1755,6 +1816,7 @@ export function MapboxMap() {
         onMouseMove={handleTrafficMouseMove}
         onMouseLeave={handleTrafficMouseLeave}
         interactiveLayerIds={[
+          ...(streetlightSegmentsGeoJSON ? ['streetlight-segments-line'] : []),
           ...(visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') ? ['census-tract-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') ? ['county-demographics-fill'] : []),
@@ -1843,6 +1905,37 @@ export function MapboxMap() {
           </Source>
         )}
 
+        {/* StreetLight Traffic Segments (analysis-triggered) */}
+        {streetlightSegmentsGeoJSON && (
+          <Source id="streetlight-segments" type="geojson" data={streetlightSegmentsGeoJSON}>
+            <Layer
+              id="streetlight-segments-bg"
+              type="line"
+              paint={{
+                'line-color': '#ffffff',
+                'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 16, 8],
+                'line-opacity': 0.6,
+              }}
+            />
+            <Layer
+              id="streetlight-segments-line"
+              type="line"
+              paint={{
+                'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 16, 6],
+                'line-color': [
+                  'step',
+                  ['get', 'trips_volume'],
+                  '#3B82F6',       // 0-999: Blue (low traffic)
+                  1000, '#10B981', // 1000-4999: Green
+                  5000, '#F59E0B', // 5000-14999: Amber
+                  15000, '#EF4444', // 15000+: Red (high traffic)
+                ],
+                'line-opacity': 0.85,
+              }}
+            />
+          </Source>
+        )}
+
         {/* Traffic Counts Hover Popup */}
         {hoveredTraffic && (
           <Popup
@@ -1858,6 +1951,31 @@ export function MapboxMap() {
                 {hoveredTraffic.aadt.toLocaleString()} vehicles/day
               </div>
               <div className="text-xs text-gray-500">{hoveredTraffic.route}</div>
+            </div>
+          </Popup>
+        )}
+
+        {/* StreetLight Segment Hover Popup */}
+        {hoveredStreetlightSegment && (
+          <Popup
+            longitude={hoveredStreetlightSegment.longitude}
+            latitude={hoveredStreetlightSegment.latitude}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+          >
+            <div className="text-sm p-1">
+              <div className="font-semibold text-gray-800">
+                {hoveredStreetlightSegment.trips_volume.toLocaleString()} vehicles/day
+              </div>
+              <div className="text-xs text-gray-600">
+                Avg Speed: {hoveredStreetlightSegment.avg_speed} mph
+              </div>
+              <div className="text-xs text-gray-600">
+                VMT: {hoveredStreetlightSegment.vmt.toLocaleString()}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1">StreetLight SATC</div>
             </div>
           </Popup>
         )}
