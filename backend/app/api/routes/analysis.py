@@ -210,7 +210,7 @@ class TrafficCountsRequest(BaseModel):
     """Request model for traffic counts analysis."""
     latitude: float
     longitude: float
-    radius_miles: float = 1.0
+    number_segments: int = 8  # Nearest N major road segments
     include_demographics: bool = True
     include_vehicle_attributes: bool = False
     year: Optional[int] = None
@@ -222,7 +222,7 @@ class SegmentCountRequest(BaseModel):
     """Request model for segment count estimation."""
     latitude: float
     longitude: float
-    radius_miles: float = 1.0
+    number_segments: int = 8  # Nearest N major road segments
     road_classes: Optional[list[str]] = None  # OSM types, default: major roads
 
 
@@ -243,7 +243,7 @@ async def get_traffic_counts(request: TrafficCountsRequest):
         result = await fetch_traffic_counts(
             latitude=request.latitude,
             longitude=request.longitude,
-            radius_miles=request.radius_miles,
+            number_segments=request.number_segments,
             include_demographics=request.include_demographics,
             include_vehicle_attributes=request.include_vehicle_attributes,
             year=request.year,
@@ -275,7 +275,7 @@ async def estimate_traffic_segments(request: SegmentCountRequest):
         result = await client.estimate_segment_count(
             latitude=request.latitude,
             longitude=request.longitude,
-            radius_miles=request.radius_miles,
+            number_segments=request.number_segments,
             road_classes=request.road_classes,
         )
         return result

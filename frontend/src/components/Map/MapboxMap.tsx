@@ -735,7 +735,7 @@ export function MapboxMap() {
     route: string;
   } | null>(null);
 
-  // StreetLight segment hover state
+  // StreetLight bubble hover state
   const [hoveredStreetlightSegment, setHoveredStreetlightSegment] = useState<{
     longitude: number;
     latitude: number;
@@ -743,6 +743,7 @@ export function MapboxMap() {
     avg_speed: number;
     vmt: number;
     segment_id: string;
+    rank?: number;
   } | null>(null);
 
   // Census Tracts hover state (now using vector tileset)
@@ -996,24 +997,40 @@ export function MapboxMap() {
     };
   }, [arcSettings.siteLocation, competitorAccessResult]);
 
-  // GeoJSON for StreetLight traffic segments (analysis-triggered)
+  // GeoJSON for StreetLight traffic bubbles at segment midpoints (analysis-triggered)
   const streetlightSegmentsGeoJSON = useMemo((): GeoJSON.FeatureCollection | null => {
     if (!trafficData?.segments?.length) return null;
 
-    const features: GeoJSON.Feature[] = trafficData.segments
-      .filter((seg) => seg.geometry !== null)
-      .map((seg) => ({
+    const valid = trafficData.segments
+      .filter((seg) => seg.geometry !== null && seg.geometry.type === 'LineString')
+      .sort((a, b) => (b.trips_volume ?? 0) - (a.trips_volume ?? 0)); // Rank by volume
+
+    if (valid.length === 0) return null;
+
+    const features: GeoJSON.Feature[] = valid.map((seg, i) => {
+      // Compute midpoint of the LineString (middle vertex)
+      const coords = seg.geometry!.coordinates;
+      const mid = coords[Math.floor(coords.length / 2)];
+      const vol = seg.trips_volume ?? 0;
+
+      return {
         type: 'Feature' as const,
         properties: {
           segment_id: seg.segment_id,
-          trips_volume: seg.trips_volume ?? 0,
+          trips_volume: vol,
           avg_speed: seg.avg_speed ?? 0,
           vmt: seg.vmt ?? 0,
+          rank: i + 1,
+          adt_label: vol >= 1000
+            ? `${(vol / 1000).toFixed(1).replace(/\.0$/, '')}K`
+            : String(vol),
         },
-        geometry: seg.geometry!,
-      }));
-
-    if (features.length === 0) return null;
+        geometry: {
+          type: 'Point' as const,
+          coordinates: mid,
+        },
+      };
+    });
 
     return {
       type: 'FeatureCollection' as const,
@@ -1312,10 +1329,10 @@ export function MapboxMap() {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    // Handle StreetLight analysis segments (takes priority)
-    if (map.getLayer('streetlight-segments-line')) {
+    // Handle StreetLight traffic bubbles (takes priority)
+    if (map.getLayer('streetlight-bubbles')) {
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ['streetlight-segments-line'],
+        layers: ['streetlight-bubbles'],
       });
 
       if (features && features.length > 0) {
@@ -1328,6 +1345,7 @@ export function MapboxMap() {
           avg_speed: feature.properties?.avg_speed || 0,
           vmt: feature.properties?.vmt || 0,
           segment_id: feature.properties?.segment_id || '',
+          rank: feature.properties?.rank || undefined,
         });
         return;
       } else {
@@ -1816,7 +1834,7 @@ export function MapboxMap() {
         onMouseMove={handleTrafficMouseMove}
         onMouseLeave={handleTrafficMouseLeave}
         interactiveLayerIds={[
-          ...(streetlightSegmentsGeoJSON ? ['streetlight-segments-line'] : []),
+          ...(streetlightSegmentsGeoJSON ? ['streetlight-bubbles'] : []),
           ...(visibleLayersArray.includes('traffic_counts') ? ['traffic-counts-layer'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('census_tracts') ? ['census-tract-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') ? ['county-demographics-fill'] : []),
@@ -1905,24 +1923,22 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* StreetLight Traffic Segments (analysis-triggered) */}
+        {/* StreetLight Traffic Bubbles (analysis-triggered) */}
         {streetlightSegmentsGeoJSON && (
           <Source id="streetlight-segments" type="geojson" data={streetlightSegmentsGeoJSON}>
+            {/* Circle bubble sized and colored by traffic volume */}
             <Layer
-              id="streetlight-segments-bg"
-              type="line"
+              id="streetlight-bubbles"
+              type="circle"
               paint={{
-                'line-color': '#ffffff',
-                'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 16, 8],
-                'line-opacity': 0.6,
-              }}
-            />
-            <Layer
-              id="streetlight-segments-line"
-              type="line"
-              paint={{
-                'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 16, 6],
-                'line-color': [
+                'circle-radius': [
+                  'interpolate', ['linear'], ['get', 'trips_volume'],
+                  0, 16,
+                  5000, 22,
+                  15000, 30,
+                  30000, 38,
+                ],
+                'circle-color': [
                   'step',
                   ['get', 'trips_volume'],
                   '#3B82F6',       // 0-999: Blue (low traffic)
@@ -1930,7 +1946,26 @@ export function MapboxMap() {
                   5000, '#F59E0B', // 5000-14999: Amber
                   15000, '#EF4444', // 15000+: Red (high traffic)
                 ],
-                'line-opacity': 0.85,
+                'circle-opacity': 0.88,
+                'circle-stroke-color': '#ffffff',
+                'circle-stroke-width': 2.5,
+              }}
+            />
+            {/* ADT text label inside the bubble */}
+            <Layer
+              id="streetlight-bubble-labels"
+              type="symbol"
+              layout={{
+                'text-field': ['get', 'adt_label'],
+                'text-size': 11,
+                'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+                'text-allow-overlap': true,
+                'text-ignore-placement': true,
+              }}
+              paint={{
+                'text-color': '#ffffff',
+                'text-halo-color': 'rgba(0,0,0,0.25)',
+                'text-halo-width': 0.5,
               }}
             />
           </Source>
@@ -1955,7 +1990,7 @@ export function MapboxMap() {
           </Popup>
         )}
 
-        {/* StreetLight Segment Hover Popup */}
+        {/* StreetLight Bubble Hover Popup */}
         {hoveredStreetlightSegment && (
           <Popup
             longitude={hoveredStreetlightSegment.longitude}
@@ -1963,7 +1998,7 @@ export function MapboxMap() {
             closeButton={false}
             closeOnClick={false}
             anchor="bottom"
-            offset={10}
+            offset={20}
           >
             <div className="text-sm p-1">
               <div className="font-semibold text-gray-800">
@@ -1975,7 +2010,9 @@ export function MapboxMap() {
               <div className="text-xs text-gray-600">
                 VMT: {hoveredStreetlightSegment.vmt.toLocaleString()}
               </div>
-              <div className="text-[10px] text-gray-400 mt-1">StreetLight SATC</div>
+              <div className="text-[10px] text-gray-400 mt-1">
+                {hoveredStreetlightSegment.rank ? `#${hoveredStreetlightSegment.rank} | ` : ''}StreetLight SATC
+              </div>
             </div>
           </Popup>
         )}

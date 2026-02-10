@@ -143,7 +143,7 @@ export const analysisApi = {
   estimateTrafficSegments: async (request: {
     latitude: number;
     longitude: number;
-    radius_miles?: number;
+    number_segments?: number;
     road_classes?: string[];
   }): Promise<SegmentCountEstimate> => {
     const { data } = await api.post('/analysis/traffic-counts/estimate/', request);

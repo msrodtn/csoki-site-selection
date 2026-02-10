@@ -228,7 +228,8 @@ export interface SegmentMetrics {
 export interface TrafficAnalysis {
   latitude: number;
   longitude: number;
-  radius_miles: number;
+  radius_miles: number;  // Deprecated (kept for compat)
+  number_segments: number;
 
   // Volume metrics
   total_segments: number;
@@ -260,7 +261,7 @@ export interface TrafficAnalysis {
 export interface TrafficCountsRequest {
   latitude: number;
   longitude: number;
-  radius_miles?: number;
+  number_segments?: number;
   include_demographics?: boolean;
   include_vehicle_attributes?: boolean;
   year?: number;

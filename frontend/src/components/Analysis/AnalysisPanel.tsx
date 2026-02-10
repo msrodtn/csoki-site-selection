@@ -238,7 +238,7 @@ export function AnalysisPanel() {
           analysisApi.estimateTrafficSegments({
             latitude: analysisResult.center_latitude,
             longitude: analysisResult.center_longitude,
-            radius_miles: 1.0,
+            number_segments: 8,
             road_classes: ['trunk', 'primary', 'secondary'],
           }),
           analysisApi.getTrafficQuotaUsage().catch(() => null),
@@ -276,7 +276,7 @@ export function AnalysisPanel() {
       const data = await analysisApi.getTrafficCounts({
         latitude: analysisResult.center_latitude,
         longitude: analysisResult.center_longitude,
-        radius_miles: 1.0,
+        number_segments: 8,
         include_demographics: true,
         include_vehicle_attributes: false,
         road_classes: ['trunk', 'primary', 'secondary'],
@@ -845,7 +845,7 @@ export function AnalysisPanel() {
                           remaining segments.
                         </div>
                         <div className="text-xs text-amber-600 mt-1">
-                          Filter: Major roads only (highways, arterials, collectors)
+                          Nearest 8 major roads (highways, arterials, collectors)
                         </div>
                         {trafficEstimate.quota_remaining !== null && trafficEstimate.segment_count > trafficEstimate.quota_remaining && (
                           <div className="text-xs text-red-600 font-medium mt-1">
@@ -858,7 +858,7 @@ export function AnalysisPanel() {
                         disabled={trafficEstimate.quota_remaining !== null && trafficEstimate.segment_count > trafficEstimate.quota_remaining}
                         className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
                       >
-                        Fetch Traffic Data ({trafficEstimate.segment_count} segments)
+                        Fetch Traffic Data ({trafficEstimate.segment_count} nearest segments)
                       </button>
                     </div>
                   )}

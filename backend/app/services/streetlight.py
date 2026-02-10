@@ -130,7 +130,8 @@ class TrafficAnalysis(BaseModel):
     """Aggregated traffic analysis for a location."""
     latitude: float
     longitude: float
-    radius_miles: float
+    radius_miles: float = 0  # Deprecated (kept for compat)
+    number_segments: int = 8
 
     # Aggregated volume metrics
     total_segments: int = 0
@@ -188,6 +189,20 @@ class StreetlightClient:
         self.base_url = STREETLIGHT_BASE_URL
         self.headers = {"x-stl-key": self.api_key}
 
+    def _build_nearest_geometry(
+        self, latitude: float, longitude: float, number_segments: int = 8
+    ) -> dict:
+        """Build a 'nearest' geometry payload for the SATC API."""
+        return {
+            "nearest": {
+                "point": {
+                    "type": "point",
+                    "coordinates": [longitude, latitude],
+                },
+                "number_segments": number_segments,
+            }
+        }
+
     async def check_date_ranges(
         self,
         country: str = "us",
@@ -218,39 +233,26 @@ class StreetlightClient:
         self,
         latitude: float,
         longitude: float,
-        radius_miles: float = 1.0,
+        number_segments: int = 8,
         country: str = "us",
         mode: TravelMode = TravelMode.VEHICLE,
         source: DataSource = DataSource.LBS_PLUS,
         road_classes: Optional[list[str]] = None
     ) -> dict:
         """
-        Get road segment geometries within a radius of a point.
+        Get road segment geometries for the N nearest segments to a point.
 
         This is a non-billable endpoint. Returns segment IDs and GeoJSON.
         """
         url = f"{self.base_url}/geometry"
 
-        # Clamp radius to max 5 miles
-        clamped_radius = min(radius_miles, 5.0)
-
         payload = {
-            "geometry": {
-                "radius": {
-                    "point": {
-                        "type": "point",
-                        "coordinates": [longitude, latitude]
-                    },
-                    "buffer": clamped_radius,
-                    "unit": "mile"
-                }
-            },
+            "geometry": self._build_nearest_geometry(latitude, longitude, number_segments),
             "mode": mode.value,
             "country": country,
             "source": source.value
         }
 
-        # Filter to specific road types (e.g. major roads only)
         if road_classes:
             payload["roadway_classification"] = {"include": road_classes}
 
@@ -273,7 +275,7 @@ class StreetlightClient:
         self,
         latitude: float,
         longitude: float,
-        radius_miles: float = 1.0,
+        number_segments: int = 8,
         country: str = "us",
         mode: TravelMode = TravelMode.VEHICLE,
         road_classes: Optional[list[str]] = None
@@ -285,19 +287,9 @@ class StreetlightClient:
         This is a non-billable endpoint.
         """
         url = f"{self.base_url}/segmentcount"
-        clamped_radius = min(radius_miles, 5.0)
 
         payload = {
-            "geometry": {
-                "radius": {
-                    "point": {
-                        "type": "point",
-                        "coordinates": [longitude, latitude]
-                    },
-                    "buffer": clamped_radius,
-                    "unit": "mile"
-                }
-            },
+            "geometry": self._build_nearest_geometry(latitude, longitude, number_segments),
             "country": country,
             "mode": mode.value
         }
@@ -317,14 +309,14 @@ class StreetlightClient:
 
         return SegmentCountEstimate(
             segment_count=data.get("segment_count", 0),
-            geometry_type="radius"
+            geometry_type="nearest"
         )
 
     async def get_metrics(
         self,
         latitude: float,
         longitude: float,
-        radius_miles: float = 1.0,
+        number_segments: int = 8,
         country: str = "us",
         mode: TravelMode = TravelMode.VEHICLE,
         source: DataSource = DataSource.LBS_PLUS,
@@ -337,7 +329,7 @@ class StreetlightClient:
         road_classes: Optional[list[str]] = None
     ) -> dict:
         """
-        Get traffic metrics for segments within a radius.
+        Get traffic metrics for the N nearest segments to a point.
 
         This is a BILLABLE endpoint. Charges based on:
         - Number of segments in geometry
@@ -346,9 +338,6 @@ class StreetlightClient:
         Requesting multiple fields in a single call does NOT increase quota.
         """
         url = f"{self.base_url}/metrics"
-
-        # Clamp radius to max 5 miles
-        clamped_radius = min(radius_miles, 5.0)
 
         # Default fields for site selection analysis
         if fields is None:
@@ -368,16 +357,7 @@ class StreetlightClient:
                 fields.extend(["body_class", "power_train"])
 
         payload = {
-            "geometry": {
-                "radius": {
-                    "point": {
-                        "type": "point",
-                        "coordinates": [longitude, latitude]
-                    },
-                    "buffer": clamped_radius,
-                    "unit": "mile"
-                }
-            },
+            "geometry": self._build_nearest_geometry(latitude, longitude, number_segments),
             "fields": fields,
             "country": country,
             "mode": mode.value,
@@ -421,7 +401,7 @@ class StreetlightClient:
 async def fetch_traffic_counts(
     latitude: float,
     longitude: float,
-    radius_miles: float = 1.0,
+    number_segments: int = 8,
     include_demographics: bool = True,
     include_vehicle_attributes: bool = False,
     year: Optional[int] = None,
@@ -431,13 +411,13 @@ async def fetch_traffic_counts(
     """
     Fetch comprehensive traffic analysis for a location.
 
-    This is the main entry point for traffic count analysis.
+    Uses "nearest N segments" geometry to minimize quota usage.
     Combines data from lbs_plus (demographics) and optionally cvd_plus (vehicles).
 
     Args:
         latitude: Center point latitude
         longitude: Center point longitude
-        radius_miles: Analysis radius (0.5-5 miles)
+        number_segments: Number of nearest road segments to query (default 8)
         include_demographics: Include traveler income/trip purpose (lbs_plus)
         include_vehicle_attributes: Include vehicle class/powertrain (cvd_plus)
         year: Optional year filter (defaults to most recent)
@@ -449,8 +429,8 @@ async def fetch_traffic_counts(
     """
     client = StreetlightClient()
 
-    # Validate radius (Streetlight max is 5 miles / 8 km)
-    radius_miles = min(max(radius_miles, 0.25), 5.0)
+    # Clamp segments to API max of 100
+    number_segments = min(max(number_segments, 1), 100)
 
     # Default to major roads only to conserve quota
     if road_classes is None:
@@ -476,7 +456,7 @@ async def fetch_traffic_counts(
             client.get_metrics(
                 latitude=latitude,
                 longitude=longitude,
-                radius_miles=radius_miles,
+                number_segments=number_segments,
                 source=DataSource.LBS_PLUS if include_demographics else DataSource.AGPS,
                 year=year,
                 month=month,
@@ -485,7 +465,7 @@ async def fetch_traffic_counts(
             client.get_geometry(
                 latitude=latitude,
                 longitude=longitude,
-                radius_miles=radius_miles,
+                number_segments=number_segments,
                 road_classes=road_classes
             ),
         )
@@ -507,7 +487,7 @@ async def fetch_traffic_counts(
         metrics_data = await client.get_metrics(
             latitude=latitude,
             longitude=longitude,
-            radius_miles=radius_miles,
+            number_segments=number_segments,
             source=DataSource.LBS_PLUS if include_demographics else DataSource.AGPS,
             year=year,
             month=month,
@@ -558,7 +538,7 @@ async def fetch_traffic_counts(
             cvd_data = await client.get_metrics(
                 latitude=latitude,
                 longitude=longitude,
-                radius_miles=radius_miles,
+                number_segments=number_segments,
                 source=DataSource.CVD_PLUS,
                 year=year,
                 month=month,
@@ -580,7 +560,7 @@ async def fetch_traffic_counts(
     return TrafficAnalysis(
         latitude=latitude,
         longitude=longitude,
-        radius_miles=radius_miles,
+        number_segments=number_segments,
         total_segments=len(segments),
         total_daily_traffic=total_volume if total_volume > 0 else None,
         avg_segment_volume=total_volume // len(segments) if segments else None,
