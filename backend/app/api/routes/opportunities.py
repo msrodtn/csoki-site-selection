@@ -90,6 +90,12 @@ EXCLUDED_LAND_USE_KEYWORDS = {
     "laundromat", "dry clean", "salon", "barber", "tattoo", "nail salon",
     "gym", "fitness", "bowling", "theater", "cinema", "nightclub",
     "car dealer", "grocery", "supermarket", "convenience store",
+    # Residential (NOT suitable for commercial retail)
+    "residential", "single family", "single-family", "multifamily", "multi-family",
+    "apartment", "condominium", "condo", "townhouse", "townhome", "duplex",
+    "triplex", "fourplex", "mobile home", "manufactured home", "rv park",
+    "trailer park", "assisted living", "nursing home", "senior living",
+    "group home", "halfway house",
 }
 
 # Land use keywords indicating availability (vacant, former, closed, etc.)
