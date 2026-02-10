@@ -173,13 +173,16 @@ TAG_WEIGHTS = {
 }
 
 
-def build_overpass_query(state_iso: str) -> str:
-    """Build Overpass QL query for a single state."""
-    return f"""
-[out:json][timeout:180];
+def build_overpass_queries(state_iso: str) -> list[tuple[str, str]]:
+    """Build per-category Overpass QL queries for a single state.
+
+    Splitting by category avoids 504 timeouts on larger states.
+    Returns list of (category_label, query_string) tuples.
+    """
+    shopping = f"""
+[out:json][timeout:120];
 area["ISO3166-2"="{state_iso}"]->.a;
 (
-  // Shopping - supermarkets, department stores, malls, wholesale, electronics, hardware
   nwr["shop"="supermarket"](area.a);
   nwr["shop"="department_store"](area.a);
   nwr["shop"="mall"](area.a);
@@ -189,8 +192,13 @@ area["ISO3166-2"="{state_iso}"]->.a;
   nwr["shop"="hardware"](area.a);
   nwr["shop"="variety_store"](area.a);
   nwr["shop"="general"](area.a);
-
-  // Entertainment - cinemas, fitness, bowling, stadiums, theme parks, museums, theaters
+);
+out center;
+"""
+    entertainment = f"""
+[out:json][timeout:120];
+area["ISO3166-2"="{state_iso}"]->.a;
+(
   nwr["amenity"="cinema"](area.a);
   nwr["leisure"="fitness_centre"](area.a);
   nwr["leisure"="bowling_alley"](area.a);
@@ -202,8 +210,13 @@ area["ISO3166-2"="{state_iso}"]->.a;
   nwr["amenity"="theatre"](area.a);
   nwr["leisure"="amusement_arcade"](area.a);
   nwr["leisure"="miniature_golf"](area.a);
-
-  // Dining - restaurants, fast food, bars, cafes, food courts
+);
+out center;
+"""
+    dining = f"""
+[out:json][timeout:120];
+area["ISO3166-2"="{state_iso}"]->.a;
+(
   nwr["amenity"="fast_food"](area.a);
   nwr["amenity"="restaurant"](area.a);
   nwr["amenity"="bar"](area.a);
@@ -215,6 +228,7 @@ area["ISO3166-2"="{state_iso}"]->.a;
 );
 out center;
 """
+    return [("shopping", shopping), ("entertainment", entertainment), ("dining", dining)]
 
 
 def classify_element(element: dict) -> Optional[dict]:
@@ -284,40 +298,48 @@ def classify_element(element: dict) -> Optional[dict]:
 
 
 def fetch_state_pois(state: str) -> list[dict]:
-    """Fetch and classify all activity-node POIs for a state from Overpass."""
+    """Fetch and classify all activity-node POIs for a state from Overpass.
+
+    Splits into per-category queries to avoid 504 timeouts on larger states.
+    """
     iso = STATE_ISO.get(state)
     if not iso:
         logger.error(f"Unknown state: {state}")
         return []
 
-    query = build_overpass_query(iso)
-    logger.info(f"Querying Overpass for {state} ({iso})...")
-
-    try:
-        resp = requests.post(OVERPASS_URL, data={"data": query}, timeout=200)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException as e:
-        logger.error(f"Overpass request failed for {state}: {e}")
-        return []
-
-    elements = data.get("elements", [])
-    logger.info(f"  {state}: {len(elements)} raw OSM elements returned")
-
+    queries = build_overpass_queries(iso)
     nodes = []
     seen_osm_ids = set()
-    for el in elements:
-        classified = classify_element(el)
-        if classified and classified["osm_id"] not in seen_osm_ids:
-            classified["state"] = state
-            nodes.append(classified)
-            seen_osm_ids.add(classified["osm_id"])
+
+    for cat_label, query in queries:
+        logger.info(f"  {state}/{cat_label}: querying Overpass...")
+        try:
+            resp = requests.post(OVERPASS_URL, data={"data": query}, timeout=200)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException as e:
+            logger.error(f"  {state}/{cat_label}: Overpass request failed: {e}")
+            continue
+
+        elements = data.get("elements", [])
+        count_before = len(nodes)
+        for el in elements:
+            classified = classify_element(el)
+            if classified and classified["osm_id"] not in seen_osm_ids:
+                classified["state"] = state
+                nodes.append(classified)
+                seen_osm_ids.add(classified["osm_id"])
+        added = len(nodes) - count_before
+        logger.info(f"  {state}/{cat_label}: {len(elements)} raw elements -> {added} new nodes")
+
+        # Small delay between category queries
+        time.sleep(3)
 
     # Summary
     cats = {}
     for n in nodes:
         cats[n["node_category"]] = cats.get(n["node_category"], 0) + 1
-    logger.info(f"  {state}: {len(nodes)} classified nodes — {cats}")
+    logger.info(f"  {state} total: {len(nodes)} classified nodes — {cats}")
 
     return nodes
 
