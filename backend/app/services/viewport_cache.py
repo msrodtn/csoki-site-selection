@@ -83,8 +83,9 @@ def cache_retail_nodes(lat: float, lng: float, nodes: list):
 
 def _make_bounds_key(min_lat: float, max_lat: float, min_lng: float, max_lng: float, prop_type: str = "") -> str:
     """Create a cache key from rounded viewport bounds + property type."""
-    # Round to 0.01 degrees (~0.7mi) so small pans reuse the cache
-    r = lambda v: round(v, 2)
+    # Round to 0.05 degrees (~3.5mi) so small pans/zooms reuse cached ATTOM data
+    # (previously 0.01/~0.7mi which caused excessive API calls during exploration)
+    r = lambda v: round(v * 20) / 20
     return f"{r(min_lat)}_{r(max_lat)}_{r(min_lng)}_{r(max_lng)}_{prop_type}"
 
 

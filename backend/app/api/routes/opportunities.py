@@ -59,6 +59,33 @@ router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 # Verizon-family brands for co-location scoring
 VERIZON_FAMILY_BRANDS = ["russell_cellular", "victra", "verizon_corporate"]
 
+# State-level average population density (people per sq mi) for relative scoring.
+# Source: US Census Bureau. Used to normalize density so rural Iowa retail hubs
+# score well relative to their state, not against absolute metro thresholds.
+STATE_DENSITY_BASELINES = {
+    # Primary target markets
+    "IA": 55.0,    # Iowa
+    "NE": 25.0,    # Nebraska
+    # Secondary target markets
+    "NV": 28.0,    # Nevada
+    "ID": 22.0,    # Idaho
+    # Common surrounding states (for edge cases)
+    "MN": 70.0,    # Minnesota
+    "SD": 12.0,    # South Dakota
+    "MO": 88.0,    # Missouri
+    "WI": 108.0,   # Wisconsin
+    "IL": 230.0,   # Illinois
+    "KS": 36.0,    # Kansas
+    "CO": 56.0,    # Colorado
+    "WY": 6.0,     # Wyoming
+    "MT": 8.0,     # Montana
+    "UT": 40.0,    # Utah
+    "OR": 44.0,    # Oregon
+    "WA": 115.0,   # Washington
+    # Fallback for any other state
+    "_default": 90.0,
+}
+
 # Land use keywords indicating incompatible commercial uses (can't convert to wireless retail)
 EXCLUDED_LAND_USE_KEYWORDS = {
     # Gas/Auto
@@ -96,6 +123,22 @@ EXCLUDED_LAND_USE_KEYWORDS = {
     "triplex", "fourplex", "mobile home", "manufactured home", "rv park",
     "trailer park", "assisted living", "nursing home", "senior living",
     "group home", "halfway house",
+    # Parks/Recreation
+    "park", "playground", "recreation", "sports field", "athletic",
+    "golf course", "golf ", "tennis court", "swimming pool", "skate park",
+    # Agriculture
+    "farm", "agricultural", "ranch", "crop", "orchard", "nursery",
+    "vineyard", "greenhouse", "livestock", "dairy", "grain",
+    # Infrastructure
+    "railroad", "rail yard", "airport", "airstrip", "helipad",
+    "cell tower", "telecommunication", "substation", "power line",
+    # Environmental/Waste
+    "junkyard", "scrapyard", "landfill", "dump ", "quarry", "mine ",
+    "stormwater", "retention pond", "drainage", "sewage", "wastewater",
+    # Waterfront/Outdoor
+    "campground", "marina", "boat ramp", "fishing",
+    # Advertising
+    "billboard",
 }
 
 # Land use keywords indicating availability (vacant, former, closed, etc.)
@@ -447,7 +490,7 @@ def _filter_properties_for_opportunities(
 
 
 # ---------------------------------------------------------------------------
-# Site-quality-first scoring
+# Site-quality-first scoring (v2 — relative density, income, Goldilocks gap)
 # ---------------------------------------------------------------------------
 
 def _calculate_priority_rank(
@@ -457,101 +500,168 @@ def _calculate_priority_rank(
     nearest_vz_family_distance: Optional[float] = None,
     area_population_1mi: Optional[int] = None,
     area_population_3mi: Optional[int] = None,
+    area_density_1mi: Optional[float] = None,
+    area_density_3mi: Optional[float] = None,
+    area_income_3mi: Optional[int] = None,
 ) -> tuple[int, List[str]]:
     """
-    Calculate site-quality-first ranking score.
+    Calculate site-quality-first ranking score (v2).
 
     Returns (rank_score, priority_signals)
     Higher rank_score = higher priority
 
-    Site Quality (up to 100 pts):
-      - Population density: up to 40
-      - Retail anchor proximity: up to 35
-      - Corporate gap: up to 25
+    Tier 1: Relative Population Density (0-35)
+    Tier 2: Median Household Income (0-25)
+    Tier 3: Retail Anchor Proximity (0-30)
+    Tier 4: Corporate Gap — Goldilocks Zone (0-30)
+    Tier 5: Availability Quality (0-20) — equalized
+    Tier 6: Size Fit (0-15)
+    Tier 7: VZ-Family Co-location (0-10)
+    Tier 8: Distress Tiebreaker (0-15)
 
-    Availability Quality (up to 35 pts):
-      - Active listing: 35
-      - Vacant land: 25
-      - Confirmed vacant building: 15-20
-
-    Size Fit (up to 15 pts):
-      - Ideal lot/building size: 10-15
-
-    VZ Family Co-location (up to 10 pts)
-    Distress tiebreaker (up to 10 pts)
+    Max possible: 180 pts. Practical excellent: 120+
     """
     rank_score = 0
     priority_signals = []
 
     signal_types = {s.signal_type for s in listing.opportunity_signals}
 
-    # === SITE QUALITY (up to 100 pts) ===
+    # === TIER 1: RELATIVE POPULATION DENSITY (up to 35 pts) ===
+    # Uses density ratio to state baseline so rural Iowa retail hubs score well
 
-    # Population density — up to 40 pts
-    if area_population_1mi is not None and area_population_1mi >= 12000:
-        rank_score += 30
-        priority_signals.append(f"Strong population ({area_population_1mi:,} within 1mi)")
-        if (area_population_3mi or 0) >= 25000:
-            rank_score += 10
-            priority_signals.append(f"High-density market ({area_population_3mi:,} within 3mi)")
-    elif area_population_3mi is not None and area_population_3mi >= 12000:
-        rank_score += 15
-        priority_signals.append(f"Viable population ({area_population_3mi:,} within 3mi)")
-        if area_population_3mi >= 25000:
-            rank_score += 10
-            priority_signals.append(f"High-density market ({area_population_3mi:,} within 3mi)")
+    if area_density_1mi is not None or area_density_3mi is not None:
+        state = (listing.state or "").upper()
+        baseline = STATE_DENSITY_BASELINES.get(state, STATE_DENSITY_BASELINES["_default"])
 
-    # Retail anchor proximity — up to 35 pts
+        density = area_density_1mi if area_density_1mi is not None else area_density_3mi
+        ratio = density / baseline if baseline > 0 else 0
+
+        density_pts = 0
+        if ratio >= 50:
+            density_pts = 35
+            priority_signals.append(f"Urban-core density ({density:,.0f}/sqmi, {ratio:.0f}x state avg)")
+        elif ratio >= 20:
+            density_pts = 30
+            priority_signals.append(f"High density ({density:,.0f}/sqmi, {ratio:.0f}x state avg)")
+        elif ratio >= 10:
+            density_pts = 25
+            priority_signals.append(f"Good density ({density:,.0f}/sqmi, {ratio:.0f}x state avg)")
+        elif ratio >= 5:
+            density_pts = 18
+            priority_signals.append(f"Moderate density ({density:,.0f}/sqmi, {ratio:.0f}x state avg)")
+        elif ratio >= 2:
+            density_pts = 8
+            priority_signals.append(f"Low density ({density:,.0f}/sqmi, {ratio:.0f}x state avg)")
+
+        # Bonus for strong 3mi catchment area
+        if area_density_3mi is not None and area_density_1mi is not None:
+            ratio_3mi = area_density_3mi / baseline if baseline > 0 else 0
+            if ratio_3mi >= 10 and density_pts < 35:
+                density_pts = min(density_pts + 5, 35)
+                priority_signals.append(f"Strong 3mi catchment ({area_density_3mi:,.0f}/sqmi)")
+
+        rank_score += density_pts
+
+    # === TIER 2: MEDIAN HOUSEHOLD INCOME (up to 25 pts) ===
+    # Verizon criteria: $50K+ min, $60K+ preferred
+
+    if area_income_3mi is not None:
+        income = area_income_3mi
+        if income >= 80000:
+            rank_score += 25
+            priority_signals.append(f"Premium income area (${income:,} median HH)")
+        elif income >= 70000:
+            rank_score += 22
+            priority_signals.append(f"Strong income (${income:,} median HH)")
+        elif income >= 60000:
+            rank_score += 18
+            priority_signals.append(f"Good income (${income:,} median HH)")
+        elif income >= 50000:
+            rank_score += 12
+            priority_signals.append(f"Adequate income (${income:,} median HH)")
+        elif income >= 40000:
+            rank_score += 5
+            priority_signals.append(f"Below-target income (${income:,} median HH)")
+
+    # === TIER 3: RETAIL ANCHOR PROXIMITY (up to 30 pts) ===
+    # Continuous decay curve for better differentiation
+
     if nearest_retail_node_distance is not None:
-        if nearest_retail_node_distance <= 0.25:
-            rank_score += 35
+        d = nearest_retail_node_distance
+        if d <= 0.15:
+            anchor_pts = 30
             priority_signals.append("Adjacent to major retail anchor")
-        elif nearest_retail_node_distance <= 0.5:
-            rank_score += 25
-            priority_signals.append("Near major retail anchor (<0.5mi)")
-        elif nearest_retail_node_distance <= 1.0:
-            rank_score += 10
-            priority_signals.append("Retail anchor within 1mi")
+        elif d <= 0.5:
+            anchor_pts = round(30 - (d - 0.15) * (12 / 0.35))
+            priority_signals.append(f"Near major retail anchor ({d:.2f}mi)")
+        elif d <= 1.0:
+            anchor_pts = round(18 - (d - 0.5) * (10 / 0.5))
+            priority_signals.append(f"Retail anchor within {d:.1f}mi")
+        elif d <= 1.5:
+            anchor_pts = round(8 - (d - 1.0) * (6 / 0.5))
+            priority_signals.append(f"Retail anchor at {d:.1f}mi")
+        else:
+            anchor_pts = 0
+        rank_score += max(anchor_pts, 0)
 
-    # Verizon Corporate gap — up to 25 pts
+    # === TIER 4: CORPORATE GAP — GOLDILOCKS ZONE (up to 30 pts) ===
+    # Bell curve: 2-5mi ideal, <1.5mi too close, >12mi too far
+
     if nearest_corporate_distance is not None:
-        is_high_pop = (area_population_3mi or 0) >= 12000
-        min_threshold = 3.0 if is_high_pop else 5.0
+        d = nearest_corporate_distance
 
-        if nearest_corporate_distance >= 7.0:
-            rank_score += 25
-            priority_signals.append(f"Excellent corporate gap ({nearest_corporate_distance:.1f}mi)")
-        elif nearest_corporate_distance >= 5.0:
-            rank_score += 20
-            priority_signals.append(f"Strong corporate gap ({nearest_corporate_distance:.1f}mi)")
-        elif nearest_corporate_distance >= min_threshold:
-            rank_score += 10
-            priority_signals.append(f"Adequate corporate gap ({nearest_corporate_distance:.1f}mi)")
+        if d >= 900:
+            # No corporate store found in search area
+            corp_pts = 5
+            priority_signals.append("No VZ Corporate store in area (neutral)")
+        elif d < 1.5:
+            corp_pts = 0
+            priority_signals.append(f"Too close to VZ Corporate ({d:.1f}mi)")
+        elif d < 2.0:
+            corp_pts = round((d - 1.5) * (15 / 0.5))
+            priority_signals.append(f"Near corporate boundary ({d:.1f}mi)")
+        elif d <= 5.0:
+            corp_pts = 30
+            priority_signals.append(f"Ideal corporate gap ({d:.1f}mi)")
+        elif d <= 8.0:
+            corp_pts = round(30 - (d - 5.0) * (15 / 3.0))
+            priority_signals.append(f"Good corporate gap ({d:.1f}mi)")
+        elif d <= 12.0:
+            corp_pts = round(15 - (d - 8.0) * (10 / 4.0))
+            priority_signals.append(f"Distant from corporate ({d:.1f}mi)")
+        else:
+            corp_pts = 3
+            priority_signals.append(f"Very distant from corporate ({d:.1f}mi)")
 
-    # === AVAILABILITY QUALITY (up to 35 pts) ===
+        rank_score += max(corp_pts, 0)
+
+    # === TIER 5: AVAILABILITY QUALITY (up to 20 pts) — EQUALIZED ===
+    # All confirmed-available sources max at 20 pts (no listing auto-domination)
 
     if listing.source in (PropertySource.CREXI, PropertySource.LOOPNET):
-        rank_score += 35
+        rank_score += 20
         source_label = listing.source.value.title()
         priority_signals.append(f"Active for-lease listing ({source_label})")
     elif listing.property_type == PropertyType.LAND:
-        rank_score += 25
+        rank_score += 20
         priority_signals.append("Vacant land (buildable)")
     else:
-        # Vacant retail/office
         has_vacancy = "vacant_property" in signal_types
         has_availability = _has_availability_keywords(listing.land_use)
         if has_vacancy and has_availability:
-            rank_score += 20
+            rank_score += 18
             priority_signals.append(f"Confirmed vacant ({listing.land_use})")
         elif has_vacancy:
-            rank_score += 15
+            rank_score += 14
             priority_signals.append("Vacant building")
         elif has_availability:
-            rank_score += 15
+            rank_score += 14
             priority_signals.append(f"Available ({listing.land_use})")
+        else:
+            rank_score += 8
+            priority_signals.append("Potential availability")
 
-    # === SIZE FIT (up to 15 pts) ===
+    # === TIER 6: SIZE FIT (up to 15 pts) ===
 
     if listing.property_type == PropertyType.LAND and listing.lot_size_acres:
         if 0.8 <= listing.lot_size_acres <= 1.2:
@@ -568,7 +678,7 @@ def _calculate_priority_rank(
             rank_score += 10
             priority_signals.append(f"Acceptable building size ({listing.sqft:,.0f} sqft)")
 
-    # === VZ FAMILY CO-LOCATION BONUS (up to 10 pts) ===
+    # === TIER 7: VZ FAMILY CO-LOCATION BONUS (up to 10 pts) ===
 
     if nearest_vz_family_distance is not None:
         if nearest_vz_family_distance <= 0.5:
@@ -578,17 +688,23 @@ def _calculate_priority_rank(
             rank_score += 5
             priority_signals.append(f"VZ-family store within 1mi")
 
-    # === DISTRESS TIEBREAKER (up to 10 pts) ===
+    # === TIER 8: DISTRESS TIEBREAKER (up to 15 pts) ===
 
-    if "tax_delinquent" in signal_types or "distress" in signal_types:
-        rank_score += 10
-        if "distress" in signal_types:
-            priority_signals.append("Foreclosure/distress")
-        else:
-            priority_signals.append("Tax delinquent")
+    if "distress" in signal_types:
+        rank_score += 15
+        priority_signals.append("Foreclosure/distress")
+    elif "tax_delinquent" in signal_types:
+        rank_score += 12
+        priority_signals.append("Tax delinquent")
+    elif "absentee_owner" in signal_types and "long_term_owner" in signal_types:
+        rank_score += 8
+        priority_signals.append("Absentee + long-term owner")
     elif "absentee_owner" in signal_types:
         rank_score += 5
         priority_signals.append("Absentee owner")
+    elif "long_term_owner" in signal_types:
+        rank_score += 3
+        priority_signals.append("Long-term owner")
 
     return rank_score, priority_signals
 
@@ -618,15 +734,19 @@ class OpportunitySearchRequest(BaseModel):
     # Market viability scoring toggles
     enable_corporate_distance_scoring: bool = Field(
         default=True,
-        description="Score based on distance from Verizon Corporate stores (farther = better)"
+        description="Score based on Goldilocks distance from VZ Corporate (2-5mi ideal)"
     )
     enable_population_scoring: bool = Field(
         default=True,
-        description="Score based on population density (12K+ within 1-3mi)"
+        description="Score based on relative population density (vs state baseline)"
     )
     enable_retail_node_scoring: bool = Field(
         default=True,
-        description="Score based on proximity to major retail anchors (within 0.5mi)"
+        description="Score based on proximity to major retail anchors"
+    )
+    enable_income_scoring: bool = Field(
+        default=True,
+        description="Score based on median household income ($50K+ preferred)"
     )
 
     limit: int = Field(default=100, le=500, description="Maximum results to return")
@@ -647,6 +767,8 @@ class OpportunityRanking(BaseModel):
     nearest_verizon_family_name: Optional[str] = None
     area_population_1mi: Optional[int] = None
     area_population_3mi: Optional[int] = None
+    area_density_1mi: Optional[float] = None
+    area_income_3mi: Optional[int] = None
     market_viability_score: Optional[float] = None
 
 
@@ -776,6 +898,17 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 bounds_max_lng=request.max_lng,
             )
 
+        # 5a-gate. Hard gate: remove properties too close to VZ Corporate (<1.0mi)
+        if request.enable_corporate_distance_scoring and corporate_distances:
+            pre_gate_count = len(filtered_properties)
+            filtered_properties = [
+                prop for prop in filtered_properties
+                if corporate_distances.get(prop.id, 999.0) >= 1.0
+            ]
+            gate_removed = pre_gate_count - len(filtered_properties)
+            if gate_removed > 0:
+                logger.info(f"Corporate proximity gate removed {gate_removed} properties (<1.0mi from VZ Corporate)")
+
         # 5b. VZ family distances for co-location scoring (DB-only)
         vz_family_distances: dict[str, tuple[float, str]] = {}
         vz_family_store_count = 0
@@ -802,6 +935,8 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                     viewport_population = {
                         "pop_1mi": demo_response.radii[0].total_population,
                         "pop_3mi": demo_response.radii[1].total_population,
+                        "density_1mi": demo_response.radii[0].population_density,
+                        "density_3mi": demo_response.radii[1].population_density,
                         "income_3mi": demo_response.radii[1].median_household_income,
                     }
                     cache_demographics(center_lat, center_lng, viewport_population)
@@ -813,6 +948,9 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 population_data[prop.id] = {
                     "pop_1mi": viewport_population.get("pop_1mi"),
                     "pop_3mi": viewport_population.get("pop_3mi"),
+                    "density_1mi": viewport_population.get("density_1mi"),
+                    "density_3mi": viewport_population.get("density_3mi"),
+                    "income_3mi": viewport_population.get("income_3mi"),
                 }
 
         # 7. Fetch retail anchor stores near viewport center (1 Mapbox call, cached 1hr)
@@ -866,6 +1004,9 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 nearest_vz_family_distance=vz_info[0] if vz_info else None,
                 area_population_1mi=pop_info.get("pop_1mi"),
                 area_population_3mi=pop_info.get("pop_3mi"),
+                area_density_1mi=pop_info.get("density_1mi"),
+                area_density_3mi=pop_info.get("density_3mi"),
+                area_income_3mi=pop_info.get("income_3mi") if request.enable_income_scoring else None,
             )
             ranked_opportunities.append({
                 "property": prop,
@@ -879,6 +1020,9 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 "nearest_verizon_family_name": vz_info[1] if vz_info else None,
                 "area_population_1mi": pop_info.get("pop_1mi"),
                 "area_population_3mi": pop_info.get("pop_3mi"),
+                "area_density_1mi": pop_info.get("density_1mi"),
+                "area_income_3mi": pop_info.get("income_3mi"),
+                "market_viability_score": rank_score,
             })
 
         # 9. Sort by score descending, apply limit
@@ -899,6 +1043,9 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 nearest_verizon_family_name=opp["nearest_verizon_family_name"],
                 area_population_1mi=opp["area_population_1mi"],
                 area_population_3mi=opp["area_population_3mi"],
+                area_density_1mi=opp["area_density_1mi"],
+                area_income_3mi=opp["area_income_3mi"],
+                market_viability_score=opp["market_viability_score"],
             )
             for idx, opp in enumerate(ranked_opportunities)
         ]
@@ -923,6 +1070,7 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                     "corporate_distance": request.enable_corporate_distance_scoring,
                     "population": request.enable_population_scoring,
                     "retail_node": request.enable_retail_node_scoring,
+                    "income": request.enable_income_scoring,
                 },
             },
             corporate_stores_in_area=corporate_store_count,
@@ -961,42 +1109,89 @@ async def get_opportunity_stats():
             },
         },
         "scoring": {
-            "site_quality": {
-                "population_density": [
-                    {"condition": "12K+ within 1mi", "points": 30},
-                    {"condition": "25K+ within 3mi (bonus)", "points": 10},
-                    {"condition": "12K+ within 3mi only", "points": 15},
-                ],
-                "retail_anchor_proximity": [
-                    {"condition": "Adjacent (<0.25mi)", "points": 35},
-                    {"condition": "Near (<0.5mi)", "points": 25},
-                    {"condition": "Within 1mi", "points": 10},
-                ],
-                "corporate_gap": [
-                    {"condition": "7+ miles from VZ Corporate", "points": 25},
-                    {"condition": "5-7 miles", "points": 20},
-                    {"condition": "3-5 miles (high-pop) or 5+ (low-pop)", "points": 10},
+            "max_possible_score": 180,
+            "tier_1_relative_density": {
+                "max_points": 35,
+                "description": "Population density relative to state baseline",
+                "brackets": [
+                    {"condition": "50x+ state avg (urban core)", "points": 35},
+                    {"condition": "20x+ state avg (strong suburban)", "points": 30},
+                    {"condition": "10x+ state avg (viable town center)", "points": 25},
+                    {"condition": "5x+ state avg (small town commercial)", "points": 18},
+                    {"condition": "2x+ state avg (borderline)", "points": 8},
+                    {"condition": "Bonus: strong 3mi catchment (10x+)", "points": "+5"},
                 ],
             },
-            "availability_quality": [
-                {"condition": "Active for-lease listing", "points": 35},
-                {"condition": "Vacant land (buildable)", "points": 25},
-                {"condition": "Confirmed vacant building (signal + keyword)", "points": 20},
-                {"condition": "Vacant building (signal only)", "points": 15},
-            ],
-            "size_fit": [
-                {"condition": "Ideal lot 0.8-1.2ac", "points": 15},
-                {"condition": "Acceptable lot 1.2-2.0ac", "points": 10},
-                {"condition": "Ideal building 2500-3500 sqft", "points": 15},
-                {"condition": "Acceptable building 3500-6000 sqft", "points": 10},
-            ],
-            "vz_family_colocation": [
-                {"condition": "Within 0.5mi of VZ family store", "points": 10},
-                {"condition": "Within 1mi", "points": 5},
-            ],
-            "distress_tiebreaker": [
-                {"condition": "Tax delinquent or foreclosure", "points": 10},
-                {"condition": "Absentee owner", "points": 5},
-            ],
+            "tier_2_income": {
+                "max_points": 25,
+                "description": "Median household income (3mi radius)",
+                "brackets": [
+                    {"condition": "$80K+ (premium)", "points": 25},
+                    {"condition": "$70K+ (strong)", "points": 22},
+                    {"condition": "$60K+ (VZ preferred)", "points": 18},
+                    {"condition": "$50K+ (VZ minimum)", "points": 12},
+                    {"condition": "$40K+ (below target)", "points": 5},
+                ],
+            },
+            "tier_3_retail_anchor": {
+                "max_points": 30,
+                "description": "Continuous decay from nearest retail anchor",
+                "brackets": [
+                    {"condition": "Adjacent (<0.15mi)", "points": 30},
+                    {"condition": "Near (0.15-0.5mi)", "points": "18-30"},
+                    {"condition": "Within 1mi", "points": "8-18"},
+                    {"condition": "Within 1.5mi", "points": "2-8"},
+                ],
+            },
+            "tier_4_corporate_gap_goldilocks": {
+                "max_points": 30,
+                "description": "Bell curve: 2-5mi ideal, <1.5mi too close, >12mi too far",
+                "hard_gate": "Properties <1.0mi from VZ Corporate are removed entirely",
+                "brackets": [
+                    {"condition": "<1.5mi (too close)", "points": 0},
+                    {"condition": "1.5-2mi (transition)", "points": "0-15"},
+                    {"condition": "2-5mi (ideal zone)", "points": 30},
+                    {"condition": "5-8mi (diminishing)", "points": "15-30"},
+                    {"condition": "8-12mi (distant)", "points": "5-15"},
+                    {"condition": ">12mi (very distant)", "points": 3},
+                ],
+            },
+            "tier_5_availability": {
+                "max_points": 20,
+                "description": "Equalized — all confirmed-available sources score equally at max",
+                "brackets": [
+                    {"condition": "Active listing (Crexi/LoopNet)", "points": 20},
+                    {"condition": "Vacant land (buildable)", "points": 20},
+                    {"condition": "Confirmed vacant building", "points": 18},
+                    {"condition": "Vacant building (signal only)", "points": 14},
+                    {"condition": "Potential availability", "points": 8},
+                ],
+            },
+            "tier_6_size_fit": {
+                "max_points": 15,
+                "brackets": [
+                    {"condition": "Ideal lot 0.8-1.2ac", "points": 15},
+                    {"condition": "Acceptable lot 1.2-2.0ac", "points": 10},
+                    {"condition": "Ideal building 2500-3500 sqft", "points": 15},
+                    {"condition": "Acceptable building 3500-6000 sqft", "points": 10},
+                ],
+            },
+            "tier_7_vz_family_colocation": {
+                "max_points": 10,
+                "brackets": [
+                    {"condition": "Within 0.5mi of VZ family store", "points": 10},
+                    {"condition": "Within 1mi", "points": 5},
+                ],
+            },
+            "tier_8_distress_tiebreaker": {
+                "max_points": 15,
+                "brackets": [
+                    {"condition": "Foreclosure/distress", "points": 15},
+                    {"condition": "Tax delinquent", "points": 12},
+                    {"condition": "Absentee + long-term owner", "points": 8},
+                    {"condition": "Absentee owner", "points": 5},
+                    {"condition": "Long-term owner", "points": 3},
+                ],
+            },
         },
     }

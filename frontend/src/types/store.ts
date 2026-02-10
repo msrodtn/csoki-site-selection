@@ -576,6 +576,18 @@ export interface OpportunityRanking {
   rank: number;  // 1-based ranking (1 = highest priority)
   priority_signals: string[];  // Which high-priority signals are present
   signal_count: number;  // Total number of signals
+
+  // Market viability enrichment
+  nearest_corporate_store_miles?: number;
+  nearest_retail_node_miles?: number;
+  nearest_retail_node_name?: string;
+  nearest_verizon_family_miles?: number;
+  nearest_verizon_family_name?: string;
+  area_population_1mi?: number;
+  area_population_3mi?: number;
+  area_density_1mi?: number;
+  area_income_3mi?: number;
+  market_viability_score?: number;
 }
 
 export interface OpportunitySearchRequest {
@@ -599,6 +611,7 @@ export interface OpportunitySearchRequest {
   enable_corporate_distance_scoring?: boolean;
   enable_population_scoring?: boolean;
   enable_retail_node_scoring?: boolean;
+  enable_income_scoring?: boolean;
 
   limit?: number;
 }
@@ -617,6 +630,7 @@ export interface OpportunitySearchResponse {
       corporate_distance: boolean;
       population: boolean;
       retail_node: boolean;
+      income: boolean;
     };
   };
 }
