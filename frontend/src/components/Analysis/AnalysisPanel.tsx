@@ -239,6 +239,7 @@ export function AnalysisPanel() {
             latitude: analysisResult.center_latitude,
             longitude: analysisResult.center_longitude,
             radius_miles: 1.0,
+            road_classes: ['trunk', 'primary', 'secondary'],
           }),
           analysisApi.getTrafficQuotaUsage().catch(() => null),
         ]);
@@ -278,6 +279,7 @@ export function AnalysisPanel() {
         radius_miles: 1.0,
         include_demographics: true,
         include_vehicle_attributes: false,
+        road_classes: ['trunk', 'primary', 'secondary'],
       });
       setTrafficData(data);
     } catch (error) {
@@ -841,6 +843,9 @@ export function AnalysisPanel() {
                             '1,000'
                           )}{' '}
                           remaining segments.
+                        </div>
+                        <div className="text-xs text-amber-600 mt-1">
+                          Filter: Major roads only (highways, arterials, collectors)
                         </div>
                         {trafficEstimate.quota_remaining !== null && trafficEstimate.segment_count > trafficEstimate.quota_remaining && (
                           <div className="text-xs text-red-600 font-medium mt-1">

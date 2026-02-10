@@ -215,6 +215,7 @@ class TrafficCountsRequest(BaseModel):
     include_vehicle_attributes: bool = False
     year: Optional[int] = None
     month: Optional[int] = None
+    road_classes: Optional[list[str]] = None  # OSM types, default: major roads
 
 
 class SegmentCountRequest(BaseModel):
@@ -222,6 +223,7 @@ class SegmentCountRequest(BaseModel):
     latitude: float
     longitude: float
     radius_miles: float = 1.0
+    road_classes: Optional[list[str]] = None  # OSM types, default: major roads
 
 
 @router.post("/traffic-counts/", response_model=TrafficAnalysis)
@@ -246,6 +248,7 @@ async def get_traffic_counts(request: TrafficCountsRequest):
             include_vehicle_attributes=request.include_vehicle_attributes,
             year=request.year,
             month=request.month,
+            road_classes=request.road_classes,
         )
         return result
     except ValueError as e:
@@ -273,6 +276,7 @@ async def estimate_traffic_segments(request: SegmentCountRequest):
             latitude=request.latitude,
             longitude=request.longitude,
             radius_miles=request.radius_miles,
+            road_classes=request.road_classes,
         )
         return result
     except ValueError as e:

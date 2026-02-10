@@ -265,6 +265,7 @@ export interface TrafficCountsRequest {
   include_vehicle_attributes?: boolean;
   year?: number;
   month?: number;
+  road_classes?: string[];
 }
 
 export interface SegmentCountEstimate {

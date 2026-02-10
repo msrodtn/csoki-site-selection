@@ -52,6 +52,10 @@ class Direction(str, Enum):
 # Base URL for Streetlight SATC API
 STREETLIGHT_BASE_URL = "https://api.streetlightdata.com/satc/v1"
 
+# Default road classification filter — major roads only to conserve quota.
+# OSM highway types: trunk (highways), primary (arterials), secondary (collectors)
+MAJOR_ROAD_CLASSES = ["trunk", "primary", "secondary"]
+
 
 # =============================================================================
 # Response Models
@@ -217,7 +221,8 @@ class StreetlightClient:
         radius_miles: float = 1.0,
         country: str = "us",
         mode: TravelMode = TravelMode.VEHICLE,
-        source: DataSource = DataSource.LBS_PLUS
+        source: DataSource = DataSource.LBS_PLUS,
+        road_classes: Optional[list[str]] = None
     ) -> dict:
         """
         Get road segment geometries within a radius of a point.
@@ -245,6 +250,10 @@ class StreetlightClient:
             "source": source.value
         }
 
+        # Filter to specific road types (e.g. major roads only)
+        if road_classes:
+            payload["roadway_classification"] = {"include": road_classes}
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
@@ -266,23 +275,48 @@ class StreetlightClient:
         longitude: float,
         radius_miles: float = 1.0,
         country: str = "us",
-        mode: TravelMode = TravelMode.VEHICLE
+        mode: TravelMode = TravelMode.VEHICLE,
+        road_classes: Optional[list[str]] = None
     ) -> SegmentCountEstimate:
         """
         Estimate number of segments in a geometry (for quota planning).
 
-        This is a non-billable endpoint. Use before making metrics calls
-        to understand quota impact.
+        Uses the dedicated /segmentcount endpoint (lighter than /geometry).
+        This is a non-billable endpoint.
         """
-        # Get geometry to count segments
-        geometry_data = await self.get_geometry(
-            latitude, longitude, radius_miles, country, mode
-        )
+        url = f"{self.base_url}/segmentcount"
+        clamped_radius = min(radius_miles, 5.0)
 
-        segment_count = geometry_data.get("query_rows", 0)
+        payload = {
+            "geometry": {
+                "radius": {
+                    "point": {
+                        "type": "point",
+                        "coordinates": [longitude, latitude]
+                    },
+                    "buffer": clamped_radius,
+                    "unit": "mile"
+                }
+            },
+            "country": country,
+            "mode": mode.value
+        }
+
+        if road_classes:
+            payload["roadway_classification"] = {"include": road_classes}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url, json=payload, headers=self.headers, timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        if data.get("status") == "error":
+            raise ValueError(f"Streetlight segment count error: {data}")
 
         return SegmentCountEstimate(
-            segment_count=segment_count,
+            segment_count=data.get("segment_count", 0),
             geometry_type="radius"
         )
 
@@ -299,7 +333,8 @@ class StreetlightClient:
         direction: Direction = Direction.BIDIRECTIONAL,
         year: Optional[int] = None,
         month: Optional[int] = None,
-        fields: Optional[list[str]] = None
+        fields: Optional[list[str]] = None,
+        road_classes: Optional[list[str]] = None
     ) -> dict:
         """
         Get traffic metrics for segments within a radius.
@@ -359,6 +394,10 @@ class StreetlightClient:
             else:
                 payload["date"] = {"year": year}
 
+        # Filter to specific road types (e.g. major roads only)
+        if road_classes:
+            payload["roadway_classification"] = {"include": road_classes}
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
@@ -386,7 +425,8 @@ async def fetch_traffic_counts(
     include_demographics: bool = True,
     include_vehicle_attributes: bool = False,
     year: Optional[int] = None,
-    month: Optional[int] = None
+    month: Optional[int] = None,
+    road_classes: Optional[list[str]] = None
 ) -> TrafficAnalysis:
     """
     Fetch comprehensive traffic analysis for a location.
@@ -402,6 +442,7 @@ async def fetch_traffic_counts(
         include_vehicle_attributes: Include vehicle class/powertrain (cvd_plus)
         year: Optional year filter (defaults to most recent)
         month: Optional month filter
+        road_classes: OSM road types to include (default: major roads only)
 
     Returns:
         TrafficAnalysis with aggregated metrics
@@ -410,6 +451,10 @@ async def fetch_traffic_counts(
 
     # Validate radius (Streetlight max is 5 miles / 8 km)
     radius_miles = min(max(radius_miles, 0.25), 5.0)
+
+    # Default to major roads only to conserve quota
+    if road_classes is None:
+        road_classes = MAJOR_ROAD_CLASSES
 
     # Auto-detect most recent available month to minimize quota usage
     # (quota = segments × date_months, so 1 month keeps it 1:1)
@@ -434,12 +479,14 @@ async def fetch_traffic_counts(
                 radius_miles=radius_miles,
                 source=DataSource.LBS_PLUS if include_demographics else DataSource.AGPS,
                 year=year,
-                month=month
+                month=month,
+                road_classes=road_classes
             ),
             client.get_geometry(
                 latitude=latitude,
                 longitude=longitude,
                 radius_miles=radius_miles,
+                road_classes=road_classes
             ),
         )
 
@@ -463,7 +510,8 @@ async def fetch_traffic_counts(
             radius_miles=radius_miles,
             source=DataSource.LBS_PLUS if include_demographics else DataSource.AGPS,
             year=year,
-            month=month
+            month=month,
+            road_classes=road_classes
         )
 
     # Parse segment data
@@ -514,7 +562,8 @@ async def fetch_traffic_counts(
                 source=DataSource.CVD_PLUS,
                 year=year,
                 month=month,
-                fields=["segment_id", "body_class", "power_train"]
+                fields=["segment_id", "body_class", "power_train"],
+                road_classes=road_classes
             )
             vehicle_class = _aggregate_vehicle_class_data(
                 cvd_data.get("data", []),
