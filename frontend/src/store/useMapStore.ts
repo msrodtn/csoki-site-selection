@@ -15,6 +15,7 @@ import type {
   ParcelInfo,
   OpportunitySearchResponse,
   OpportunityRanking,
+  ActivityNodeCategory,
 } from '../types/store';
 
 // Target market states
@@ -117,6 +118,10 @@ interface MapState {
   // Boundary type sub-toggles (for Boundaries Explorer layer)
   visibleBoundaryTypes: Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts'>;
   toggleBoundaryType: (type: 'counties' | 'cities' | 'zipcodes' | 'census_tracts') => void;
+
+  // Activity node sub-toggles (for Activity Heat Map layer)
+  visibleActivityNodeCategories: Set<ActivityNodeCategory>;
+  toggleActivityNodeCategory: (category: ActivityNodeCategory) => void;
 
   // Demographic metric for choropleth coloring
   demographicMetric: 'population' | 'income' | 'density';
@@ -488,6 +493,19 @@ export const useMapStore = create<MapState>((set, get) => ({
         newTypes.add(type);
       }
       return { visibleBoundaryTypes: newTypes };
+    }),
+
+  // Activity node sub-toggles - all categories visible by default
+  visibleActivityNodeCategories: new Set<ActivityNodeCategory>(['shopping', 'entertainment', 'dining']),
+  toggleActivityNodeCategory: (category) =>
+    set((state) => {
+      const newCats = new Set(state.visibleActivityNodeCategories);
+      if (newCats.has(category)) {
+        newCats.delete(category);
+      } else {
+        newCats.add(category);
+      }
+      return { visibleActivityNodeCategories: newCats };
     }),
 
   // Demographic metric for choropleth coloring

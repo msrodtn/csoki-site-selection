@@ -568,6 +568,36 @@ export interface ScrapedSourcesStatus {
 export const SCRAPED_LISTING_COLOR = '#3B82F6';
 
 // =============================================================================
+// Activity Nodes (Shopping, Entertainment, Dining heat map)
+// =============================================================================
+
+export type ActivityNodeCategory = 'shopping' | 'entertainment' | 'dining';
+
+export interface ActivityNode {
+  id: number;
+  name: string | null;
+  node_category: ActivityNodeCategory;
+  node_subcategory: string | null;
+  weight: number;
+  latitude: number;
+  longitude: number;
+  brand: string | null;
+}
+
+export interface ActivityNodeBoundsRequest {
+  min_lat: number;
+  max_lat: number;
+  min_lng: number;
+  max_lng: number;
+  categories?: ActivityNodeCategory[];
+}
+
+export interface ActivityNodeBoundsResponse {
+  total: number;
+  nodes: ActivityNode[];
+}
+
+// =============================================================================
 // Opportunities (ATTOM-based CSOKi property filtering)
 // =============================================================================
 

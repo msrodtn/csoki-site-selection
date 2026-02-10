@@ -28,6 +28,8 @@ import type {
   MatrixResponse,
   CompetitorAccessRequest,
   CompetitorAccessResponse,
+  ActivityNodeBoundsRequest,
+  ActivityNodeBoundsResponse,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -501,6 +503,27 @@ export const opportunitiesApi = {
     };
   }> => {
     const { data } = await api.get('/opportunities/stats');
+    return data;
+  },
+};
+
+// ============================================
+// Activity Nodes API (Shopping/Entertainment/Dining heat map)
+// ============================================
+
+export const activityNodesApi = {
+  // Get activity nodes within map viewport bounds
+  getInBounds: async (request: ActivityNodeBoundsRequest): Promise<ActivityNodeBoundsResponse> => {
+    const { data } = await api.post('/activity-nodes/within-bounds/', request);
+    return data;
+  },
+
+  // Get import statistics
+  getStats: async (): Promise<{
+    total: number;
+    by_category: Record<string, { total: number; by_state: Record<string, number> }>;
+  }> => {
+    const { data } = await api.get('/activity-nodes/stats/');
     return data;
   },
 };

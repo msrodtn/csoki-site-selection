@@ -247,6 +247,74 @@ export const opportunityHeatmapColor: ExpressionSpecification = [
 ];
 
 // ============================================================================
+// Activity Node Heatmap
+// ============================================================================
+
+/**
+ * Activity node heatmap color ramp
+ * Green (low activity) -> Yellow (medium) -> Red (high/hot)
+ */
+export const activityNodeHeatmapColor: ExpressionSpecification = [
+  'interpolate',
+  ['linear'],
+  ['heatmap-density'],
+  0, 'rgba(0, 128, 0, 0)',
+  0.15, 'rgba(0, 200, 0, 0.4)',
+  0.3, 'rgba(128, 255, 0, 0.55)',
+  0.5, 'rgba(255, 255, 0, 0.7)',
+  0.7, 'rgba(255, 165, 0, 0.85)',
+  0.85, 'rgba(255, 69, 0, 0.92)',
+  1.0, 'rgba(255, 0, 0, 1.0)',
+];
+
+/**
+ * Build heatmap paint for activity nodes.
+ * Uses the `weight` property from each feature for intensity contribution,
+ * so higher-traffic POIs (big box = 3.0) contribute more than small shops (0.8).
+ */
+export function buildActivityNodeHeatmapPaint(): Record<string, ExpressionSpecification> {
+  return {
+    'heatmap-weight': [
+      'interpolate',
+      ['linear'],
+      ['coalesce', ['get', 'weight'], 1.0],
+      0.5, 0.3,
+      1.0, 0.6,
+      2.0, 1.0,
+      3.0, 1.5,
+    ],
+    'heatmap-intensity': [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      0, 0.5,
+      8, 1.0,
+      12, 2.0,
+      15, 3.0,
+    ],
+    'heatmap-color': activityNodeHeatmapColor,
+    'heatmap-radius': [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      0, 2,
+      8, 10,
+      12, 25,
+      15, 40,
+      18, 60,
+    ],
+    'heatmap-opacity': [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      7, 0.85,
+      12, 0.6,
+      16, 0.25,
+    ],
+  };
+}
+
+// ============================================================================
 // Lot Size / Building Size Expressions
 // ============================================================================
 

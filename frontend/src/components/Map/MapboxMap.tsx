@@ -22,7 +22,7 @@ import * as turf from '@turf/turf';
 import { wktToGeoJSON } from '@terraformer/wkt';
 import { useStores } from '../../hooks/useStores';
 import { useMapStore } from '../../store/useMapStore';
-import { analysisApi, teamPropertiesApi, opportunitiesApi } from '../../services/api';
+import { analysisApi, teamPropertiesApi, opportunitiesApi, activityNodesApi } from '../../services/api';
 import {
   BRAND_COLORS,
   BRAND_LABELS,
@@ -39,6 +39,7 @@ import {
   type TeamProperty,
   type ParcelInfo,
   type OpportunityRanking,
+  type ActivityNode,
 } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
 import { HeatMapLegend } from './HeatMapLegend';
@@ -54,7 +55,7 @@ import MapStyleSwitcher from './MapStyleSwitcher';
 import IsochroneControl, { type IsochroneSettings, type TravelMode } from './IsochroneControl';
 import { fetchIsochrone, getIsochroneColor, getIsochroneOpacity } from '../../services/mapbox-isochrone';
 import {
-  buildHeatmapPaint,
+  buildActivityNodeHeatmapPaint,
 } from '../../utils/mapbox-expressions';
 import CompetitorAccessPanel from '../Analysis/CompetitorAccessPanel';
 import { MapboxOverlay } from '@deck.gl/mapbox';
@@ -564,15 +565,13 @@ function TeamPropertyPopup({
   );
 }
 
-// Heatmap layer configuration - using data-driven expressions
-// The buildHeatmapPaint function creates expressions that can optionally weight
-// points by opportunity_score for opportunity-focused visualization
-const heatmapLayer: HeatmapLayerSpecification = {
-  id: 'stores-heat',
+// Activity Node heatmap layer - uses weight property from each POI for intensity
+const activityHeatmapLayer: HeatmapLayerSpecification = {
+  id: 'activity-heat',
   type: 'heatmap',
-  source: 'stores',
-  maxzoom: 15,
-  paint: buildHeatmapPaint(false) as HeatmapLayerSpecification['paint'],
+  source: 'activity-nodes',
+  maxzoom: 16,
+  paint: buildActivityNodeHeatmapPaint() as HeatmapLayerSpecification['paint'],
 };
 
 // Analysis radius circle layers
@@ -656,6 +655,7 @@ export function MapboxMap() {
     visibleLayers,
     visiblePropertySources,
     visibleBoundaryTypes,
+    visibleActivityNodeCategories,
     demographicMetric,
     // deck.gl 3D visualization state
     show3DVisualization,
@@ -857,23 +857,62 @@ export function MapboxMap() {
     });
   }, [visibleStores, mapBounds]);
 
-  // GeoJSON for stores heatmap
-  const storesGeoJSON = useMemo(() => {
+  // ============================================
+  // Activity Node Heat Map data
+  // ============================================
+  const [activityNodes, setActivityNodes] = useState<ActivityNode[]>([]);
+  const [, setIsLoadingActivityNodes] = useState(false);
+
+  // Fetch activity nodes when layer is visible and viewport changes
+  useEffect(() => {
+    const showActivityHeat = visibleLayersArray.includes('activity_heat');
+
+    if (showActivityHeat && mapBounds) {
+      const debounceTimer = setTimeout(async () => {
+        setIsLoadingActivityNodes(true);
+        try {
+          const result = await activityNodesApi.getInBounds({
+            min_lat: mapBounds.south,
+            max_lat: mapBounds.north,
+            min_lng: mapBounds.west,
+            max_lng: mapBounds.east,
+          });
+          setActivityNodes(result.nodes);
+        } catch (error) {
+          console.error('[Activity Nodes] Error fetching:', error);
+          setActivityNodes([]);
+        } finally {
+          setIsLoadingActivityNodes(false);
+        }
+      }, 500);
+      return () => clearTimeout(debounceTimer);
+    } else if (!showActivityHeat) {
+      setActivityNodes([]);
+    }
+  }, [visibleLayersArray, mapBounds]);
+
+  // GeoJSON for activity node heatmap — client-side filtered by visible categories
+  const activityNodesGeoJSON = useMemo(() => {
+    const filtered = activityNodes.filter((node) =>
+      visibleActivityNodeCategories.has(node.node_category)
+    );
     return {
       type: 'FeatureCollection' as const,
-      features: visibleStores.map((store) => ({
+      features: filtered.map((node) => ({
         type: 'Feature' as const,
         properties: {
-          id: store.id,
-          brand: store.brand,
+          id: node.id,
+          node_category: node.node_category,
+          weight: node.weight,
+          name: node.name,
         },
         geometry: {
           type: 'Point' as const,
-          coordinates: [store.longitude!, store.latitude!],
+          coordinates: [node.longitude, node.latitude],
         },
       })),
     };
-  }, [visibleStores]);
+  }, [activityNodes, visibleActivityNodeCategories]);
 
   // GeoJSON for clustered properties
   const propertiesGeoJSON = useMemo(() => {
@@ -1649,7 +1688,7 @@ export function MapboxMap() {
 
       {/* Legends */}
       <FEMALegend isVisible={visibleLayersArray.includes('fema_flood')} />
-      <HeatMapLegend isVisible={visibleLayersArray.includes('competition_heat')} />
+      <HeatMapLegend isVisible={visibleLayersArray.includes('activity_heat')} />
       <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
       <TrafficCountsLegend isVisible={visibleLayersArray.includes('traffic_counts')} />
@@ -2274,10 +2313,10 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Heatmap Layer */}
-        {visibleLayersArray.includes('competition_heat') && (
-          <Source id="stores" type="geojson" data={storesGeoJSON}>
-            <Layer {...heatmapLayer} />
+        {/* Activity Node Heat Map Layer */}
+        {visibleLayersArray.includes('activity_heat') && (
+          <Source id="activity-nodes" type="geojson" data={activityNodesGeoJSON}>
+            <Layer {...activityHeatmapLayer} />
           </Source>
         )}
 

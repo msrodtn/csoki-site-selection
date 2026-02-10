@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, Loader2 } from 'lucide-react';
+import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, Loader2, ShoppingBag, Film, UtensilsCrossed } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import { listingsApi } from '../../services/api';
 
@@ -30,12 +30,13 @@ export const MAP_LAYERS = {
     hasSubToggles: true,
   },
   // === Analysis layers ===
-  competition_heat: {
-    id: 'competition_heat',
-    name: 'Competition Heat Map',
+  activity_heat: {
+    id: 'activity_heat',
+    name: 'Activity Heat Map',
     icon: Flame,
     color: '#F97316',
-    description: 'Store density visualization',
+    description: 'Foot traffic potential (Shopping + Entertainment + Dining)',
+    hasSubToggles: true,
   },
   parcels: {
     id: 'parcels',
@@ -90,6 +91,31 @@ const PROPERTY_SUB_TOGGLES = [
     icon: MapPin,
     color: '#F97316', // Orange
     description: 'User-contributed properties',
+  },
+];
+
+// Sub-toggle definitions for Activity Heat Map layer
+const ACTIVITY_NODE_SUB_TOGGLES = [
+  {
+    id: 'shopping' as const,
+    name: 'Shopping',
+    icon: ShoppingBag,
+    color: '#8B5CF6',
+    description: 'Big box, malls, major retail',
+  },
+  {
+    id: 'entertainment' as const,
+    name: 'Entertainment',
+    icon: Film,
+    color: '#EC4899',
+    description: 'Theaters, gyms, attractions',
+  },
+  {
+    id: 'dining' as const,
+    name: 'Dining',
+    icon: UtensilsCrossed,
+    color: '#10B981',
+    description: 'Restaurants, QSR, bars',
   },
 ];
 
@@ -274,11 +300,14 @@ export function MapLayers() {
     togglePropertySource,
     visibleBoundaryTypes,
     toggleBoundaryType,
+    visibleActivityNodeCategories,
+    toggleActivityNodeCategory,
   } = useMapStore();
 
   const layerArray = Array.from(visibleLayers);
   const propertySourcesArray = Array.from(visiblePropertySources);
   const boundaryTypesArray = Array.from(visibleBoundaryTypes);
+  const activityNodeCategoriesArray = Array.from(visibleActivityNodeCategories);
 
   return (
     <div className="p-4 border-b border-gray-200">
@@ -391,6 +420,48 @@ export function MapLayers() {
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleBoundaryType(subToggle.id);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-left ${
+                          isSubActive
+                            ? 'bg-gray-50'
+                            : 'hover:bg-gray-50 opacity-60'
+                        }`}
+                      >
+                        <SubIcon
+                          className="w-3.5 h-3.5"
+                          style={{ color: isSubActive ? subToggle.color : '#9CA3AF' }}
+                        />
+                        <span
+                          className={`text-xs font-medium ${
+                            isSubActive ? 'text-gray-700' : 'text-gray-400'
+                          }`}
+                        >
+                          {subToggle.name}
+                        </span>
+                        <div
+                          className={`ml-auto w-1.5 h-1.5 rounded-full ${
+                            isSubActive ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Sub-toggles for Activity Heat Map layer */}
+              {layer.id === 'activity_heat' && hasSubToggles && isActive && (
+                <div className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
+                  {ACTIVITY_NODE_SUB_TOGGLES.map((subToggle) => {
+                    const isSubActive = activityNodeCategoriesArray.includes(subToggle.id);
+                    const SubIcon = subToggle.icon;
+
+                    return (
+                      <button
+                        key={subToggle.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleActivityNodeCategory(subToggle.id);
                         }}
                         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-left ${
                           isSubActive
