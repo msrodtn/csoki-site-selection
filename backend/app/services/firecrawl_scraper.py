@@ -75,6 +75,7 @@ class CRESearchListing(BaseModel):
     sqft: Optional[float] = Field(None, description="Building square footage as a number")
     lot_size_acres: Optional[float] = Field(None, description="Lot size in acres as a number")
     listing_url: Optional[str] = Field(None, description="URL link to the individual listing page")
+    transaction_type: Optional[str] = Field(None, description="Whether listing is 'sale' or 'lease'")
 
 
 class CRESearchPageExtract(BaseModel):
@@ -238,30 +239,32 @@ class FirecrawlScraperService:
         Cost: ~1 credit per search page (not per listing).
         """
         if sources is None:
-            sources = ["crexi", "loopnet"]
+            sources = ["loopnet", "commercialcafe", "rofo"]
 
         all_listings: List[dict] = []
 
         for source in sources:
-            search_url = _build_search_url(source, city, state)
-            if not search_url:
+            url_pairs = _build_search_urls(source, city, state)
+            if not url_pairs:
                 continue
 
-            try:
-                source_listings = await self._scrape_search_pages(
-                    search_url, source, city, state, max_pages
-                )
-                all_listings.extend(source_listings)
-                logger.info(
-                    f"Firecrawl extracted {len(source_listings)} listings "
-                    f"from {source} for {city}, {state}"
-                )
-            except FirecrawlBudgetExceeded:
-                logger.warning("Firecrawl budget exceeded during area search")
-                break
-            except Exception as e:
-                logger.error(f"Firecrawl area search failed for {source}: {e}")
-                continue
+            for search_url, txn_type in url_pairs:
+                try:
+                    source_listings = await self._scrape_search_pages(
+                        search_url, source, city, state, max_pages,
+                        default_transaction_type=txn_type,
+                    )
+                    all_listings.extend(source_listings)
+                    logger.info(
+                        f"Firecrawl extracted {len(source_listings)} {txn_type} listings "
+                        f"from {source} for {city}, {state}"
+                    )
+                except FirecrawlBudgetExceeded:
+                    logger.warning("Firecrawl budget exceeded during area search")
+                    return all_listings  # Return what we have so far
+                except Exception as e:
+                    logger.error(f"Firecrawl area search failed for {source} ({txn_type}): {e}")
+                    continue
 
         return all_listings
 
@@ -272,6 +275,7 @@ class FirecrawlScraperService:
         city: str,
         state: str,
         max_pages: int,
+        default_transaction_type: str = "sale",
     ) -> List[dict]:
         """Scrape 1-N search result pages, extracting all listing cards."""
         listings: List[dict] = []
@@ -296,7 +300,8 @@ class FirecrawlScraperService:
                             "from this search results page. For each listing card, extract: "
                             "title, full address, city, state, property type, asking price "
                             "(as a number), square footage (as a number), lot size in acres "
-                            "(as a number), and the URL link to the individual listing. "
+                            "(as a number), the URL link to the individual listing, and "
+                            "whether the listing is for 'sale' or for 'lease' (transaction_type). "
                             "Also find the URL for the next page of results if one exists."
                         ),
                     },
@@ -336,6 +341,12 @@ class FirecrawlScraperService:
                         external_id = extract_crexi_id(listing_url)
                     elif source == "loopnet":
                         external_id = extract_loopnet_id(listing_url)
+                    else:
+                        # For other sources, use URL path as ID
+                        external_id = listing_url.split("?")[0].rstrip("/").split("/")[-1] or None
+
+                # Determine transaction type: prefer AI-extracted, fallback to URL-based
+                txn = listing_data.get("transaction_type") or default_transaction_type
 
                 listings.append({
                     "success": True,
@@ -343,11 +354,13 @@ class FirecrawlScraperService:
                     "external_id": external_id,
                     "listing_url": listing_url,
                     "extraction_method": "firecrawl",
+                    "transaction_type": txn,
                     "confidence": _calculate_confidence(listing_data),
                     "data": {
                         **listing_data,
                         "city": listing_data.get("city") or city,
                         "state": listing_data.get("state") or state,
+                        "transaction_type": txn,
                     },
                 })
 
@@ -499,6 +512,7 @@ def firecrawl_result_to_scraped_listing(
         "latitude": data.get("latitude"),
         "longitude": data.get("longitude"),
         "property_type": prop_type,
+        "transaction_type": result.get("transaction_type") or data.get("transaction_type"),
         "price": data.get("price"),
         "price_display": data.get("price_display") or (
             f"${data['price']:,.0f}" if data.get("price") else None
@@ -568,24 +582,52 @@ def _extract_markdown(result) -> str:
     return ""
 
 
-def _build_search_url(source: str, city: str, state: str) -> Optional[str]:
-    """Build search URL for a CRE platform (mirrors listingLinks.ts patterns)."""
+def _build_search_urls(source: str, city: str, state: str) -> List[Tuple[str, str]]:
+    """
+    Build search URLs for a CRE platform.
+
+    Returns list of (url, transaction_type) tuples — one for sale, one for lease.
+    """
+    city_slug = city.lower().replace(" ", "-")
+    state_slug = state.lower()
+
     if source == "crexi":
         encoded = quote(f"{city}, {state}")
-        return (
-            f"https://www.crexi.com/properties"
-            f"?location={encoded}"
-            f"&propertyTypes=Retail,Land,Office,Industrial"
-            f"&sort=newest"
-        )
+        # Crexi blocked by Akamai — included for completeness, but typically skipped
+        return [
+            (
+                f"https://www.crexi.com/properties"
+                f"?location={encoded}"
+                f"&propertyTypes=Retail,Land,Office,Industrial"
+                f"&sort=newest",
+                "sale",
+            ),
+        ]
     elif source == "loopnet":
-        city_slug = city.lower().replace(" ", "-")
-        state_slug = state.lower()
-        return (
-            f"https://www.loopnet.com/search/commercial-real-estate"
-            f"/{city_slug}-{state_slug}/for-sale/"
-        )
-    return None
+        base = f"https://www.loopnet.com/search/commercial-real-estate/{city_slug}-{state_slug}"
+        return [
+            (f"{base}/for-sale/", "sale"),
+            (f"{base}/for-lease/", "lease"),
+        ]
+    elif source == "commercialcafe":
+        base = f"https://www.commercialcafe.com"
+        return [
+            (f"{base}/commercial-real-estate-for-sale/{state_slug}/{city_slug}/", "sale"),
+            (f"{base}/commercial-real-estate-for-lease/{state_slug}/{city_slug}/", "lease"),
+        ]
+    elif source == "rofo":
+        base = f"https://www.rofo.com"
+        return [
+            (f"{base}/for-sale/{state_slug}/{city_slug}/", "sale"),
+            (f"{base}/for-lease/{state_slug}/{city_slug}/", "lease"),
+        ]
+    return []
+
+
+def _build_search_url(source: str, city: str, state: str) -> Optional[str]:
+    """Legacy wrapper — returns first URL only. Use _build_search_urls() instead."""
+    urls = _build_search_urls(source, city, state)
+    return urls[0][0] if urls else None
 
 
 def _calculate_confidence(extracted: dict) -> float:

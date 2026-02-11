@@ -203,7 +203,12 @@ def _fetch_scraped_listings(
     properties = []
 
     # Map source string to PropertySource enum
-    source_map = {"crexi": PropertySource.CREXI, "loopnet": PropertySource.LOOPNET}
+    source_map = {
+        "crexi": PropertySource.CREXI,
+        "loopnet": PropertySource.LOOPNET,
+        "commercialcafe": PropertySource.COMMERCIALCAFE,
+        "rofo": PropertySource.ROFO,
+    }
     # Map property_type string to PropertyType enum
     type_map = {
         "retail": PropertyType.RETAIL,
@@ -229,6 +234,9 @@ def _fetch_scraped_listings(
         prop_type = type_map.get(row.property_type, PropertyType.RETAIL if row.property_type else PropertyType.UNKNOWN)
         source_label = row.source.title() if row.source else "Listing"
 
+        txn_type = getattr(row, "transaction_type", None)
+        txn_label = "for lease" if txn_type == "lease" else "for sale" if txn_type == "sale" else "for lease/sale"
+
         listing = PropertyListing(
             id=f"scraped-{row.id}",
             address=row.address or f"{row.city}, {row.state}",
@@ -244,11 +252,12 @@ def _fetch_scraped_listings(
             lot_size_acres=row.lot_size_acres,
             year_built=row.year_built,
             source=source,
+            transaction_type=txn_type,
             listing_type="active_listing",
             opportunity_signals=[
                 OpportunitySignal(
                     signal_type="active_listing",
-                    description=f"Actively listed for lease/sale on {source_label}",
+                    description=f"Actively listed {txn_label} on {source_label}",
                     strength="high",
                 )
             ],
@@ -430,7 +439,7 @@ def _filter_properties_for_opportunities(
         if prop.property_type not in (PropertyType.RETAIL, PropertyType.OFFICE, PropertyType.LAND):
             continue
 
-        is_scraped = prop.source in (PropertySource.CREXI, PropertySource.LOOPNET)
+        is_scraped = prop.source in (PropertySource.CREXI, PropertySource.LOOPNET, PropertySource.COMMERCIALCAFE, PropertySource.ROFO)
 
         # --- Category B: For-lease listings pass through ---
         if is_scraped:
@@ -482,9 +491,9 @@ def _filter_properties_for_opportunities(
 
     logger.info(
         f"Eligibility filter: {len(filtered)} of {len(properties)} passed "
-        f"(scraped={sum(1 for p in filtered if p.source in (PropertySource.CREXI, PropertySource.LOOPNET))}, "
+        f"(scraped={sum(1 for p in filtered if p.source in (PropertySource.CREXI, PropertySource.LOOPNET, PropertySource.COMMERCIALCAFE, PropertySource.ROFO))}, "
         f"land={sum(1 for p in filtered if p.property_type == PropertyType.LAND)}, "
-        f"vacant_bldg={sum(1 for p in filtered if p.property_type in (PropertyType.RETAIL, PropertyType.OFFICE) and p.source not in (PropertySource.CREXI, PropertySource.LOOPNET))})"
+        f"vacant_bldg={sum(1 for p in filtered if p.property_type in (PropertyType.RETAIL, PropertyType.OFFICE) and p.source not in (PropertySource.CREXI, PropertySource.LOOPNET, PropertySource.COMMERCIALCAFE, PropertySource.ROFO))})"
     )
     return filtered
 
@@ -638,10 +647,11 @@ def _calculate_priority_rank(
     # === TIER 5: AVAILABILITY QUALITY (up to 20 pts) — EQUALIZED ===
     # All confirmed-available sources max at 20 pts (no listing auto-domination)
 
-    if listing.source in (PropertySource.CREXI, PropertySource.LOOPNET):
+    if listing.source in (PropertySource.CREXI, PropertySource.LOOPNET, PropertySource.COMMERCIALCAFE, PropertySource.ROFO):
         rank_score += 20
         source_label = listing.source.value.title()
-        priority_signals.append(f"Active for-lease listing ({source_label})")
+        txn_label = f"for {listing.transaction_type}" if listing.transaction_type else "for lease/sale"
+        priority_signals.append(f"Active listing {txn_label} ({source_label})")
     elif listing.property_type == PropertyType.LAND:
         rank_score += 20
         priority_signals.append("Vacant land (buildable)")

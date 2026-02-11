@@ -32,8 +32,8 @@ class ScrapeRequest(BaseModel):
     city: str = Field(..., description="City name")
     state: str = Field(..., min_length=2, max_length=2, description="2-letter state code")
     sources: list[str] = Field(
-        default=["crexi", "loopnet"],
-        description="Sources to scrape: crexi, loopnet"
+        default=["loopnet", "commercialcafe", "rofo"],
+        description="Sources to scrape: loopnet, commercialcafe, rofo, crexi"
     )
     property_types: Optional[list[str]] = Field(
         default=None,
@@ -65,6 +65,7 @@ class ListingResponse(BaseModel):
     latitude: Optional[float]
     longitude: Optional[float]
     property_type: Optional[str]
+    transaction_type: Optional[str]
     price: Optional[float]
     price_display: Optional[str]
     sqft: Optional[float]
@@ -376,6 +377,7 @@ async def search_listings(
             latitude=l.latitude,
             longitude=l.longitude,
             property_type=l.property_type,
+            transaction_type=getattr(l, 'transaction_type', None),
             price=l.price,
             price_display=l.price_display,
             sqft=l.sqft,
@@ -461,6 +463,7 @@ async def search_listings_by_bounds(
             latitude=l.latitude,
             longitude=l.longitude,
             property_type=l.property_type,
+            transaction_type=getattr(l, 'transaction_type', None),
             price=l.price,
             price_display=l.price_display,
             sqft=l.sqft,
@@ -1108,7 +1111,7 @@ async def fetch_crexi_area_endpoint(
             results = await service.search_area(
                 city=search_city,
                 state=search_state or "",
-                sources=["crexi", "loopnet"],
+                sources=["loopnet", "commercialcafe", "rofo"],
             )
 
             # Import ALL listings directly to scraped_listings table.
@@ -1192,7 +1195,7 @@ async def fetch_crexi_area_endpoint(
                 expires_at=expires_at.isoformat(),
                 location=request.location,
                 message=(
-                    f"Firecrawl scraped {len(results)} listings from Crexi+LoopNet. "
+                    f"Firecrawl scraped {len(results)} listings from LoopNet+CommercialCafe+Rofo (sale+lease). "
                     f"Saved {total_saved} to database ({imported_count} new, {updated_count} updated). "
                     f"{empty_land_count} land + {small_building_count} buildings match site criteria. "
                     f"Credits used: ~{credit_tracker.credits_used}"
@@ -1372,13 +1375,13 @@ async def refresh_all_markets(
     db: Session = Depends(get_db),
 ):
     """
-    Scrape Crexi + LoopNet for ALL target market cities.
+    Scrape LoopNet, CommercialCafe, and Rofo for ALL target market cities.
 
     Iterates through all target cities (IA, NE, NV, ID) and scrapes
-    search results from both platforms. Each city checks the 24hr cache
-    first — only scrapes if data is stale.
+    search results from all platforms (sale + lease). Each city checks
+    the 24hr cache first — only scrapes if data is stale.
 
-    Estimated credits: ~78 total (13 cities x 2 platforms x ~3 pages).
+    Estimated credits: ~130 total (13 cities x 3 platforms x 2 types x ~2 pages).
     """
     if not FIRECRAWL_AVAILABLE:
         raise HTTPException(

@@ -319,7 +319,9 @@ export interface ParcelRequest {
 // Property Search Types (ATTOM-powered property intelligence)
 export type PropertyType = 'retail' | 'land' | 'office' | 'industrial' | 'mixed_use' | 'unknown';
 
-export type PropertySource = 'attom' | 'reportall' | 'quantumlisting' | 'team_contributed' | 'crexi' | 'loopnet';
+export type PropertySource = 'attom' | 'reportall' | 'quantumlisting' | 'team_contributed' | 'crexi' | 'loopnet' | 'commercialcafe' | 'rofo';
+
+export type TransactionType = 'sale' | 'lease';
 
 export interface OpportunitySignal {
   signal_type: string;  // e.g., "tax_delinquent", "owner_age", "vacancy", "distress"
@@ -370,7 +372,10 @@ export interface PropertyListing {
   // Land use classification from ATTOM (e.g., "Gas Station/Mini Mart", "Retail Store (NEC)")
   land_use: string | null;
 
-  // Listing metadata (scraped Crexi/LoopNet)
+  // Transaction type (sale or lease)
+  transaction_type?: TransactionType | null;
+
+  // Listing metadata (scraped Crexi/LoopNet/CommercialCafe/Rofo)
   listing_url?: string | null;
   broker_name?: string | null;
   broker_company?: string | null;
@@ -527,7 +532,7 @@ export const TEAM_PROPERTY_SOURCE_LABELS: Record<TeamPropertySourceType, string>
 
 export interface ScrapedListing {
   id: number;
-  source: 'crexi' | 'loopnet';
+  source: 'crexi' | 'loopnet' | 'commercialcafe' | 'rofo';
   external_id: string | null;
   listing_url: string | null;
   address: string | null;
@@ -537,6 +542,7 @@ export interface ScrapedListing {
   latitude: number | null;
   longitude: number | null;
   property_type: PropertyType | null;
+  transaction_type: TransactionType | null;
   price: number | null;
   price_display: string | null;
   sqft: number | null;
@@ -551,7 +557,7 @@ export interface ScrapedListing {
 export interface ScrapeRequest {
   city: string;
   state: string;
-  sources?: ('crexi' | 'loopnet')[];
+  sources?: ('crexi' | 'loopnet' | 'commercialcafe' | 'rofo')[];
   property_types?: string[];
   force_refresh?: boolean;
 }

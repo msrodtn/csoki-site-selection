@@ -218,8 +218,8 @@ export const CrexiLoader: React.FC<CrexiLoaderProps> = ({ onClose, onSuccess }) 
               {/* Search form */}
               <div className="space-y-3">
                 <p className="text-sm text-gray-600">
-                  Automatically scrape Crexi and LoopNet for commercial listings in your target market.
-                  Filters to empty land (0.8-2ac) and small buildings (2,500-6,000 sqft).
+                  Automatically scrape LoopNet, CommercialCafe, and Rofo for commercial listings
+                  (both for sale and for lease) in your target market.
                 </p>
                 <div className="flex gap-3">
                   <div className="flex-1">
@@ -256,7 +256,7 @@ export const CrexiLoader: React.FC<CrexiLoaderProps> = ({ onClose, onSuccess }) 
                   {searching ? (
                     <>
                       <Loader className="w-4 h-4 animate-spin" />
-                      Searching Crexi + LoopNet...
+                      Searching LoopNet + CommercialCafe + Rofo...
                     </>
                   ) : (
                     <>
@@ -266,7 +266,7 @@ export const CrexiLoader: React.FC<CrexiLoaderProps> = ({ onClose, onSuccess }) 
                   )}
                 </button>
                 <p className="text-xs text-gray-400 text-center">
-                  Estimated cost: ~3-6 credits per search (24hr cache)
+                  Estimated cost: ~6-12 credits per search (3 sources x sale+lease, 24hr cache)
                 </p>
               </div>
             </>

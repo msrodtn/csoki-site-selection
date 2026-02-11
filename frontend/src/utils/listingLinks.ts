@@ -44,6 +44,11 @@ export function generateListingLinks(
       color: '#059669', // Green
     },
     {
+      name: 'Rofo',
+      url: `https://www.rofo.com/for-lease/${stateSlug}/${citySlug}/`,
+      color: '#F59E0B', // Amber
+    },
+    {
       name: 'CoStar',
       url: `https://www.costar.com/search?location=${encodedCity}%2C%20${encodedState}&forSale=true`,
       color: '#7C3AED', // Purple

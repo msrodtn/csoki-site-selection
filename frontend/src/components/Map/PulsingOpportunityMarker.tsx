@@ -35,7 +35,7 @@ export function PulsingOpportunityMarker({
 
   const size = getZoomBasedSize(zoom, isSelected);
   const isPulsing = opportunity.rank <= PULSE_THRESHOLD;
-  const isListing = prop.source === 'crexi' || prop.source === 'loopnet';
+  const isListing = prop.source === 'crexi' || prop.source === 'loopnet' || prop.source === 'commercialcafe' || prop.source === 'rofo';
   const markerColor = isListing ? '#16A34A' : '#9333EA'; // Green for listings, purple for ATTOM
 
   return (

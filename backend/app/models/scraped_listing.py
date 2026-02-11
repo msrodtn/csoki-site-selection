@@ -43,6 +43,9 @@ class ScrapedListing(Base):
     lot_size_acres = Column(Float)
     year_built = Column(Integer)
 
+    # Transaction type
+    transaction_type = Column(String(20), nullable=True, index=True)  # "sale", "lease", or None
+
     # Listing details
     title = Column(String(500))
     description = Column(Text)

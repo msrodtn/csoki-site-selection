@@ -41,6 +41,8 @@ class PropertySource(str, Enum):
     TEAM_CONTRIBUTED = "team_contributed"
     CREXI = "crexi"
     LOOPNET = "loopnet"
+    COMMERCIALCAFE = "commercialcafe"
+    ROFO = "rofo"
 
 
 class OpportunitySignal(BaseModel):
@@ -94,7 +96,10 @@ class PropertyListing(BaseModel):
     # Land use classification from ATTOM (e.g., "Gas Station/Mini Mart", "Retail Store (NEC)")
     land_use: Optional[str] = None
 
-    # Listing metadata (for scraped Crexi/LoopNet properties)
+    # Transaction type (sale or lease)
+    transaction_type: Optional[str] = None
+
+    # Listing metadata (for scraped Crexi/LoopNet/CommercialCafe/Rofo properties)
     listing_url: Optional[str] = None
     broker_name: Optional[str] = None
     broker_company: Optional[str] = None

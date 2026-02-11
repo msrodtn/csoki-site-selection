@@ -45,6 +45,8 @@ const SOURCE_LABELS: Record<string, string> = {
   team_contributed: 'Team Contributed',
   crexi: 'Crexi Listing',
   loopnet: 'LoopNet Listing',
+  commercialcafe: 'CommercialCafe',
+  rofo: 'Rofo Listing',
 };
 
 export function PropertyInfoCard({ property, onClose, initialPosition, onPositionChange, opportunityRank, opportunitySignals }: PropertyInfoCardProps) {
@@ -189,8 +191,21 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
             </div>
           )}
           <div>
-            <div className="text-xs font-medium uppercase tracking-wide" style={{ color: (property.source === 'crexi' || property.source === 'loopnet') ? '#16A34A' : '#6B7280' }}>
-              {(property.source === 'crexi' || property.source === 'loopnet') ? 'For Lease / Sale' : isOpportunity ? 'Opportunity' : 'Active Listing'}
+            <div className="text-xs font-medium uppercase tracking-wide flex items-center gap-1.5" style={{ color: (property.source === 'crexi' || property.source === 'loopnet' || property.source === 'commercialcafe' || property.source === 'rofo') ? '#16A34A' : '#6B7280' }}>
+              {(property.source === 'crexi' || property.source === 'loopnet' || property.source === 'commercialcafe' || property.source === 'rofo') ? (
+                <>
+                  Active Listing
+                  {property.transaction_type && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                      property.transaction_type === 'lease'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}>
+                      {property.transaction_type === 'lease' ? 'Lease' : 'Sale'}
+                    </span>
+                  )}
+                </>
+              ) : isOpportunity ? 'Opportunity' : 'Active Listing'}
             </div>
             <div className="text-sm font-semibold" style={{ color: propertyTypeColor }}>
               {PROPERTY_TYPE_LABELS[property.property_type] || 'Property'}
@@ -261,7 +276,7 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
                 className="inline-flex items-center gap-1 mt-1 text-sm text-blue-600 hover:text-blue-800"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                View on {property.source === 'crexi' ? 'Crexi' : property.source === 'loopnet' ? 'LoopNet' : 'Listing Site'}
+                View on {SOURCE_LABELS[property.source] || 'Listing Site'}
               </a>
             )}
           </div>
