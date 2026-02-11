@@ -286,18 +286,21 @@ class FirecrawlScraperService:
             result = await asyncio.to_thread(
                 self.client.scrape,
                 current_url,
-                formats=[{
-                    "type": "json",
-                    "schema": CRESearchPageExtract.model_json_schema(),
-                    "prompt": (
-                        "Extract ALL commercial real estate property listing cards "
-                        "from this search results page. For each listing card, extract: "
-                        "title, full address, city, state, property type, asking price "
-                        "(as a number), square footage (as a number), lot size in acres "
-                        "(as a number), and the URL link to the individual listing. "
-                        "Also find the URL for the next page of results if one exists."
-                    ),
-                }],
+                formats=[
+                    "markdown",
+                    {
+                        "type": "json",
+                        "schema": CRESearchPageExtract.model_json_schema(),
+                        "prompt": (
+                            "Extract ALL commercial real estate property listing cards "
+                            "from this search results page. For each listing card, extract: "
+                            "title, full address, city, state, property type, asking price "
+                            "(as a number), square footage (as a number), lot size in acres "
+                            "(as a number), and the URL link to the individual listing. "
+                            "Also find the URL for the next page of results if one exists."
+                        ),
+                    },
+                ],
                 only_main_content=False,
                 timeout=120000,
             )
@@ -306,10 +309,12 @@ class FirecrawlScraperService:
 
             # Document model: result.json (dict with listings, total_results, next_page_url)
             extracted = _extract_json(result)
+            markdown_text = _extract_markdown(result)
             page_listings = extracted.get("listings", [])
 
             logger.info(f"Page {page_num + 1} result type: {type(result).__name__}")
-            logger.info(f"Page {page_num + 1} extracted keys: {list(extracted.keys()) if isinstance(extracted, dict) else type(extracted).__name__}")
+            logger.info(f"Page {page_num + 1} extracted: {extracted}")
+            logger.info(f"Page {page_num + 1} markdown preview ({len(markdown_text)} chars): {markdown_text[:500]}")
             logger.info(f"Page {page_num + 1} found {len(page_listings)} listing cards")
 
             if not page_listings:
