@@ -12,6 +12,7 @@ from app.api.routes import (
     traffic,
     feedback,
     activity_nodes,
+    scout,
 )
 
 api_router = APIRouter()
@@ -28,3 +29,4 @@ api_router.include_router(opportunities.router)
 api_router.include_router(traffic.router, prefix="/traffic", tags=["traffic"])
 api_router.include_router(feedback.router)
 api_router.include_router(activity_nodes.router)
+api_router.include_router(scout.router)

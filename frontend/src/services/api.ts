@@ -30,6 +30,11 @@ import type {
   CompetitorAccessResponse,
   ActivityNodeBoundsRequest,
   ActivityNodeBoundsResponse,
+  ScoutJob,
+  ScoutReport,
+  ScoutDecision,
+  ScoutDecisionCreate,
+  ScoutStats,
 } from '../types/store';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -571,6 +576,76 @@ export const activityNodesApi = {
     by_category: Record<string, { total: number; by_state: Record<string, number> }>;
   }> => {
     const { data } = await api.get('/activity-nodes/stats/');
+    return data;
+  },
+};
+
+// ============================================
+// SCOUT API (AI-Powered Site Analysis)
+// ============================================
+
+export const scoutApi = {
+  // --- Jobs ---
+  listJobs: async (params?: {
+    status?: string;
+    market?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ScoutJob[]> => {
+    const { data } = await api.get('/scout/jobs/', { params });
+    return data;
+  },
+
+  getJob: async (jobId: string): Promise<ScoutJob> => {
+    const { data } = await api.get(`/scout/jobs/${jobId}`);
+    return data;
+  },
+
+  createJob: async (job: {
+    id: string;
+    market: string;
+    config?: Record<string, unknown>;
+  }): Promise<ScoutJob> => {
+    const { data } = await api.post('/scout/jobs/', job);
+    return data;
+  },
+
+  // --- Reports ---
+  listReports: async (params?: {
+    job_id?: string;
+    min_confidence?: number;
+    market?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ScoutReport[]> => {
+    const { data } = await api.get('/scout/reports/', { params });
+    return data;
+  },
+
+  getReport: async (reportId: string): Promise<ScoutReport> => {
+    const { data } = await api.get(`/scout/reports/${reportId}`);
+    return data;
+  },
+
+  // --- Decisions ---
+  submitDecision: async (decision: ScoutDecisionCreate): Promise<ScoutDecision> => {
+    const { data } = await api.post('/scout/decisions/', decision);
+    return data;
+  },
+
+  listDecisions: async (params?: {
+    report_id?: string;
+    decision?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ScoutDecision[]> => {
+    const { data } = await api.get('/scout/decisions/', { params });
+    return data;
+  },
+
+  // --- Stats ---
+  getStats: async (): Promise<ScoutStats> => {
+    const { data } = await api.get('/scout/stats/');
     return data;
   },
 };

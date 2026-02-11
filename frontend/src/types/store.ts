@@ -741,3 +741,87 @@ export interface CompetitorAccessResponse {
   profile: string;
   analysis_timestamp: string;
 }
+
+// =============================================================================
+// SCOUT Types (AI-Powered Site Analysis)
+// =============================================================================
+
+export type ScoutJobStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type ScoutDecisionType = 'approved' | 'rejected' | 'flagged';
+export type ScoutReportStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
+
+export interface ScoutJob {
+  id: string;
+  market: string;
+  status: ScoutJobStatus;
+  progress: number;
+  sites_total: number;
+  sites_completed: number;
+  config: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ScoutAgentFlag {
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+}
+
+export interface ScoutAgentDetail {
+  score: number;
+  label: string;
+  icon: string;
+  details: Record<string, string>;
+  strengths: string[];
+  flags: ScoutAgentFlag[];
+}
+
+export interface ScoutReport {
+  id: string;
+  job_id: string;
+  site_address: string;
+  market: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  confidence_score: number | null;
+  feasibility_score: number | null;
+  regulatory_score: number | null;
+  sentiment_score: number | null;
+  growth_score: number | null;
+  planning_score: number | null;
+  verification_score: number | null;
+  strengths: string[] | null;
+  flags: ScoutAgentFlag[] | null;
+  agent_details: Record<string, ScoutAgentDetail> | null;
+  created_at: string | null;
+  decision_status: ScoutReportStatus;
+}
+
+export interface ScoutDecision {
+  id: number;
+  report_id: string;
+  decision: ScoutDecisionType;
+  rejection_reason: string | null;
+  notes: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+}
+
+export interface ScoutDecisionCreate {
+  report_id: string;
+  decision: ScoutDecisionType;
+  rejection_reason?: string;
+  notes?: string;
+  decided_by?: string;
+}
+
+export interface ScoutStats {
+  total_reports: number;
+  total_jobs: number;
+  active_jobs: number;
+  avg_confidence: number | null;
+  approval_rate: number | null;
+  decisions_count: number;
+}

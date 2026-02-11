@@ -11,6 +11,7 @@ from app.api import api_router
 from app.models.store import Store
 from app.models.team_property import TeamProperty  # Ensure table is created
 from app.models.scraped_listing import ScrapedListing  # Ensure table is created
+from app.models.scout import ScoutJob, ScoutReport, ScoutDecision  # Ensure SCOUT tables created
 
 
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
@@ -75,6 +76,17 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Data directory not found: {data_dir}")
     except Exception as e:
         logger.error(f"Error during database seeding: {e}")
+    finally:
+        db.close()
+
+    # Seed SCOUT demo data if tables are empty
+    db = SessionLocal()
+    try:
+        from app.services.scout_seed import seed_scout_data
+        if seed_scout_data(db):
+            logger.info("SCOUT demo data seeded successfully")
+    except Exception as e:
+        logger.error(f"Error seeding SCOUT data: {e}")
     finally:
         db.close()
 
