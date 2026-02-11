@@ -312,10 +312,10 @@ class FirecrawlScraperService:
             markdown_text = _extract_markdown(result)
             page_listings = extracted.get("listings", [])
 
-            logger.info(f"Page {page_num + 1} result type: {type(result).__name__}")
-            logger.info(f"Page {page_num + 1} extracted: {extracted}")
-            logger.info(f"Page {page_num + 1} markdown preview ({len(markdown_text)} chars): {markdown_text[:500]}")
-            logger.info(f"Page {page_num + 1} found {len(page_listings)} listing cards")
+            logger.info(
+                f"Page {page_num + 1}: {len(page_listings)} listings extracted, "
+                f"total_results={extracted.get('total_results')}"
+            )
 
             if not page_listings:
                 logger.info(f"No listings found on page {page_num + 1} — stopping pagination")
