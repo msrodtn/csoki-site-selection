@@ -41,6 +41,18 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
 
+    # Auto-migrate: add transaction_type column if missing
+    from sqlalchemy import text, inspect
+    with engine.connect() as conn:
+        inspector = inspect(engine)
+        cols = [c["name"] for c in inspector.get_columns("scraped_listings")]
+        if "transaction_type" not in cols:
+            conn.execute(text(
+                "ALTER TABLE scraped_listings ADD COLUMN transaction_type VARCHAR(20)"
+            ))
+            conn.commit()
+            logger.info("Added transaction_type column to scraped_listings")
+
     # Auto-seed database and sync new stores from CSVs
     db = SessionLocal()
     try:
