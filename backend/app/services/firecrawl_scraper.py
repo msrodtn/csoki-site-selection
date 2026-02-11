@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 # Lazy import firecrawl — may not be installed
 FIRECRAWL_INSTALLED = False
 try:
-    from firecrawl import FirecrawlApp
+    from firecrawl import Firecrawl as FirecrawlClient
     FIRECRAWL_INSTALLED = True
 except ImportError:
-    FirecrawlApp = None
+    FirecrawlClient = None
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +158,7 @@ class FirecrawlScraperService:
             raise RuntimeError("firecrawl-py is not installed. Run: pip install firecrawl-py")
         if not settings.FIRECRAWL_API_KEY:
             raise RuntimeError("FIRECRAWL_API_KEY not configured")
-        self.client = FirecrawlApp(api_key=settings.FIRECRAWL_API_KEY)
+        self.client = FirecrawlClient(api_key=settings.FIRECRAWL_API_KEY)
         self.credit_tracker = credit_tracker
 
     # ----- Phase A: Single URL scrape ----- #
@@ -183,25 +183,24 @@ class FirecrawlScraperService:
 
         # Firecrawl SDK is synchronous — run in thread to avoid blocking FastAPI
         result = await asyncio.to_thread(
-            self.client.scrape_url,
+            self.client.scrape,
             url,
-            params={
-                "formats": ["extract", "markdown"],
-                "extract": {
+            formats=[
+                "markdown",
+                {
+                    "type": "json",
                     "schema": CREListingExtract.model_json_schema(),
-                    "prompt": (
-                        "Extract commercial real estate listing details from this page. "
-                        "Focus on: property address, price, square footage, lot size in acres, "
-                        "property type (retail/land/office/industrial), broker contact info, "
-                        "and property images. Return numeric values without formatting."
-                    ),
                 },
-            },
+            ],
+            only_main_content=False,
+            timeout=120000,
         )
 
         self.credit_tracker.spend(1)
 
-        extracted = result.get("extract", {}) if result else {}
+        # v4 SDK: structured data is under result["json"] or result.get("data",{}).get("json",{})
+        raw = result if isinstance(result, dict) else (result.data if hasattr(result, 'data') else {})
+        extracted = raw.get("json", {}) or raw.get("data", {}).get("json", {}) or {}
 
         return {
             "success": bool(extracted and any(extracted.values())),
@@ -211,7 +210,7 @@ class FirecrawlScraperService:
             "extraction_method": "firecrawl",
             "confidence": _calculate_confidence(extracted),
             "data": extracted,
-            "markdown": (result.get("markdown", "") if result else "")[:1000],
+            "markdown": (raw.get("markdown", "") if raw else "")[:1000],
         }
 
     # ----- Phase B: Area search ----- #
@@ -278,28 +277,26 @@ class FirecrawlScraperService:
             logger.info(f"Scraping {source} search page {page_num + 1}: {current_url}")
 
             result = await asyncio.to_thread(
-                self.client.scrape_url,
+                self.client.scrape,
                 current_url,
-                params={
-                    "formats": ["extract"],
-                    "extract": {
-                        "schema": CRESearchPageExtract.model_json_schema(),
-                        "prompt": (
-                            "Extract ALL commercial real estate property listing cards "
-                            "from this search results page. For each listing card, extract: "
-                            "title, full address, city, state, property type, asking price "
-                            "(as a number), square footage (as a number), lot size in acres "
-                            "(as a number), and the URL link to the individual listing. "
-                            "Also find the URL for the next page of results if one exists."
-                        ),
-                    },
-                },
+                formats=[{
+                    "type": "json",
+                    "schema": CRESearchPageExtract.model_json_schema(),
+                }],
+                only_main_content=False,
+                timeout=120000,
             )
 
             self.credit_tracker.spend(1)
 
-            extracted = result.get("extract", {}) if result else {}
+            # v4 SDK response: result["json"] or result.data["json"]
+            raw = result if isinstance(result, dict) else (result.data if hasattr(result, 'data') else {})
+            extracted = raw.get("json", {}) or raw.get("data", {}).get("json", {}) or {}
             page_listings = extracted.get("listings", [])
+
+            logger.info(f"Page {page_num + 1} raw keys: {list(raw.keys()) if isinstance(raw, dict) else 'non-dict'}")
+            logger.info(f"Page {page_num + 1} extracted keys: {list(extracted.keys()) if isinstance(extracted, dict) else 'non-dict'}")
+            logger.info(f"Page {page_num + 1} found {len(page_listings)} listing cards")
 
             if not page_listings:
                 logger.info(f"No listings found on page {page_num + 1} — stopping pagination")
