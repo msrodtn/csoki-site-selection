@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     CENSUS_API_KEY: Optional[str] = None
     FIRECRAWL_API_KEY: Optional[str] = None
     FIRECRAWL_MONTHLY_BUDGET: int = 400  # free tier = 500, leave 100 buffer
+    MISSION_CONTROL_API_KEY: Optional[str] = None  # For Mission Control integration
 
     # Listing Scraper Credentials (for authenticated browser automation)
     CREXI_USERNAME: Optional[str] = None  # Also accepts CREXI_EMAIL

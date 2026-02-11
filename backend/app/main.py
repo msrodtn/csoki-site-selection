@@ -12,6 +12,7 @@ from app.models.store import Store
 from app.models.team_property import TeamProperty  # Ensure table is created
 from app.models.scraped_listing import ScrapedListing  # Ensure table is created
 from app.models.scout import ScoutJob, ScoutReport, ScoutDecision  # Ensure SCOUT tables created
+from app.models.analysis_job import AnalysisJob  # Ensure table is created
 
 
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
