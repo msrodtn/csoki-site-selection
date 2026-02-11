@@ -22,6 +22,7 @@ interface PulsingOpportunityMarkerProps {
   isSelected: boolean;
   zoom: number;
   onClick: (e: MarkerEvent<MouseEvent>) => void;
+  onSelect?: (opportunity: OpportunityRanking) => void;
 }
 
 export function PulsingOpportunityMarker({
@@ -29,6 +30,7 @@ export function PulsingOpportunityMarker({
   isSelected,
   zoom,
   onClick,
+  onSelect,
 }: PulsingOpportunityMarkerProps) {
   const prop = opportunity.property;
   if (!prop.latitude || !prop.longitude) return null;
@@ -52,6 +54,12 @@ export function PulsingOpportunityMarker({
           transform: isSelected ? 'scale(1.3)' : 'scale(1)',
           width: size,
           height: size,
+          pointerEvents: 'auto',
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onSelect?.(opportunity);
         }}
       >
         {/* Pulsing ring for top-ranked opportunities */}

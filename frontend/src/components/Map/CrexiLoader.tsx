@@ -266,7 +266,7 @@ export const CrexiLoader: React.FC<CrexiLoaderProps> = ({ onClose, onSuccess }) 
                   )}
                 </button>
                 <p className="text-xs text-gray-400 text-center">
-                  Estimated cost: ~6-12 credits per search (3 sources x sale+lease, 24hr cache)
+                  Estimated cost: ~4 credits per search (3 sources, 24hr cache)
                 </p>
               </div>
             </>

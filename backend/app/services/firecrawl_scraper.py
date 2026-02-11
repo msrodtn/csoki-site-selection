@@ -346,7 +346,10 @@ class FirecrawlScraperService:
                         external_id = listing_url.split("?")[0].rstrip("/").split("/")[-1] or None
 
                 # Determine transaction type: prefer AI-extracted, fallback to URL-based
-                txn = listing_data.get("transaction_type") or default_transaction_type
+                # For "mixed" sources (CommercialCafe, Rofo), rely on AI extraction
+                txn = listing_data.get("transaction_type")
+                if not txn or txn == "mixed":
+                    txn = default_transaction_type if default_transaction_type != "mixed" else None
 
                 listings.append({
                     "success": True,
@@ -610,16 +613,18 @@ def _build_search_urls(source: str, city: str, state: str) -> List[Tuple[str, st
             (f"{base}/for-lease/", "lease"),
         ]
     elif source == "commercialcafe":
-        base = f"https://www.commercialcafe.com"
+        # CommercialCafe shows both sale & lease on one page
+        # Correct URL: /commercial-real-estate/us/{state}/{city}/
         return [
-            (f"{base}/commercial-real-estate-for-sale/{state_slug}/{city_slug}/", "sale"),
-            (f"{base}/commercial-real-estate-for-lease/{state_slug}/{city_slug}/", "lease"),
+            (f"https://www.commercialcafe.com/commercial-real-estate/us/{state_slug}/{city_slug}/", "mixed"),
         ]
     elif source == "rofo":
-        base = f"https://www.rofo.com"
+        # Rofo uses uppercase state + title-case city
+        # Correct URL: /commercial-real-estate/{STATE}/{City}
+        state_upper = state.upper()[:2] if len(state) >= 2 else state.upper()
+        city_title = city.title().replace(" ", "-")
         return [
-            (f"{base}/for-sale/{state_slug}/{city_slug}/", "sale"),
-            (f"{base}/for-lease/{state_slug}/{city_slug}/", "lease"),
+            (f"https://www.rofo.com/commercial-real-estate/{state_upper}/{city_title}", "mixed"),
         ]
     return []
 

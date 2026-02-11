@@ -726,6 +726,7 @@ export function MapboxMap() {
   const [opportunities, setOpportunities] = useState<OpportunityRanking[]>([]);
   const [isLoadingOpportunities, setIsLoadingOpportunities] = useState(false);
   const [selectedOpportunity, setSelectedOpportunity] = useState<OpportunityRanking | null>(null);
+  const opportunityClickedRef = useRef(false);
 
   // Traffic counts hover state
   const [hoveredTraffic, setHoveredTraffic] = useState<{
@@ -1129,6 +1130,12 @@ export function MapboxMap() {
 
   // Handle map click
   const handleMapClick = useCallback(async (e: mapboxgl.MapMouseEvent) => {
+    // Skip if an opportunity marker was just clicked (ref set by PulsingOpportunityMarker)
+    if (opportunityClickedRef.current) {
+      opportunityClickedRef.current = false;
+      return;
+    }
+
     // Measurement mode intercept — read directly from store to avoid stale closures
     // (@vis.gl/react-mapbox may not re-register the onClick handler on every render)
     const storeState = useMapStore.getState();
@@ -1169,6 +1176,7 @@ export function MapboxMap() {
     setSelectedPOI(null);
     setSelectedProperty(null);
     setSelectedTeamProperty(null);
+    setSelectedOpportunity(null);
 
     // Get click coordinates
     if (!e.lngLat) return;
@@ -2608,7 +2616,14 @@ export function MapboxMap() {
             zoom={viewState.zoom}
             onClick={(e: MarkerEvent<MouseEvent>) => {
               e.originalEvent.stopPropagation();
+              opportunityClickedRef.current = true;
               setSelectedOpportunity(opp);
+              setSelectedProperty(null);
+              setSelectedTeamProperty(null);
+            }}
+            onSelect={(selected) => {
+              opportunityClickedRef.current = true;
+              setSelectedOpportunity(selected);
               setSelectedProperty(null);
               setSelectedTeamProperty(null);
             }}
