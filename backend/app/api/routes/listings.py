@@ -127,49 +127,84 @@ async def _run_scrape(
     property_types: list[str],
     db: Session
 ):
-    """Background task to run the scrape."""
+    """Background task to run the scrape via Firecrawl (or Playwright fallback)."""
     try:
         _active_scrapes[job_id]["status"] = "running"
         logger.info(f"Starting scrape job {job_id} for {city}, {state}")
 
-        service = ListingScraperService()
-        results = await service.search_all(
-            city=city,
-            state=state,
-            property_types=property_types,
-            sources=sources,
-            headless=True
-        )
-
-        # Save results to database
         total_saved = 0
-        for source, properties in results.items():
-            for prop in properties:
-                # Check if listing already exists
-                existing = db.query(ScrapedListing).filter(
-                    ScrapedListing.source == prop.source,
-                    ScrapedListing.external_id == prop.external_id
-                ).first() if prop.external_id else None
+        source_counts = {}
+
+        if FIRECRAWL_AVAILABLE:
+            # Use Firecrawl (primary)
+            service = FirecrawlScraperService()
+            results = await service.search_area(
+                city=city, state=state, sources=sources
+            )
+
+            # Filter through existing criteria and save
+            for result in results:
+                listing_data = firecrawl_result_to_scraped_listing(result, city, state)
+
+                # Geocode if missing coordinates
+                listing_data = await backfill_coordinates(listing_data)
+
+                # Skip listings without coordinates
+                if not listing_data.get("latitude") or not listing_data.get("longitude"):
+                    continue
+
+                source_name = listing_data.get("source", "unknown")
+                source_counts[source_name] = source_counts.get(source_name, 0) + 1
+
+                # Upsert to database
+                external_id = listing_data.get("external_id")
+                existing = None
+                if external_id:
+                    existing = db.query(ScrapedListing).filter(
+                        ScrapedListing.source == source_name,
+                        ScrapedListing.external_id == external_id
+                    ).first()
 
                 if existing:
-                    # Update existing listing
-                    for key, value in _property_to_db(prop, city, state).items():
+                    for key, value in listing_data.items():
                         if value is not None:
                             setattr(existing, key, value)
                     existing.last_verified = datetime.utcnow()
                 else:
-                    # Create new listing
-                    new_listing = ScrapedListing(**_property_to_db(prop, city, state))
+                    new_listing = ScrapedListing(**listing_data)
                     db.add(new_listing)
                     total_saved += 1
 
             db.commit()
+        else:
+            # Fallback to Playwright (legacy)
+            service = ListingScraperService()
+            results = await service.search_all(
+                city=city, state=state, property_types=property_types,
+                sources=sources, headless=True
+            )
+            for source, properties in results.items():
+                source_counts[source] = len(properties)
+                for prop in properties:
+                    existing = db.query(ScrapedListing).filter(
+                        ScrapedListing.source == prop.source,
+                        ScrapedListing.external_id == prop.external_id
+                    ).first() if prop.external_id else None
+                    if existing:
+                        for key, value in _property_to_db(prop, city, state).items():
+                            if value is not None:
+                                setattr(existing, key, value)
+                        existing.last_verified = datetime.utcnow()
+                    else:
+                        new_listing = ScrapedListing(**_property_to_db(prop, city, state))
+                        db.add(new_listing)
+                        total_saved += 1
+                db.commit()
 
         _active_scrapes[job_id]["status"] = "completed"
-        _active_scrapes[job_id]["results"] = {
-            source: len(props) for source, props in results.items()
-        }
+        _active_scrapes[job_id]["results"] = source_counts
         _active_scrapes[job_id]["total_saved"] = total_saved
+        _active_scrapes[job_id]["method"] = "firecrawl" if FIRECRAWL_AVAILABLE else "playwright"
         logger.info(f"Scrape job {job_id} completed: {total_saved} new listings saved")
 
     except Exception as e:
@@ -193,21 +228,23 @@ async def trigger_scrape(
     Results are cached in the database and can be retrieved via
     GET /listings/search endpoint.
     """
-    # Check if credentials are configured
-    has_crexi = bool(settings.CREXI_USERNAME and settings.CREXI_PASSWORD)
-    has_loopnet = bool(settings.LOOPNET_USERNAME and settings.LOOPNET_PASSWORD)
+    # Check if any scraping method is available
+    if not FIRECRAWL_AVAILABLE:
+        # Fall back to credential check for Playwright
+        has_crexi = bool(settings.crexi_username and settings.CREXI_PASSWORD)
+        has_loopnet = bool(settings.LOOPNET_USERNAME and settings.LOOPNET_PASSWORD)
 
-    if 'crexi' in request.sources and not has_crexi:
-        raise HTTPException(
-            status_code=400,
-            detail="Crexi credentials not configured. Set CREXI_USERNAME and CREXI_PASSWORD."
-        )
+        if 'crexi' in request.sources and not has_crexi:
+            raise HTTPException(
+                status_code=400,
+                detail="Neither Firecrawl nor Crexi credentials configured. Set FIRECRAWL_API_KEY or CREXI_USERNAME/CREXI_PASSWORD."
+            )
 
-    if 'loopnet' in request.sources and not has_loopnet:
-        raise HTTPException(
-            status_code=400,
-            detail="LoopNet credentials not configured. Set LOOPNET_USERNAME and LOOPNET_PASSWORD."
-        )
+        if 'loopnet' in request.sources and not has_loopnet:
+            raise HTTPException(
+                status_code=400,
+                detail="Neither Firecrawl nor LoopNet credentials configured. Set FIRECRAWL_API_KEY or LOOPNET_USERNAME/LOOPNET_PASSWORD."
+            )
 
     # Check for recent cache unless force_refresh
     if not request.force_refresh:
@@ -458,18 +495,20 @@ async def get_configured_sources():
 @router.get("/diagnostics")
 async def get_diagnostics():
     """
-    Check Crexi automation status and dependencies.
+    Check scraping service status and dependencies.
 
-    Use this endpoint to debug Playwright/Crexi issues.
-    Returns detailed status about:
-    - Playwright availability
-    - Crexi credentials configuration
-    - Crexi automation module status
+    Returns status for Firecrawl (primary) and Playwright (legacy fallback).
     """
     diagnostics = {
+        "firecrawl": {
+            "available": FIRECRAWL_AVAILABLE,
+            "error": FIRECRAWL_ERROR,
+            "credits": credit_tracker.status() if FIRECRAWL_AVAILABLE else None,
+        },
         "playwright": {
             "available": PLAYWRIGHT_AVAILABLE,
             "error": PLAYWRIGHT_ERROR,
+            "note": "Legacy fallback — being replaced by Firecrawl",
         },
         "crexi": {
             "automation_loaded": CREXI_AVAILABLE,
@@ -479,40 +518,42 @@ async def get_diagnostics():
                 "password_set": bool(settings.CREXI_PASSWORD),
             }
         },
-        "loopnet": {
-            "credentials": {
-                "username_set": bool(settings.LOOPNET_USERNAME),
-                "password_set": bool(settings.LOOPNET_PASSWORD),
-            }
+        "csv_upload": {
+            "available": True,
+            "note": "Always available as fallback",
         },
         "recommendations": []
     }
 
     # Generate recommendations
-    if not PLAYWRIGHT_AVAILABLE:
+    if not FIRECRAWL_AVAILABLE:
         diagnostics["recommendations"].append(
-            "Install Playwright: pip install playwright && playwright install chromium"
+            "Set FIRECRAWL_API_KEY environment variable for automated scraping"
         )
 
-    if not settings.crexi_username:
+    if FIRECRAWL_AVAILABLE and credit_tracker.remaining < 50:
         diagnostics["recommendations"].append(
-            "Set CREXI_USERNAME or CREXI_EMAIL environment variable"
-        )
-
-    if not settings.CREXI_PASSWORD:
-        diagnostics["recommendations"].append(
-            "Set CREXI_PASSWORD environment variable"
-        )
-
-    if PLAYWRIGHT_AVAILABLE and settings.crexi_username and settings.CREXI_PASSWORD and not CREXI_AVAILABLE:
-        diagnostics["recommendations"].append(
-            f"Crexi module failed to load despite dependencies being present. Error: {CREXI_ERROR_MESSAGE}"
+            f"Low Firecrawl credits: {credit_tracker.remaining} remaining this month"
         )
 
     if not diagnostics["recommendations"]:
         diagnostics["recommendations"].append("All systems operational!")
 
     return diagnostics
+
+
+@router.get("/firecrawl-status")
+async def get_firecrawl_status():
+    """Get Firecrawl API credit usage and availability."""
+    if not FIRECRAWL_AVAILABLE:
+        return {
+            "available": False,
+            "error": FIRECRAWL_ERROR,
+        }
+    return {
+        "available": True,
+        **credit_tracker.status(),
+    }
 
 
 @router.delete("/{listing_id}")
@@ -537,42 +578,64 @@ async def deactivate_listing(
 
 from app.services.url_import import import_from_url, ListingData
 
-# Lazy-load Crexi automation to prevent startup failures if Playwright unavailable
+# ---------------------------------------------------------------------------
+# Lazy-load scrapers to prevent startup failures if dependencies unavailable
+# ---------------------------------------------------------------------------
+
+# Firecrawl (primary scraping method)
+FIRECRAWL_AVAILABLE = False
+FIRECRAWL_ERROR = None
+try:
+    from app.services.firecrawl_scraper import (
+        FirecrawlScraperService,
+        FirecrawlBudgetExceeded,
+        firecrawl_result_to_scraped_listing,
+        firecrawl_to_crexi_listing,
+        backfill_coordinates,
+        credit_tracker,
+        is_firecrawl_available,
+    )
+    if settings.FIRECRAWL_API_KEY and settings.FIRECRAWL_API_KEY.strip():
+        FIRECRAWL_AVAILABLE = True
+        logger.info("Firecrawl service available")
+    else:
+        FIRECRAWL_ERROR = "FIRECRAWL_API_KEY not configured"
+        logger.warning(FIRECRAWL_ERROR)
+except ImportError as e:
+    FIRECRAWL_ERROR = f"firecrawl-py not installed: {e}"
+    logger.warning(FIRECRAWL_ERROR)
+except Exception as e:
+    FIRECRAWL_ERROR = f"Firecrawl import error: {type(e).__name__}: {e}"
+    logger.warning(FIRECRAWL_ERROR)
+
+# Playwright / Crexi automation (legacy fallback)
 CREXI_AVAILABLE = False
 CREXI_ERROR_MESSAGE = None
 PLAYWRIGHT_AVAILABLE = False
 PLAYWRIGHT_ERROR = None
 
-# Check Playwright first
 try:
     from playwright.async_api import async_playwright
     PLAYWRIGHT_AVAILABLE = True
-    logger.info("Playwright async API available")
 except ImportError as e:
     PLAYWRIGHT_ERROR = f"Playwright not installed: {e}"
-    logger.warning(PLAYWRIGHT_ERROR)
 except Exception as e:
     PLAYWRIGHT_ERROR = f"Playwright import error: {type(e).__name__}: {e}"
-    logger.warning(PLAYWRIGHT_ERROR)
 
-# Then check Crexi automation
 try:
-    from app.services.crexi_automation import fetch_crexi_area, CrexiAutomationError
+    from app.services.crexi_automation import fetch_crexi_area as _playwright_fetch_crexi_area, CrexiAutomationError
     CREXI_AVAILABLE = True
-    logger.info("Crexi automation module loaded successfully")
 except ImportError as e:
     CREXI_ERROR_MESSAGE = f"Crexi module import failed: {e}"
-    logger.error(CREXI_ERROR_MESSAGE)
 except Exception as e:
     CREXI_ERROR_MESSAGE = f"Crexi automation error: {type(e).__name__}: {e}"
-    logger.error(CREXI_ERROR_MESSAGE)
 
 # Stub classes for type safety when not available
 if not CREXI_AVAILABLE:
     class CrexiAutomationError(Exception):
         pass
 
-    async def fetch_crexi_area(*args, **kwargs):
+    async def _playwright_fetch_crexi_area(*args, **kwargs):
         error_msg = CREXI_ERROR_MESSAGE or "Crexi automation not available"
         raise CrexiAutomationError(error_msg)
 
@@ -655,13 +718,62 @@ async def import_listing_from_url(
     - 0-39: Failed extraction, manual entry recommended
     """
     try:
-        # Extract data from URL
         logger.info(f"Importing listing from URL: {request.url}")
-        listing_data: ListingData = await import_from_url(
-            url=request.url,
-            use_playwright=request.use_playwright
-        )
-        
+
+        # Try Firecrawl first (primary), then fall back to HTTP extraction
+        listing_data = None
+        if FIRECRAWL_AVAILABLE:
+            try:
+                service = FirecrawlScraperService()
+                fc_result = await service.scrape_single_url(request.url)
+
+                if fc_result.get("success"):
+                    # Geocode if missing coordinates
+                    data = fc_result.get("data", {})
+                    if not (data.get("latitude") and data.get("longitude")):
+                        data = await backfill_coordinates(data)
+                        fc_result["data"] = data
+
+                    listing_data = ListingData(
+                        success=True,
+                        source=fc_result.get("source", "unknown"),
+                        external_id=fc_result.get("external_id"),
+                        listing_url=fc_result.get("listing_url", request.url),
+                        address=data.get("address"),
+                        city=data.get("city"),
+                        state=data.get("state"),
+                        postal_code=data.get("postal_code"),
+                        latitude=data.get("latitude"),
+                        longitude=data.get("longitude"),
+                        property_type=data.get("property_type"),
+                        price=data.get("price"),
+                        price_display=data.get("price_display"),
+                        sqft=data.get("sqft"),
+                        lot_size_acres=data.get("lot_size_acres"),
+                        year_built=data.get("year_built"),
+                        title=data.get("title"),
+                        description=data.get("description"),
+                        broker_name=data.get("broker_name"),
+                        broker_company=data.get("broker_company"),
+                        broker_phone=data.get("broker_phone"),
+                        broker_email=data.get("broker_email"),
+                        images=data.get("images", []),
+                        confidence=fc_result.get("confidence", 0.0),
+                        extraction_method="firecrawl",
+                    )
+                    logger.info(f"Firecrawl extraction successful (confidence: {listing_data.confidence})")
+            except FirecrawlBudgetExceeded:
+                logger.warning("Firecrawl budget exceeded — falling back to HTTP extraction")
+            except Exception as e:
+                logger.warning(f"Firecrawl extraction failed — falling back to HTTP: {e}")
+
+        # Fallback to existing HTTP/Playwright extraction
+        if listing_data is None:
+            listing_data = await import_from_url(
+                url=request.url,
+                use_playwright=request.use_playwright
+            )
+
         # Prepare response
         response = URLImportResponse(
             success=listing_data.success,
@@ -930,17 +1042,17 @@ async def fetch_crexi_area_endpoint(
     
     **Performance:** ~30-90 seconds for fresh export, <1 second for cached.
     """
-    # Check if Crexi automation is available
-    if not CREXI_AVAILABLE:
+    # Check if any scraping method is available
+    if not FIRECRAWL_AVAILABLE and not CREXI_AVAILABLE:
         raise HTTPException(
             status_code=503,
-            detail="Crexi automation is temporarily unavailable. The platform may not have Playwright installed."
+            detail="No scraping method available. Configure FIRECRAWL_API_KEY or Playwright + Crexi credentials."
         )
-    
+
     try:
         # Check for cached data
         cache_cutoff = datetime.utcnow() - timedelta(hours=24)
-        
+
         # Parse location
         if "," in request.location:
             search_city = request.location.split(",")[0].strip()
@@ -948,33 +1060,31 @@ async def fetch_crexi_area_endpoint(
         else:
             search_city = request.location
             search_state = None
-        
+
         if not request.force_refresh:
-            # Check for recent cache
+            # Check for recent cache (any source — Firecrawl results also have source="crexi")
             cache_query = db.query(ScrapedListing).filter(
-                ScrapedListing.source == "crexi",
                 ScrapedListing.search_city == search_city,
-                ScrapedListing.scraped_at > cache_cutoff
+                ScrapedListing.scraped_at > cache_cutoff,
+                ScrapedListing.is_active == True,
             )
-            
+
             if search_state:
                 cache_query = cache_query.filter(ScrapedListing.search_state == search_state.upper())
-            
+
             cached_listings = cache_query.all()
-            
+
             if cached_listings:
-                # Return cached data
                 oldest = min(l.scraped_at for l in cached_listings)
                 cache_age = int((datetime.utcnow() - oldest).total_seconds() / 60)
-                
-                # Count by category
-                empty_land = sum(1 for l in cached_listings 
+
+                empty_land = sum(1 for l in cached_listings
                                if l.raw_data and l.raw_data.get('match_category') == 'empty_land')
-                small_building = sum(1 for l in cached_listings 
+                small_building = sum(1 for l in cached_listings
                                    if l.raw_data and l.raw_data.get('match_category') == 'small_building')
-                
+
                 expires_at = oldest + timedelta(hours=24)
-                
+
                 return CrexiAreaResponse(
                     success=True,
                     imported=0,
@@ -989,46 +1099,109 @@ async def fetch_crexi_area_endpoint(
                     location=request.location,
                     message=f"Using {len(cached_listings)} cached listings from {cache_age} minutes ago"
                 )
-        
-        # No cache or force refresh - trigger automation
-        logger.info(f"Starting Crexi automation for: {request.location}")
-        
-        # Run automation
-        csv_path, import_result = await fetch_crexi_area(
-            location=request.location,
-            property_types=request.property_types,
-            db=db
-        )
-        
-        # Return result
-        expires_at = import_result.timestamp + timedelta(hours=24)
-        
-        return CrexiAreaResponse(
-            success=True,
-            imported=import_result.total_imported,
-            updated=import_result.total_updated,
-            total_filtered=import_result.total_filtered,
-            empty_land_count=import_result.empty_land_count,
-            small_building_count=import_result.small_building_count,
-            cached=False,
-            cache_age_minutes=0,
-            timestamp=import_result.timestamp.isoformat(),
-            expires_at=expires_at.isoformat(),
-            location=request.location,
-            message=f"Imported {import_result.total_imported} new listings from Crexi"
-        )
-        
-    except CrexiAutomationError as e:
-        logger.error(f"Crexi automation failed: {e}")
+
+        # No cache or force refresh — scrape fresh data
+        if FIRECRAWL_AVAILABLE:
+            # Primary: Firecrawl area search
+            logger.info(f"Starting Firecrawl area search for: {request.location}")
+
+            service = FirecrawlScraperService()
+            results = await service.search_area(
+                city=search_city,
+                state=search_state or "",
+                sources=["crexi", "loopnet"],
+            )
+
+            # Convert to CrexiListing objects for filtering
+            crexi_listings = []
+            for result in results:
+                cl = firecrawl_to_crexi_listing(result)
+                # Backfill coordinates
+                data = result.get("data", {})
+                if not (data.get("latitude") and data.get("longitude")):
+                    data = await backfill_coordinates(data)
+                    cl.latitude = data.get("latitude")
+                    cl.longitude = data.get("longitude")
+                crexi_listings.append(cl)
+
+            # Apply existing filtering criteria
+            filtered, stats = filter_opportunities(crexi_listings)
+
+            # Import filtered listings to database
+            if filtered:
+                import_result = import_to_database(filtered, request.location, db)
+            else:
+                from app.services.crexi_parser import ImportResult
+                import_result = ImportResult(
+                    total_parsed=len(crexi_listings),
+                    total_filtered=0,
+                    total_imported=0,
+                    total_updated=0,
+                    total_skipped=len(crexi_listings),
+                    empty_land_count=0,
+                    small_building_count=0,
+                    location=request.location,
+                    timestamp=datetime.utcnow(),
+                )
+
+            expires_at = import_result.timestamp + timedelta(hours=24)
+
+            return CrexiAreaResponse(
+                success=True,
+                imported=import_result.total_imported,
+                updated=import_result.total_updated,
+                total_filtered=import_result.total_filtered,
+                empty_land_count=import_result.empty_land_count,
+                small_building_count=import_result.small_building_count,
+                cached=False,
+                cache_age_minutes=0,
+                timestamp=import_result.timestamp.isoformat(),
+                expires_at=expires_at.isoformat(),
+                location=request.location,
+                message=(
+                    f"Firecrawl scraped {len(results)} listings from Crexi+LoopNet, "
+                    f"{import_result.total_filtered} match criteria. "
+                    f"Imported {import_result.total_imported} new, updated {import_result.total_updated}. "
+                    f"Credits used: ~{len(results) // 20 + 2}"
+                ),
+            )
+
+        else:
+            # Fallback: Playwright automation
+            logger.info(f"Starting Playwright automation for: {request.location}")
+            csv_path, import_result = await _playwright_fetch_crexi_area(
+                location=request.location,
+                property_types=request.property_types,
+                db=db
+            )
+
+            expires_at = import_result.timestamp + timedelta(hours=24)
+            return CrexiAreaResponse(
+                success=True,
+                imported=import_result.total_imported,
+                updated=import_result.total_updated,
+                total_filtered=import_result.total_filtered,
+                empty_land_count=import_result.empty_land_count,
+                small_building_count=import_result.small_building_count,
+                cached=False,
+                cache_age_minutes=0,
+                timestamp=import_result.timestamp.isoformat(),
+                expires_at=expires_at.isoformat(),
+                location=request.location,
+                message=f"Imported {import_result.total_imported} new listings via Playwright"
+            )
+
+    except (CrexiAutomationError, FirecrawlBudgetExceeded) as e:
+        logger.error(f"Area fetch failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Crexi automation failed: {str(e)}"
+            detail=f"Area fetch failed: {str(e)}"
         )
     except Exception as e:
         logger.error(f"Unexpected error in fetch_crexi_area: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch Crexi data: {str(e)}"
+            detail=f"Failed to fetch data: {str(e)}"
         )
 
 
@@ -1132,3 +1305,106 @@ async def upload_crexi_csv(
         raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
     finally:
         os.unlink(tmp.name)
+
+
+# ============================================================================
+# Automated Market Refresh (Firecrawl bulk scraping)
+# ============================================================================
+
+# Target market cities for automated scraping
+TARGET_MARKET_CITIES = [
+    ("Des Moines", "IA"), ("Cedar Rapids", "IA"), ("Davenport", "IA"), ("Iowa City", "IA"),
+    ("Omaha", "NE"), ("Lincoln", "NE"), ("Grand Island", "NE"),
+    ("Las Vegas", "NV"), ("Reno", "NV"), ("Henderson", "NV"),
+    ("Boise", "ID"), ("Meridian", "ID"), ("Nampa", "ID"),
+]
+
+
+class RefreshAllMarketsResponse(BaseModel):
+    """Response from refresh-all-markets endpoint."""
+    success: bool
+    total_cities: int
+    cities_scraped: int
+    cities_cached: int
+    cities_failed: int
+    total_listings_imported: int
+    total_listings_updated: int
+    credits_used_estimate: int
+    results: List[Dict]
+
+
+@router.post("/refresh-all-markets", response_model=RefreshAllMarketsResponse)
+async def refresh_all_markets(
+    force_refresh: bool = False,
+    db: Session = Depends(get_db),
+):
+    """
+    Scrape Crexi + LoopNet for ALL target market cities.
+
+    Iterates through all target cities (IA, NE, NV, ID) and scrapes
+    search results from both platforms. Each city checks the 24hr cache
+    first — only scrapes if data is stale.
+
+    Estimated credits: ~78 total (13 cities x 2 platforms x ~3 pages).
+    """
+    if not FIRECRAWL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Firecrawl not configured. Set FIRECRAWL_API_KEY to enable automated scraping."
+        )
+
+    results = []
+    cities_scraped = 0
+    cities_cached = 0
+    cities_failed = 0
+    total_imported = 0
+    total_updated = 0
+    credits_before = credit_tracker.credits_used
+
+    for city, state in TARGET_MARKET_CITIES:
+        location = f"{city}, {state}"
+        try:
+            # Use the existing fetch endpoint logic
+            area_request = CrexiAreaRequest(
+                location=location,
+                force_refresh=force_refresh,
+            )
+            response = await fetch_crexi_area_endpoint(area_request, db)
+
+            if response.cached:
+                cities_cached += 1
+            else:
+                cities_scraped += 1
+                total_imported += response.imported
+                total_updated += response.updated
+
+            results.append({
+                "location": location,
+                "status": "cached" if response.cached else "scraped",
+                "imported": response.imported,
+                "updated": response.updated,
+                "total_filtered": response.total_filtered,
+            })
+
+        except Exception as e:
+            cities_failed += 1
+            logger.error(f"Failed to refresh {location}: {e}")
+            results.append({
+                "location": location,
+                "status": "failed",
+                "error": str(e),
+            })
+
+    credits_used = credit_tracker.credits_used - credits_before
+
+    return RefreshAllMarketsResponse(
+        success=cities_failed < len(TARGET_MARKET_CITIES),
+        total_cities=len(TARGET_MARKET_CITIES),
+        cities_scraped=cities_scraped,
+        cities_cached=cities_cached,
+        cities_failed=cities_failed,
+        total_listings_imported=total_imported,
+        total_listings_updated=total_updated,
+        credits_used_estimate=credits_used,
+        results=results,
+    )

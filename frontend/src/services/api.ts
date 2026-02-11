@@ -458,6 +458,41 @@ export const listingsApi = {
     return data;
   },
 
+  // Get Firecrawl API credit usage and availability
+  getFirecrawlStatus: async (): Promise<{
+    available: boolean;
+    credits_used?: number;
+    credits_remaining?: number;
+    monthly_budget?: number;
+    error?: string;
+  }> => {
+    const { data } = await api.get('/listings/firecrawl-status');
+    return data;
+  },
+
+  // Refresh all target markets via Firecrawl automated scraping
+  refreshAllMarkets: async (forceRefresh: boolean = false): Promise<{
+    success: boolean;
+    total_cities: number;
+    cities_scraped: number;
+    cities_cached: number;
+    cities_failed: number;
+    total_listings_imported: number;
+    total_listings_updated: number;
+    credits_used_estimate: number;
+    results: Array<{
+      location: string;
+      status: string;
+      imported?: number;
+      updated?: number;
+      total_filtered?: number;
+      error?: string;
+    }>;
+  }> => {
+    const { data } = await api.post(`/listings/refresh-all-markets?force_refresh=${forceRefresh}`);
+    return data;
+  },
+
   // Upload a Crexi CSV/Excel export for parsing and import
   uploadCrexiCSV: async (file: File): Promise<{
     success: boolean;

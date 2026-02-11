@@ -30,8 +30,11 @@ tavily-python==0.3.9
 beautifulsoup4==4.12.3
 lxml==5.1.0
 
-# Browser Automation (for Crexi listing automation)
+# Browser Automation (for Crexi listing automation - legacy)
 playwright==1.41.0
+
+# Web scraping API (replaces Playwright for CRE listing extraction)
+firecrawl-py>=1.0.0
 
 # Testing
 pytest==7.4.4
