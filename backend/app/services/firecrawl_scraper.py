@@ -182,6 +182,7 @@ class FirecrawlScraperService:
             external_id = extract_loopnet_id(url)
 
         # Firecrawl SDK is synchronous — run in thread to avoid blocking FastAPI
+        # v4 SDK: .scrape() returns a Document pydantic model with .json, .markdown, etc.
         result = await asyncio.to_thread(
             self.client.scrape,
             url,
@@ -190,6 +191,12 @@ class FirecrawlScraperService:
                 {
                     "type": "json",
                     "schema": CREListingExtract.model_json_schema(),
+                    "prompt": (
+                        "Extract commercial real estate listing details from this page. "
+                        "Focus on: property address, price, square footage, lot size in acres, "
+                        "property type (retail/land/office/industrial), broker contact info. "
+                        "Return numeric values without formatting."
+                    ),
                 },
             ],
             only_main_content=False,
@@ -198,9 +205,9 @@ class FirecrawlScraperService:
 
         self.credit_tracker.spend(1)
 
-        # v4 SDK: structured data is under result["json"] or result.get("data",{}).get("json",{})
-        raw = result if isinstance(result, dict) else (result.data if hasattr(result, 'data') else {})
-        extracted = raw.get("json", {}) or raw.get("data", {}).get("json", {}) or {}
+        # Document model: result.json (dict), result.markdown (str)
+        extracted = _extract_json(result)
+        markdown_text = _extract_markdown(result)
 
         return {
             "success": bool(extracted and any(extracted.values())),
@@ -210,7 +217,7 @@ class FirecrawlScraperService:
             "extraction_method": "firecrawl",
             "confidence": _calculate_confidence(extracted),
             "data": extracted,
-            "markdown": (raw.get("markdown", "") if raw else "")[:1000],
+            "markdown": (markdown_text or "")[:1000],
         }
 
     # ----- Phase B: Area search ----- #
@@ -282,6 +289,14 @@ class FirecrawlScraperService:
                 formats=[{
                     "type": "json",
                     "schema": CRESearchPageExtract.model_json_schema(),
+                    "prompt": (
+                        "Extract ALL commercial real estate property listing cards "
+                        "from this search results page. For each listing card, extract: "
+                        "title, full address, city, state, property type, asking price "
+                        "(as a number), square footage (as a number), lot size in acres "
+                        "(as a number), and the URL link to the individual listing. "
+                        "Also find the URL for the next page of results if one exists."
+                    ),
                 }],
                 only_main_content=False,
                 timeout=120000,
@@ -289,13 +304,12 @@ class FirecrawlScraperService:
 
             self.credit_tracker.spend(1)
 
-            # v4 SDK response: result["json"] or result.data["json"]
-            raw = result if isinstance(result, dict) else (result.data if hasattr(result, 'data') else {})
-            extracted = raw.get("json", {}) or raw.get("data", {}).get("json", {}) or {}
+            # Document model: result.json (dict with listings, total_results, next_page_url)
+            extracted = _extract_json(result)
             page_listings = extracted.get("listings", [])
 
-            logger.info(f"Page {page_num + 1} raw keys: {list(raw.keys()) if isinstance(raw, dict) else 'non-dict'}")
-            logger.info(f"Page {page_num + 1} extracted keys: {list(extracted.keys()) if isinstance(extracted, dict) else 'non-dict'}")
+            logger.info(f"Page {page_num + 1} result type: {type(result).__name__}")
+            logger.info(f"Page {page_num + 1} extracted keys: {list(extracted.keys()) if isinstance(extracted, dict) else type(extracted).__name__}")
             logger.info(f"Page {page_num + 1} found {len(page_listings)} listing cards")
 
             if not page_listings:
@@ -495,6 +509,45 @@ def firecrawl_result_to_scraped_listing(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _extract_json(result) -> dict:
+    """
+    Extract the JSON/structured data from a Firecrawl Document response.
+    The v4 SDK returns a Document pydantic model with .json attribute.
+    """
+    if result is None:
+        return {}
+    # If it's already a dict (unlikely in v4 but defensive)
+    if isinstance(result, dict):
+        return result.get("json", {}) or {}
+    # Pydantic Document model — access .json attribute
+    if hasattr(result, "json") and result.json is not None:
+        # result.json could be a dict or a pydantic model
+        val = result.json
+        if isinstance(val, dict):
+            return val
+        if hasattr(val, "model_dump"):
+            return val.model_dump()
+        if hasattr(val, "dict"):
+            return val.dict()
+        return {}
+    # Try model_dump as fallback
+    if hasattr(result, "model_dump"):
+        dump = result.model_dump()
+        return dump.get("json", {}) or {}
+    return {}
+
+
+def _extract_markdown(result) -> str:
+    """Extract markdown text from a Firecrawl Document response."""
+    if result is None:
+        return ""
+    if isinstance(result, dict):
+        return result.get("markdown", "") or ""
+    if hasattr(result, "markdown"):
+        return result.markdown or ""
+    return ""
+
 
 def _build_search_url(source: str, city: str, state: str) -> Optional[str]:
     """Build search URL for a CRE platform (mirrors listingLinks.ts patterns)."""
