@@ -369,7 +369,8 @@ async def backfill_coordinates(listing_data: dict) -> dict:
     """
     Geocode address if lat/lng missing from Firecrawl extraction.
 
-    Uses the existing Nominatim-based GeocodingService.
+    Uses Mapbox Geocoding API (free 100K requests/month) — much more
+    reliable than Nominatim which hits rate limits quickly.
     Critical: listings without coordinates won't appear on the map.
     """
     if listing_data.get("latitude") and listing_data.get("longitude"):
@@ -383,24 +384,37 @@ async def backfill_coordinates(listing_data: dict) -> dict:
         return listing_data
 
     try:
-        from app.services.geocoding import GeocodingService
+        import httpx
 
-        geocoder = GeocodingService()
-        coords = await asyncio.to_thread(
-            geocoder.geocode_address,
-            address or "",
-            city,
-            state,
-            listing_data.get("postal_code", ""),
+        mapbox_token = settings.MAPBOX_ACCESS_TOKEN
+        if not mapbox_token:
+            logger.warning("MAPBOX_ACCESS_TOKEN not set — skipping geocoding")
+            return listing_data
+
+        search_text = ", ".join(filter(None, [address, city, state, "USA"]))
+        url = (
+            f"https://api.mapbox.com/search/geocode/v6/forward"
+            f"?q={quote(search_text)}"
+            f"&country=US&limit=1&access_token={mapbox_token}"
         )
-        if coords:
-            listing_data["latitude"] = coords[0]
-            listing_data["longitude"] = coords[1]
-            logger.debug(f"Geocoded {address}, {city}, {state} → {coords}")
-        else:
-            logger.warning(f"Geocoding failed for: {address}, {city}, {state}")
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+        features = data.get("features", [])
+        if features:
+            coords = features[0].get("geometry", {}).get("coordinates", [])
+            if len(coords) == 2:
+                listing_data["longitude"] = coords[0]
+                listing_data["latitude"] = coords[1]
+                logger.debug(f"Mapbox geocoded {search_text} → ({coords[1]}, {coords[0]})")
+                return listing_data
+
+        logger.warning(f"Mapbox geocoding returned no results for: {search_text}")
     except Exception as e:
-        logger.warning(f"Geocoding error: {e}")
+        logger.warning(f"Mapbox geocoding error: {e}")
 
     return listing_data
 

@@ -590,7 +590,6 @@ try:
         FirecrawlScraperService,
         FirecrawlBudgetExceeded,
         firecrawl_result_to_scraped_listing,
-        firecrawl_to_crexi_listing,
         backfill_coordinates,
         credit_tracker,
         is_firecrawl_available,
@@ -1112,57 +1111,91 @@ async def fetch_crexi_area_endpoint(
                 sources=["crexi", "loopnet"],
             )
 
-            # Convert to CrexiListing objects for filtering
-            crexi_listings = []
+            # Import ALL listings directly to scraped_listings table.
+            # Unlike CSV upload (which filters to land/small buildings only),
+            # automated scraping imports everything for the Active Listings layer.
+            # The Opportunities layer scoring handles ranking separately.
+            imported_count = 0
+            updated_count = 0
+            empty_land_count = 0
+            small_building_count = 0
+
             for result in results:
-                cl = firecrawl_to_crexi_listing(result)
-                # Backfill coordinates
+                # Backfill coordinates via Mapbox geocoding
                 data = result.get("data", {})
                 if not (data.get("latitude") and data.get("longitude")):
                     data = await backfill_coordinates(data)
-                    cl.latitude = data.get("latitude")
-                    cl.longitude = data.get("longitude")
-                crexi_listings.append(cl)
+                    result["data"] = data
 
-            # Apply existing filtering criteria
-            filtered, stats = filter_opportunities(crexi_listings)
-
-            # Import filtered listings to database
-            if filtered:
-                import_result = import_to_database(filtered, request.location, db)
-            else:
-                from app.services.crexi_parser import ImportResult
-                import_result = ImportResult(
-                    total_parsed=len(crexi_listings),
-                    total_filtered=0,
-                    total_imported=0,
-                    total_updated=0,
-                    total_skipped=len(crexi_listings),
-                    empty_land_count=0,
-                    small_building_count=0,
-                    location=request.location,
-                    timestamp=datetime.utcnow(),
+                # Convert to scraped_listing dict
+                listing_dict = firecrawl_result_to_scraped_listing(
+                    result,
+                    search_city=search_city,
+                    search_state=search_state,
                 )
 
-            expires_at = import_result.timestamp + timedelta(hours=24)
+                # Skip listings without coordinates (can't show on map)
+                if not (listing_dict.get("latitude") and listing_dict.get("longitude")):
+                    continue
+
+                # Track criteria-matching listings for stats
+                prop_type = (data.get("property_type") or "").lower()
+                lot_acres = data.get("lot_size_acres")
+                sqft = data.get("sqft")
+                if lot_acres and 0.8 <= lot_acres <= 2.0 and "land" in prop_type:
+                    empty_land_count += 1
+                elif sqft and 2500 <= sqft <= 6000 and any(t in prop_type for t in ["retail", "office", "industrial"]):
+                    small_building_count += 1
+
+                # Upsert to database
+                try:
+                    source = listing_dict.get("source", "unknown")
+                    ext_id = listing_dict.get("external_id")
+
+                    existing = None
+                    if ext_id:
+                        existing = db.query(ScrapedListing).filter(
+                            ScrapedListing.source == source,
+                            ScrapedListing.external_id == ext_id,
+                        ).first()
+
+                    if existing:
+                        for key, val in listing_dict.items():
+                            if val is not None and hasattr(existing, key):
+                                setattr(existing, key, val)
+                        updated_count += 1
+                    else:
+                        new_listing = ScrapedListing(**{
+                            k: v for k, v in listing_dict.items()
+                            if hasattr(ScrapedListing, k)
+                        })
+                        db.add(new_listing)
+                        imported_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to import listing: {e}")
+
+            db.commit()
+            now = datetime.utcnow()
+            expires_at = now + timedelta(hours=24)
+            total_saved = imported_count + updated_count
 
             return CrexiAreaResponse(
                 success=True,
-                imported=import_result.total_imported,
-                updated=import_result.total_updated,
-                total_filtered=import_result.total_filtered,
-                empty_land_count=import_result.empty_land_count,
-                small_building_count=import_result.small_building_count,
+                imported=imported_count,
+                updated=updated_count,
+                total_filtered=total_saved,
+                empty_land_count=empty_land_count,
+                small_building_count=small_building_count,
                 cached=False,
                 cache_age_minutes=0,
-                timestamp=import_result.timestamp.isoformat(),
+                timestamp=now.isoformat(),
                 expires_at=expires_at.isoformat(),
                 location=request.location,
                 message=(
-                    f"Firecrawl scraped {len(results)} listings from Crexi+LoopNet, "
-                    f"{import_result.total_filtered} match criteria. "
-                    f"Imported {import_result.total_imported} new, updated {import_result.total_updated}. "
-                    f"Credits used: ~{len(results) // 20 + 2}"
+                    f"Firecrawl scraped {len(results)} listings from Crexi+LoopNet. "
+                    f"Saved {total_saved} to database ({imported_count} new, {updated_count} updated). "
+                    f"{empty_land_count} land + {small_building_count} buildings match site criteria. "
+                    f"Credits used: ~{credit_tracker.credits_used}"
                 ),
             )
 
