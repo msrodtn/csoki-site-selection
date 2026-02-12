@@ -813,7 +813,7 @@ export interface ScoutDecisionCreate {
   report_id: string;
   decision: ScoutDecisionType;
   rejection_reason?: string;
-  notes?: string;
+  notes: string;
   decided_by?: string;
 }
 

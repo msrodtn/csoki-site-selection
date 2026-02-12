@@ -31,7 +31,7 @@ function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/map" element={<MapPage />} />
               <Route path="/scout" element={<ScoutLayout />}>
-                <Route index element={<Navigate to="reports" replace />} />
+                <Route index element={<Navigate to="deploy" replace />} />
                 <Route path="deploy" element={<DeployPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="reports/:reportId" element={<ReportDetailPage />} />

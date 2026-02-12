@@ -7,6 +7,7 @@ export function useScoutStats() {
     queryKey: ['scout', 'stats'],
     queryFn: () => scoutApi.getStats(),
     staleTime: 30_000,
+    retry: 1,
   });
 }
 
@@ -15,6 +16,8 @@ export function useScoutJobs(params?: { status?: string; market?: string }) {
     queryKey: ['scout', 'jobs', params],
     queryFn: () => scoutApi.listJobs(params),
     staleTime: 10_000,
+    retry: 1,
+    placeholderData: [],
   });
 }
 
@@ -35,6 +38,8 @@ export function useScoutReports(params?: {
     queryKey: ['scout', 'reports', params],
     queryFn: () => scoutApi.listReports(params),
     staleTime: 10_000,
+    retry: 1,
+    placeholderData: [],
   });
 }
 
@@ -54,6 +59,8 @@ export function useScoutDecisions(params?: {
     queryKey: ['scout', 'decisions', params],
     queryFn: () => scoutApi.listDecisions(params),
     staleTime: 10_000,
+    retry: 1,
+    placeholderData: [],
   });
 }
 

@@ -108,7 +108,7 @@ class DecisionCreate(BaseModel):
     report_id: str
     decision: str
     rejection_reason: Optional[str] = None
-    notes: Optional[str] = None
+    notes: str
     decided_by: Optional[str] = None
 
 class DecisionResponse(BaseModel):
@@ -308,6 +308,9 @@ def submit_decision(body: DecisionCreate, db: Session = Depends(get_db)):
     if body.decision not in ("approved", "rejected", "flagged"):
         raise HTTPException(status_code=400, detail="decision must be 'approved', 'rejected', or 'flagged'")
 
+    if not body.notes or len(body.notes.strip()) < 10:
+        raise HTTPException(status_code=400, detail="Feedback notes are required (minimum 10 characters)")
+
     # Verify report exists
     report = db.query(ScoutReport).filter(ScoutReport.id == body.report_id).first()
     if not report:
@@ -342,6 +345,53 @@ def list_decisions(
     if decision:
         query = query.filter(ScoutDecision.decision == decision)
     return query.order_by(ScoutDecision.decided_at.desc()).offset(offset).limit(limit).all()
+
+
+@router.get("/decisions/export/")
+def export_decisions(
+    since: Optional[datetime] = Query(None, description="Filter decisions since this ISO datetime"),
+    db: Session = Depends(get_db),
+):
+    """Export decisions with full report context for SCOUT agent learning loop.
+
+    SCOUT agent polls this endpoint to get human feedback for prompt injection.
+    Use ?since=<ISO datetime> for incremental polling.
+    """
+    query = db.query(ScoutDecision)
+    if since:
+        query = query.filter(ScoutDecision.decided_at >= since)
+
+    decisions = query.order_by(ScoutDecision.decided_at.desc()).all()
+
+    result = []
+    for d in decisions:
+        report = db.query(ScoutReport).filter(ScoutReport.id == d.report_id).first()
+        entry = {
+            "decision_id": d.id,
+            "decision": d.decision,
+            "notes": d.notes,
+            "rejection_reason": d.rejection_reason,
+            "decided_by": d.decided_by,
+            "decided_at": d.decided_at.isoformat() if d.decided_at else None,
+            "report": None,
+        }
+        if report:
+            entry["report"] = {
+                "id": report.id,
+                "site_address": report.site_address,
+                "market": report.market,
+                "confidence_score": report.confidence_score,
+                "feasibility_score": report.feasibility_score,
+                "regulatory_score": report.regulatory_score,
+                "sentiment_score": report.sentiment_score,
+                "growth_score": report.growth_score,
+                "strengths": report.strengths,
+                "flags": report.flags,
+                "agent_details": report.agent_details,
+            }
+        result.append(entry)
+
+    return result
 
 
 # =============================================================================

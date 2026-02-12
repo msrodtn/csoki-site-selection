@@ -24,6 +24,27 @@ const ICON_MAP: Record<string, React.ElementType> = {
   ShieldCheck,
 };
 
+const FEEDBACK_CHIPS: Record<string, string[]> = {
+  approved: [
+    'Strong traffic corridor',
+    'Ideal demographics',
+    'Good anchor proximity',
+    'Low competition density',
+  ],
+  rejected: [
+    'Too close to competitor',
+    'Weak demographics',
+    'Poor visibility/access',
+    'Unfavorable lease terms',
+  ],
+  flagged: [
+    'Needs site visit',
+    'Zoning verification needed',
+    'Lease terms unclear',
+    'Market conditions changing',
+  ],
+};
+
 function AgentCard({ agent }: { agent: ScoutAgentDetail }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = ICON_MAP[agent.icon] || ShieldCheck;
@@ -91,13 +112,27 @@ export function ReportDetailPage() {
   const { data: report, isLoading } = useScoutReport(reportId || '');
   const submitDecision = useSubmitDecision();
 
-  const handleDecision = (decision: 'approved' | 'rejected' | 'flagged') => {
-    if (!reportId) return;
+  const [activeDecision, setActiveDecision] = useState<'approved' | 'rejected' | 'flagged' | null>(null);
+  const [notes, setNotes] = useState('');
+
+  const chips = activeDecision ? FEEDBACK_CHIPS[activeDecision] : [];
+  const canSubmit = notes.trim().length >= 10;
+
+  const appendChip = (chip: string) => {
+    const sep = notes.trim() ? '. ' : '';
+    setNotes((prev) => prev.trim() + sep + chip);
+  };
+
+  const handleSubmit = () => {
+    if (!reportId || !activeDecision || !canSubmit) return;
     submitDecision.mutate({
       report_id: reportId,
-      decision,
+      decision: activeDecision,
+      notes: notes.trim(),
       decided_by: 'Michael',
     });
+    setActiveDecision(null);
+    setNotes('');
   };
 
   if (isLoading) {
@@ -200,36 +235,107 @@ export function ReportDetailPage() {
           </div>
         </div>
 
-        {/* Decision Buttons */}
+        {/* Decision Section */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Decision</h3>
           {report.decision_status !== 'pending' ? (
             <p className="text-sm text-gray-500">
               This report has been <strong>{report.decision_status}</strong>.
             </p>
+          ) : !activeDecision ? (
+            <div>
+              <p className="text-xs text-gray-500 mb-3">Select a decision, then provide feedback before confirming.</p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveDecision('approved')}
+                  className="flex-1 px-4 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => setActiveDecision('rejected')}
+                  className="flex-1 px-4 py-2.5 bg-white border border-red-200 text-red-700 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={() => setActiveDecision('flagged')}
+                  className="flex-1 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Flag for Review
+                </button>
+              </div>
+            </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => handleDecision('approved')}
-                disabled={submitDecision.isPending}
-                className="flex-1 px-4 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
-              >
-                Approve
-              </button>
-              <button
-                onClick={() => handleDecision('rejected')}
-                disabled={submitDecision.isPending}
-                className="flex-1 px-4 py-2.5 bg-white border border-red-200 text-red-700 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-              >
-                Reject
-              </button>
-              <button
-                onClick={() => handleDecision('flagged')}
-                disabled={submitDecision.isPending}
-                className="flex-1 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Flag for Review
-              </button>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                  activeDecision === 'approved'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : activeDecision === 'rejected'
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
+                  {activeDecision.charAt(0).toUpperCase() + activeDecision.slice(1)}
+                </span>
+                <button
+                  onClick={() => { setActiveDecision(null); setNotes(''); }}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Change
+                </button>
+              </div>
+
+              {/* Feedback chips */}
+              <div className="flex flex-wrap gap-1.5">
+                {chips.map((chip) => (
+                  <button
+                    key={chip}
+                    onClick={() => appendChip(chip)}
+                    className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+
+              {/* Feedback textarea */}
+              <div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Provide feedback for this decision (min 10 characters)..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 placeholder-gray-400 resize-none"
+                />
+                <p className={`text-xs mt-1 ${notes.trim().length >= 10 ? 'text-emerald-500' : 'text-gray-400'}`}>
+                  {notes.trim().length}/10 characters minimum
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSubmit}
+                  disabled={!canSubmit || submitDecision.isPending}
+                  className={`px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                    canSubmit && !submitDecision.isPending
+                      ? activeDecision === 'approved'
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        : activeDecision === 'rejected'
+                        ? 'bg-red-600 text-white hover:bg-red-700'
+                        : 'bg-amber-600 text-white hover:bg-amber-700'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  {submitDecision.isPending ? 'Submitting...' : `Confirm ${activeDecision.charAt(0).toUpperCase() + activeDecision.slice(1)}`}
+                </button>
+                <button
+                  onClick={() => { setActiveDecision(null); setNotes(''); }}
+                  className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </div>

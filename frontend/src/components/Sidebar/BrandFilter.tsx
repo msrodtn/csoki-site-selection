@@ -7,7 +7,7 @@ export function BrandFilter() {
   const { visibleBrands, toggleBrand, setAllBrandsVisible } = useMapStore();
   const { data: stats, isLoading } = useStoreStats();
 
-  const allVisible = visibleBrands.size === 6;
+  const allVisible = stats ? visibleBrands.size >= stats.length : visibleBrands.size > 0;
 
   if (isLoading) {
     return (

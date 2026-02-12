@@ -265,6 +265,13 @@ interface MapState {
   setShowBuildingLayer: (show: boolean) => void;
   selectedBuildingId: number | null;
   setSelectedBuildingId: (id: number | null) => void;
+
+  // Map sidebar (right-side panel) state
+  mapSidebarWidth: number;
+  setMapSidebarWidth: (width: number) => void;
+  mapSidebarCollapsed: boolean;
+  setMapSidebarCollapsed: (collapsed: boolean) => void;
+  toggleMapSidebar: () => void;
 }
 
 // Default to center of US with all brands visible
@@ -275,6 +282,8 @@ const ALL_BRANDS: BrandKey[] = [
   'victra',
   'tmobile',
   'uscellular',
+  'tcc',
+  'wireless_zone',
 ];
 
 const ALL_POI_CATEGORIES: POICategory[] = [
@@ -720,4 +729,28 @@ export const useMapStore = create<MapState>((set, get) => ({
   setShowBuildingLayer: (show) => set({ showBuildingLayer: show }),
   selectedBuildingId: null,
   setSelectedBuildingId: (id) => set({ selectedBuildingId: id }),
+
+  // Map sidebar state (persisted to localStorage)
+  mapSidebarWidth: (() => {
+    try {
+      const stored = localStorage.getItem('csoki-map-sidebar-width');
+      return stored ? Math.max(240, Math.min(480, parseInt(stored, 10))) : 320;
+    } catch { return 320; }
+  })(),
+  setMapSidebarWidth: (width) => {
+    set({ mapSidebarWidth: width });
+    try { localStorage.setItem('csoki-map-sidebar-width', String(width)); } catch {}
+  },
+  mapSidebarCollapsed: (() => {
+    try { return localStorage.getItem('csoki-map-sidebar-collapsed') === 'true'; } catch { return false; }
+  })(),
+  setMapSidebarCollapsed: (collapsed) => {
+    set({ mapSidebarCollapsed: collapsed });
+    try { localStorage.setItem('csoki-map-sidebar-collapsed', String(collapsed)); } catch {}
+  },
+  toggleMapSidebar: () => {
+    const collapsed = !get().mapSidebarCollapsed;
+    set({ mapSidebarCollapsed: collapsed });
+    try { localStorage.setItem('csoki-map-sidebar-collapsed', String(collapsed)); } catch {}
+  },
 }));

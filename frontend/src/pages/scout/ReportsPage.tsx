@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ArrowUpDown, FileText } from 'lucide-react';
+import { Search, ArrowUpDown, FileText, X, AlertTriangle } from 'lucide-react';
 import { useScoutReports } from '../../hooks/useScout';
 import type { ScoutReport, ScoutReportStatus } from '../../types/store';
+
+const DEMO_BANNER_KEY = 'csoki-reports-demo-dismissed';
 
 function confidenceColor(score: number) {
   if (score >= 80) return 'bg-emerald-500';
@@ -49,8 +51,16 @@ export function ReportsPage() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'confidence' | 'date'>('confidence');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [demoDismissed, setDemoDismissed] = useState(() => {
+    try { return localStorage.getItem(DEMO_BANNER_KEY) === 'true'; } catch { return false; }
+  });
 
-  const { data: reports, isLoading } = useScoutReports();
+  const { data: reports, isLoading, isError, error } = useScoutReports();
+
+  const dismissDemo = () => {
+    setDemoDismissed(true);
+    try { localStorage.setItem(DEMO_BANNER_KEY, 'true'); } catch { /* ignore */ }
+  };
 
   const filtered = (reports || [])
     .filter((r: ScoutReport) => {
@@ -73,6 +83,19 @@ export function ReportsPage() {
             <p className="text-sm text-gray-500 mt-1">{reports?.length ?? 0} site analyses</p>
           </div>
         </div>
+
+        {/* Demo data banner */}
+        {!demoDismissed && (
+          <div className="flex items-center gap-3 p-3 mb-6 bg-amber-50 border border-amber-200 rounded-lg">
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <p className="text-sm text-amber-700 flex-1">
+              <strong>Demo Data</strong> — These reports are sample data for demonstration. Real analysis reports will appear here once SCOUT agents are deployed on the Mac Mini.
+            </p>
+            <button onClick={dismissDemo} className="text-amber-400 hover:text-amber-600 flex-shrink-0">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex items-center gap-3 mb-6">
@@ -114,6 +137,14 @@ export function ReportsPage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {isLoading ? (
             <div className="p-8 text-center text-sm text-gray-400">Loading reports...</div>
+          ) : isError ? (
+            <div className="p-8 text-center">
+              <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-600 font-medium">Unable to load reports</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {error instanceof Error ? error.message : 'The SCOUT backend may not be running yet.'}
+              </p>
+            </div>
           ) : (
             <>
               <table className="w-full">
