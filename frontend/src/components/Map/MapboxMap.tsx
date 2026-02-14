@@ -422,7 +422,7 @@ function StorePopup({
           href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${store.latitude},${store.longitude}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-2 w-full flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+          className="mt-2 w-full flex items-center justify-center gap-1.5 bg-yellow-500 hover:bg-yellow-600 text-gray-900 text-xs font-medium py-2 px-3 rounded transition-colors"
         >
           Street View
         </a>
@@ -476,7 +476,7 @@ function POIPopup({
           href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${poi.latitude},${poi.longitude}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 w-full flex items-center justify-center gap-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-2 rounded transition-colors"
+          className="mt-3 w-full flex items-center justify-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-gray-900 text-xs font-medium py-2 px-2 rounded transition-colors"
         >
           Street View
         </a>
@@ -555,7 +555,7 @@ function TeamPropertyPopup({
             href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${property.latitude},${property.longitude}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block w-full text-center bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+            className="block w-full text-center bg-yellow-500 hover:bg-yellow-600 text-gray-900 text-xs font-medium py-2 px-3 rounded transition-colors"
           >
             Street View
           </a>

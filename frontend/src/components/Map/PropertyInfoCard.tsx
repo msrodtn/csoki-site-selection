@@ -463,7 +463,7 @@ export function PropertyInfoCard({ property, onClose, initialPosition, onPositio
           href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${property.latitude},${property.longitude}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-green-500 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-yellow-500 text-yellow-700 text-sm font-medium rounded-lg hover:bg-yellow-50 transition-colors"
         >
           <Navigation className="w-4 h-4" />
           View on Street View

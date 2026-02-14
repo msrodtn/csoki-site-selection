@@ -64,14 +64,14 @@ export function PropertySearchPanel({ latitude, longitude, onClose }: PropertySe
   return (
     <div className="absolute bottom-24 left-4 z-50 bg-white rounded-lg shadow-xl border border-gray-200 w-80">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-green-600 text-white rounded-t-lg">
+      <div className="flex items-center justify-between px-4 py-3 bg-yellow-500 text-gray-900 rounded-t-lg">
         <div className="flex items-center gap-2">
           <Building2 className="w-5 h-5" />
           <span className="font-semibold">Find Commercial Properties</span>
         </div>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-green-700 rounded transition-colors"
+          className="p-1 hover:bg-yellow-600 rounded transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -81,7 +81,7 @@ export function PropertySearchPanel({ latitude, longitude, onClose }: PropertySe
       <div className="p-4">
         {isLoading ? (
           <div className="text-center py-6 text-gray-500">
-            <div className="animate-spin inline-block w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full mb-2" />
+            <div className="animate-spin inline-block w-6 h-6 border-2 border-yellow-500 border-t-transparent rounded-full mb-2" />
             <p className="text-sm">Generating search links...</p>
           </div>
         ) : error ? (
@@ -92,7 +92,7 @@ export function PropertySearchPanel({ latitude, longitude, onClose }: PropertySe
           <>
             {/* Location indicator */}
             <div className="flex items-center gap-2 text-sm text-gray-600 mb-4 pb-3 border-b border-gray-200">
-              <MapPin className="w-4 h-4 text-green-600" />
+              <MapPin className="w-4 h-4 text-yellow-600" />
               <span className="font-medium">{links.city}, {links.state}</span>
             </div>
 
