@@ -792,7 +792,7 @@ export function MapboxMap() {
   } | null>(null);
 
   // Opportunity Zone hover state
-  const [hoveredOZId, setHoveredOZId] = useState<string | number | null>(null);
+  const [_hoveredOZId, setHoveredOZId] = useState<string | number | null>(null);
   const [hoveredOZInfo, setHoveredOZInfo] = useState<{
     type: 'designated' | 'eligible';
     geoid: string;
@@ -2563,9 +2563,15 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Opportunity Zones - Designated (1.0) */}
+        {/* Opportunity Zones - Designated (1.0) - using direct tile URL */}
         {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('oz_designated') && (
-          <Source id="oz-designated-source" type="vector" url={`mapbox://${OZ_TILESETS.designated.id}`}>
+          <Source
+            id="oz-designated-source"
+            type="vector"
+            tiles={[`https://api.mapbox.com/v4/${OZ_TILESETS.designated.id}/{z}/{x}/{y}.vector.pbf?access_token=${MAPBOX_TOKEN}`]}
+            minzoom={2}
+            maxzoom={14}
+          >
             <Layer
               id="oz-designated-fill"
               type="fill"
@@ -2573,12 +2579,7 @@ export function MapboxMap() {
               minzoom={4}
               paint={{
                 'fill-color': '#6366F1',
-                'fill-opacity': [
-                  'case',
-                  ['==', ['get', 'GEOID10'], hoveredOZId],
-                  0.45,
-                  0.20,
-                ] as any,
+                'fill-opacity': 0.25,
               }}
             />
             <Layer
@@ -2588,46 +2589,32 @@ export function MapboxMap() {
               minzoom={4}
               paint={{
                 'line-color': '#4F46E5',
-                'line-width': [
-                  'case',
-                  ['==', ['get', 'GEOID10'], hoveredOZId],
-                  3,
-                  ['interpolate', ['linear'], ['zoom'], 4, 0.5, 8, 1, 12, 1.5],
-                ] as any,
-                'line-opacity': [
-                  'case',
-                  ['==', ['get', 'GEOID10'], hoveredOZId],
-                  1,
-                  0.7,
-                ] as any,
+                'line-width': 1.5,
+                'line-opacity': 0.8,
               }}
             />
           </Source>
         )}
 
-        {/* Opportunity Zones - Eligible (2.0 Preview) */}
+        {/* Opportunity Zones - Eligible (2.0 Preview) - using direct tile URL */}
         {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('oz_eligible') && (
-          <Source id="oz-eligible-source" type="vector" url={`mapbox://${OZ_TILESETS.eligible.id}`}>
+          <Source
+            id="oz-eligible-source"
+            type="vector"
+            tiles={[`https://api.mapbox.com/v4/${OZ_TILESETS.eligible.id}/{z}/{x}/{y}.vector.pbf?access_token=${MAPBOX_TOKEN}`]}
+            minzoom={4}
+            maxzoom={14}
+          >
             <Layer
               id="oz-eligible-outline"
               type="line"
               source-layer={OZ_TILESETS.eligible.sourceLayer}
-              minzoom={6}
+              minzoom={4}
               paint={{
                 'line-color': '#F59E0B',
-                'line-width': [
-                  'case',
-                  ['==', ['get', 'GEOID'], hoveredOZId],
-                  2.5,
-                  ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 1, 14, 1.5],
-                ] as any,
+                'line-width': 1.5,
                 'line-dasharray': [3, 2],
-                'line-opacity': [
-                  'case',
-                  ['==', ['get', 'GEOID'], hoveredOZId],
-                  1,
-                  0.6,
-                ] as any,
+                'line-opacity': 0.7,
               }}
             />
           </Source>
