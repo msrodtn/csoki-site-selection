@@ -726,6 +726,7 @@ export function MapboxMap() {
   const [opportunities, setOpportunities] = useState<OpportunityRanking[]>([]);
   const [isLoadingOpportunities, setIsLoadingOpportunities] = useState(false);
   const [selectedOpportunity, setSelectedOpportunity] = useState<OpportunityRanking | null>(null);
+  const [opportunityError, setOpportunityError] = useState<string | null>(null);
   const opportunityClickedRef = useRef(false);
 
   // Traffic counts hover state
@@ -1576,6 +1577,7 @@ export function MapboxMap() {
     if (showOpportunities && mapBounds) {
       const debounceTimer = setTimeout(async () => {
         setIsLoadingOpportunities(true);
+        setOpportunityError(null);
         try {
           const result = await opportunitiesApi.search({
             min_lat: mapBounds.south,
@@ -1594,6 +1596,8 @@ export function MapboxMap() {
           setOpportunities(result.opportunities || []);
         } catch (error: any) {
           console.error('[CSOKi Opportunities] Error fetching:', error);
+          const msg = error.response?.data?.detail || error.message || 'Failed to load opportunities';
+          setOpportunityError(msg);
           setOpportunities([]);
         } finally {
           setIsLoadingOpportunities(false);
@@ -1604,6 +1608,7 @@ export function MapboxMap() {
     } else if (!showOpportunities) {
       setOpportunities([]);
       setSelectedOpportunity(null);
+      setOpportunityError(null);
     }
   }, [visibleLayersArray, mapBounds, opportunityFilters]);
 
@@ -2860,6 +2865,29 @@ export function MapboxMap() {
         <div className="absolute bottom-32 right-6 z-40 bg-purple-100 text-purple-800 px-3 py-2 rounded-lg shadow text-sm flex items-center gap-2">
           <div className="animate-spin w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full" />
           Loading CSOKi opportunities...
+        </div>
+      )}
+
+      {/* CSOKi Opportunities error banner */}
+      {opportunityError && !isLoadingOpportunities && visibleLayersArray.includes('csoki_opportunities') && (
+        <div className="absolute bottom-32 right-6 z-40 bg-red-100 text-red-800 px-4 py-3 rounded-lg shadow text-sm max-w-sm">
+          <div className="flex items-start gap-2">
+            <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="flex-1">
+              <p className="font-medium">Opportunities failed to load</p>
+              <p className="text-xs text-red-600 mt-1">{opportunityError}</p>
+            </div>
+            <button
+              onClick={() => setOpportunityError(null)}
+              className="text-red-400 hover:text-red-600 flex-shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
 

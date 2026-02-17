@@ -22,9 +22,14 @@ export function Sidebar() {
   } = useMapStore();
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleSearchSelect = (lng: number, lat: number, _placeName: string) => {
+  const handleSearchSelect = (lng: number, lat: number, _placeName: string, placeType: string) => {
     setAllStatesVisible(true);
-    navigateTo(lat, lng, 12);
+    const zoom = placeType === 'address' ? 17
+      : placeType === 'postcode' ? 14
+      : placeType === 'neighborhood' ? 14
+      : placeType === 'locality' ? 13
+      : 12;
+    navigateTo(lat, lng, zoom);
   };
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -97,7 +102,7 @@ export function Sidebar() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
-        <MapboxSearchBar onSelect={handleSearchSelect} placeholder="Type a city name..." />
+        <MapboxSearchBar onSelect={handleSearchSelect} placeholder="Search address, city, or ZIP..." />
         <BrandFilter />
         <StateFilter />
         <MapLayers />

@@ -65,7 +65,7 @@ export function ReportsPage() {
   const filtered = (reports || [])
     .filter((r: ScoutReport) => {
       if (filterStatus !== 'all' && r.decision_status !== filterStatus) return false;
-      if (search && !r.site_address.toLowerCase().includes(search.toLowerCase()) &&
+      if (search && !(r.site_address || '').toLowerCase().includes(search.toLowerCase()) &&
           !(r.market || '').toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     })

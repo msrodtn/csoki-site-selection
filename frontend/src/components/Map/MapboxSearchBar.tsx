@@ -29,7 +29,7 @@ interface GeocodingFeature {
 }
 
 interface MapboxSearchBarProps {
-  onSelect: (lng: number, lat: number, placeName: string) => void;
+  onSelect: (lng: number, lat: number, placeName: string, placeType: string) => void;
   placeholder?: string;
 }
 
@@ -74,7 +74,7 @@ export function MapboxSearchBar({
         q: searchText,
         access_token: MAPBOX_TOKEN,
         country: 'US',
-        types: 'place,locality,neighborhood,address',
+        types: 'place,locality,neighborhood,address,postcode',
         limit: '5',
       });
 
@@ -136,7 +136,7 @@ export function MapboxSearchBar({
       setQuery(feature.text);
       setSuggestions([]);
       setShowSuggestions(false);
-      onSelect(lng, lat, feature.place_name);
+      onSelect(lng, lat, feature.place_name, feature.place_type[0] || 'place');
     },
     [onSelect]
   );

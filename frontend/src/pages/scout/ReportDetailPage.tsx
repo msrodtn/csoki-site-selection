@@ -48,8 +48,9 @@ const FEEDBACK_CHIPS: Record<string, string[]> = {
 function AgentCard({ agent }: { agent: ScoutAgentDetail }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = ICON_MAP[agent.icon] || ShieldCheck;
-  const scoreColor = agent.score >= 8 ? 'text-emerald-600' : agent.score >= 6 ? 'text-amber-600' : 'text-red-600';
-  const barColor = agent.score >= 8 ? 'bg-emerald-500' : agent.score >= 6 ? 'bg-amber-500' : 'bg-red-500';
+  const score = agent.score ?? 0;
+  const scoreColor = score >= 8 ? 'text-emerald-600' : score >= 6 ? 'text-amber-600' : 'text-red-600';
+  const barColor = score >= 8 ? 'bg-emerald-500' : score >= 6 ? 'bg-amber-500' : 'bg-red-500';
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -63,10 +64,10 @@ function AgentCard({ agent }: { agent: ScoutAgentDetail }) {
         <span className="text-sm font-medium text-gray-900 flex-1 text-left">{agent.label}</span>
         <div className="flex items-center gap-3">
           <div className="w-20 bg-gray-100 rounded-full h-2">
-            <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${agent.score * 10}%` }} />
+            <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${score * 10}%` }} />
           </div>
           <span className={`text-sm font-semibold tabular-nums w-12 text-right ${scoreColor}`}>
-            {agent.score.toFixed(1)}/10
+            {score.toFixed(1)}/10
           </span>
           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </div>
@@ -81,7 +82,7 @@ function AgentCard({ agent }: { agent: ScoutAgentDetail }) {
               </div>
             ))}
           </div>
-          {agent.strengths.length > 0 && (
+          {(agent.strengths?.length ?? 0) > 0 && (
             <div className="mt-3">
               {agent.strengths.map((s, i) => (
                 <div key={i} className="flex items-start gap-2 text-sm text-emerald-700 mb-1">
@@ -91,12 +92,12 @@ function AgentCard({ agent }: { agent: ScoutAgentDetail }) {
               ))}
             </div>
           )}
-          {agent.flags.length > 0 && (
+          {(agent.flags?.length ?? 0) > 0 && (
             <div className="mt-2">
               {agent.flags.map((f, i) => (
                 <div key={i} className="flex items-start gap-2 text-sm text-amber-700 mb-1">
                   <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <span>[{f.severity.toUpperCase()}] {f.description}</span>
+                  <span>[{(f.severity || 'INFO').toUpperCase()}] {f.description}</span>
                 </div>
               ))}
             </div>
@@ -225,7 +226,7 @@ export function ReportDetailPage() {
                 {report.flags!.map((f, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm text-amber-700">
                     <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" />
-                    <span>[{f.severity.toUpperCase()}] {f.description}</span>
+                    <span>[{(f.severity || 'INFO').toUpperCase()}] {f.description}</span>
                   </div>
                 ))}
               </div>

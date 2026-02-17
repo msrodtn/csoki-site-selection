@@ -48,6 +48,13 @@ export function DeployPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   const fetchSuggestions = useCallback(async (text: string) => {
     if (!MAPBOX_TOKEN || text.length < 2) {
       setSuggestions([]);

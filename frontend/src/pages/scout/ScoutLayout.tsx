@@ -1,5 +1,6 @@
 import { Outlet, NavLink } from 'react-router-dom';
 import { Rocket, FileText, CheckSquare } from 'lucide-react';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 
 const subNavItems = [
   { label: 'Deploy', path: '/scout/deploy', icon: Rocket },
@@ -34,7 +35,9 @@ export function ScoutLayout() {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </div>
     </div>
   );
