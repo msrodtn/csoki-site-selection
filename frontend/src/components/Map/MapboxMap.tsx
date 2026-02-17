@@ -662,7 +662,6 @@ export function MapboxMap() {
     visibleLayers,
     visiblePropertySources,
     visibleBoundaryTypes,
-    visibleOZTypes,
     visibleActivityNodeCategories,
     demographicMetric,
     // deck.gl 3D visualization state
@@ -1832,7 +1831,7 @@ export function MapboxMap() {
 
       {/* Legends */}
       <FEMALegend isVisible={visibleLayersArray.includes('fema_flood')} />
-      <OZLegend isVisible={visibleLayersArray.includes('opportunity_zones')} />
+      <OZLegend isVisible={visibleLayersArray.includes('boundaries') && (visibleBoundaryTypes.has('oz_designated') || visibleBoundaryTypes.has('oz_eligible'))} />
       <HeatMapLegend isVisible={visibleLayersArray.includes('activity_heat')} />
       <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
@@ -1906,8 +1905,8 @@ export function MapboxMap() {
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') ? ['county-demographics-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') ? ['city-boundaries-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') ? ['zipcode-boundaries-fill'] : []),
-          ...(visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_designated') ? ['oz-designated-fill'] : []),
-          ...(visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_eligible') ? ['oz-eligible-outline'] : []),
+          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('oz_designated') ? ['oz-designated-fill'] : []),
+          ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('oz_eligible') ? ['oz-eligible-outline'] : []),
         ]}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
@@ -2565,7 +2564,7 @@ export function MapboxMap() {
         )}
 
         {/* Opportunity Zones - Designated (1.0) */}
-        {visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_designated') && (
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('oz_designated') && (
           <Source id="oz-designated-source" type="vector" url={`mapbox://${OZ_TILESETS.designated.id}`}>
             <Layer
               id="oz-designated-fill"
@@ -2607,7 +2606,7 @@ export function MapboxMap() {
         )}
 
         {/* Opportunity Zones - Eligible (2.0 Preview) */}
-        {visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_eligible') && (
+        {visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('oz_eligible') && (
           <Source id="oz-eligible-source" type="vector" url={`mapbox://${OZ_TILESETS.eligible.id}`}>
             <Layer
               id="oz-eligible-outline"

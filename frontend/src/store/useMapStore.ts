@@ -115,17 +115,13 @@ interface MapState {
   visiblePropertySources: Set<'attom' | 'team'>;
   togglePropertySource: (source: 'attom' | 'team') => void;
 
-  // Boundary type sub-toggles (for Boundaries Explorer layer)
-  visibleBoundaryTypes: Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts'>;
-  toggleBoundaryType: (type: 'counties' | 'cities' | 'zipcodes' | 'census_tracts') => void;
+  // Boundary type sub-toggles (for Boundaries Explorer layer, includes OZ layers)
+  visibleBoundaryTypes: Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts' | 'oz_designated' | 'oz_eligible'>;
+  toggleBoundaryType: (type: 'counties' | 'cities' | 'zipcodes' | 'census_tracts' | 'oz_designated' | 'oz_eligible') => void;
 
   // Activity node sub-toggles (for Activity Heat Map layer)
   visibleActivityNodeCategories: Set<ActivityNodeCategory>;
   toggleActivityNodeCategory: (category: ActivityNodeCategory) => void;
-
-  // Opportunity Zone sub-toggles
-  visibleOZTypes: Set<'oz_designated' | 'oz_eligible'>;
-  toggleOZType: (type: 'oz_designated' | 'oz_eligible') => void;
 
   // Demographic metric for choropleth coloring
   demographicMetric: 'population' | 'income' | 'density';
@@ -495,8 +491,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { visiblePropertySources: newSources };
     }),
 
-  // Boundary type sub-toggles - counties and cities visible by default
-  visibleBoundaryTypes: new Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts'>(['counties', 'cities']),
+  // Boundary type sub-toggles - counties, cities, and OZ layers visible by default
+  visibleBoundaryTypes: new Set<'counties' | 'cities' | 'zipcodes' | 'census_tracts' | 'oz_designated' | 'oz_eligible'>(['counties', 'cities', 'oz_designated', 'oz_eligible']),
   toggleBoundaryType: (type) =>
     set((state) => {
       const newTypes = new Set(state.visibleBoundaryTypes);
@@ -519,19 +515,6 @@ export const useMapStore = create<MapState>((set, get) => ({
         newCats.add(category);
       }
       return { visibleActivityNodeCategories: newCats };
-    }),
-
-  // Opportunity Zone sub-toggles - both on by default
-  visibleOZTypes: new Set<'oz_designated' | 'oz_eligible'>(['oz_designated', 'oz_eligible']),
-  toggleOZType: (type) =>
-    set((state) => {
-      const newTypes = new Set(state.visibleOZTypes);
-      if (newTypes.has(type)) {
-        newTypes.delete(type);
-      } else {
-        newTypes.add(type);
-      }
-      return { visibleOZTypes: newTypes };
     }),
 
   // Demographic metric for choropleth coloring
