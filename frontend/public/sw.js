@@ -1,8 +1,7 @@
-const CACHE_NAME = 'csoki-v1';
+const CACHE_NAME = 'csoki-v2';
 
 // Assets to cache on install (app shell)
 const PRECACHE_ASSETS = [
-  '/',
   '/manifest.json',
   '/logos/csoki.jpg',
 ];
@@ -33,7 +32,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first strategy for API calls, cache-first for static assets
+// Fetch handler
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -43,6 +42,20 @@ self.addEventListener('fetch', (event) => {
 
   // Skip cross-origin requests (Mapbox tiles, external APIs, etc.)
   if (url.origin !== self.location.origin) return;
+
+  // HTML navigation requests: network-first (always get fresh HTML so new deploys take effect)
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
 
   // API calls: network-first (always try fresh data, fall back to cache)
   if (url.pathname.startsWith('/api')) {
@@ -58,15 +71,29 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first (use cache, fall back to network)
+  // Static assets with content hash (JS/CSS): cache-first (hash changes on new deploys)
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Other same-origin requests: network-first
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         const clone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(request))
   );
 });
