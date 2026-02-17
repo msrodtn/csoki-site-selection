@@ -117,7 +117,7 @@ declare -A TILESET_FILES=(
 )
 
 declare -A TILESET_NAMES=(
-    ["national-oz-tracts"]="National Opportunity Zones (1.0)"
+    ["national-oz-tracts"]="National Opportunity Zones 1.0"
     ["national-oz2-eligible"]="National OZ 2.0 Eligible Tracts"
 )
 

@@ -26,7 +26,7 @@ OUTPUT_DIR = Path(__file__).parent.parent / "mapbox-tilesets"
 # HUD Opportunity Zones Feature Service
 OZ_FEATURE_SERVICE = (
     "https://services.arcgis.com/VTyQ9soqVukalItT/arcgis/rest/services/"
-    "Opportunity_Zones/FeatureServer/0/query"
+    "Opportunity_Zones/FeatureServer/13/query"
 )
 
 # State FIPS codes (all 50 + DC + territories)
