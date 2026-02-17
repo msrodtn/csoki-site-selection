@@ -521,8 +521,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       return { visibleActivityNodeCategories: newCats };
     }),
 
-  // Opportunity Zone sub-toggles - designated on by default (eligible added once tileset uploaded)
-  visibleOZTypes: new Set<'oz_designated' | 'oz_eligible'>(['oz_designated']),
+  // Opportunity Zone sub-toggles - both on by default
+  visibleOZTypes: new Set<'oz_designated' | 'oz_eligible'>(['oz_designated', 'oz_eligible']),
   toggleOZType: (type) =>
     set((state) => {
       const newTypes = new Set(state.visibleOZTypes);

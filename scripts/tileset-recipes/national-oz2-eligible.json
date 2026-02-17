@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "layers": {
+    "national_oz2_eligible": {
+      "source": "mapbox://tileset-source/msrodtn/national-oz2-eligible",
+      "minzoom": 4,
+      "maxzoom": 14,
+      "features": {
+        "attributes": {
+          "allowed_output": [
+            "GEOID", "STATE", "COUNTY", "TRACT", "STATE_NAME", "ELIGIBLE_STATUS", "NAME"
+          ]
+        }
+      }
+    }
+  }
+}

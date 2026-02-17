@@ -1907,7 +1907,7 @@ export function MapboxMap() {
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') ? ['city-boundaries-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') ? ['zipcode-boundaries-fill'] : []),
           ...(visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_designated') ? ['oz-designated-fill'] : []),
-          // oz-eligible-outline: re-enable once msrodtn.national-oz2-eligible tileset is uploaded
+          ...(visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_eligible') ? ['oz-eligible-outline'] : []),
         ]}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
@@ -2606,9 +2606,8 @@ export function MapboxMap() {
           </Source>
         )}
 
-        {/* Opportunity Zones - Eligible (2.0 Preview)
-            Re-enable once msrodtn.national-oz2-eligible tileset is uploaded */}
-        {visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_eligible') && false && (
+        {/* Opportunity Zones - Eligible (2.0 Preview) */}
+        {visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_eligible') && (
           <Source id="oz-eligible-source" type="vector" url={`mapbox://${OZ_TILESETS.eligible.id}`}>
             <Layer
               id="oz-eligible-outline"

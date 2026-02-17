@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Download OZ 2.0 eligible census tracts from the EIG (Economic Innovation Group)
-ArcGIS dashboard and Census TIGERweb for geometries.
+Download OZ 2.0 eligible census tracts from HUD Qualified Census Tracts 2026
+ArcGIS feature service (includes polygon geometries).
 
 Usage:
     python scripts/download_oz2_eligible.py
@@ -11,15 +11,15 @@ Output:
     mapbox-tilesets/national_oz2_eligible.ndjson
 
 Data Sources:
-    - EIG OZ 2.0 Eligibility: ArcGIS dashboard feature service
-      https://services.arcgis.com/VTyQ9soqVukalItT/arcgis/rest/services/
-    - Census TIGERweb: tract polygon geometries
-      https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_ACS2021/MapServer/8
+    - HUD Qualified Census Tracts 2026:
+      https://services.arcgis.com/VTyQ9soqVukalItT/arcgis/rest/services/QUALIFIED_CENSUS_TRACTS_2026/FeatureServer/0
+    - OZ 1.0 designated tracts (excluded from output):
+      mapbox-tilesets/national_oz_tracts.ndjson
 
 Notes:
-    - These are ELIGIBLE tracts, not final designations
+    - QCT 2026 tracts are the eligible pool for OZ 2.0 designation
+    - Tracts already designated under OZ 1.0 are excluded
     - Final OZ 2.0 will be designated by Treasury after Fall 2026
-    - Excludes tracts already designated under OZ 1.0
 """
 
 import httpx
@@ -31,24 +31,12 @@ from pathlib import Path
 OUTPUT_DIR = Path(__file__).parent.parent / "mapbox-tilesets"
 OZ1_PATH = OUTPUT_DIR / "national_oz_tracts.ndjson"
 
-# Census TIGERweb for tract geometries (2020 tracts)
-TIGER_TRACTS_URL = (
-    "https://tigerweb.geo.census.gov/arcgis/rest/services/"
-    "TIGERweb/tigerWMS_ACS2021/MapServer/8/query"
-)
-
-# EIG OZ 2.0 eligible tracts feature service
-# This URL may need updating - EIG publishes via ArcGIS Online
-EIG_ELIGIBLE_URL = (
+# HUD Qualified Census Tracts 2026 - the eligible pool for OZ 2.0 designation
+# These are tracts where >=50% of households earn <60% of AMGI or poverty rate >25%
+# Service has polygon geometries, so no need for TIGERweb
+QCT_2026_URL = (
     "https://services.arcgis.com/VTyQ9soqVukalItT/arcgis/rest/services/"
-    "Opportunity_Zones_Eligible_Tracts_2026/FeatureServer/0/query"
-)
-
-# Fallback: If the EIG feature service URL changes, try the Census ACS
-# low-income community tract data directly
-CENSUS_LIC_URL = (
-    "https://tigerweb.geo.census.gov/arcgis/rest/services/"
-    "TIGERweb/tigerWMS_ACS2021/MapServer/8/query"
+    "QUALIFIED_CENSUS_TRACTS_2026/FeatureServer/0/query"
 )
 
 # State FIPS codes
@@ -65,6 +53,8 @@ STATE_FIPS = {
     "UT": "49", "VT": "50", "VA": "51", "VI": "78", "WA": "53",
     "WV": "54", "WI": "55", "WY": "56",
 }
+
+FIPS_TO_STATE = {v: k for k, v in STATE_FIPS.items()}
 
 SLEEP_BETWEEN_CALLS = 0.5
 MAX_RETRIES = 3
@@ -113,46 +103,9 @@ def load_oz1_geoids() -> set:
     return oz1_geoids
 
 
-async def download_eligible_tracts_eig(client: httpx.AsyncClient, fips: str,
-                                        state: str) -> list:
-    """Try downloading eligible tracts from EIG feature service."""
-    all_features = []
-    offset = 0
-
-    while True:
-        params = {
-            "where": f"STATE='{fips}'",
-            "outFields": "GEOID,STATE,COUNTY,TRACT,STATE_NAME,ELIGIBLE_STATUS",
-            "f": "geojson",
-            "returnGeometry": "true",
-            "outSR": "4326",
-            "resultOffset": str(offset),
-            "resultRecordCount": str(BATCH_SIZE),
-        }
-        data = await fetch_with_retry(
-            client, EIG_ELIGIBLE_URL, params,
-            f"{state} eligible tracts (offset {offset})"
-        )
-
-        if not data or "features" not in data:
-            break
-
-        features = data["features"]
-        if not features:
-            break
-
-        all_features.extend(features)
-
-        if len(features) < BATCH_SIZE:
-            break
-        offset += BATCH_SIZE
-
-    return all_features
-
-
-async def download_tract_geometries_tiger(client: httpx.AsyncClient, fips: str,
-                                           state: str) -> list:
-    """Download all census tract geometries for a state from TIGERweb."""
+async def download_qct_tracts(client: httpx.AsyncClient, fips: str,
+                              state: str) -> list:
+    """Download QCT 2026 tracts for a state from HUD feature service."""
     all_features = []
     offset = 0
 
@@ -167,8 +120,8 @@ async def download_tract_geometries_tiger(client: httpx.AsyncClient, fips: str,
             "resultRecordCount": str(BATCH_SIZE),
         }
         data = await fetch_with_retry(
-            client, TIGER_TRACTS_URL, params,
-            f"{state} tract geometries (offset {offset})"
+            client, QCT_2026_URL, params,
+            f"{state} QCT tracts (offset {offset})"
         )
 
         if not data or "features" not in data:
@@ -188,7 +141,7 @@ async def download_tract_geometries_tiger(client: httpx.AsyncClient, fips: str,
 
 
 async def main():
-    """Download OZ 2.0 eligible tracts and write to NDJSON."""
+    """Download QCT 2026 eligible tracts and write to NDJSON."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "national_oz2_eligible.ndjson"
 
@@ -203,8 +156,9 @@ async def main():
         states_to_process = STATE_FIPS
 
     print("=" * 60)
-    print("Opportunity Zones 2.0 - Eligible Tracts Download")
+    print("OZ 2.0 Eligible Tracts - HUD QCT 2026 Download")
     print("=" * 60)
+    print(f"Source: HUD Qualified Census Tracts 2026")
     print(f"States: {len(states_to_process)}")
     print(f"Output: {output_path}")
     print()
@@ -214,89 +168,35 @@ async def main():
     print()
 
     all_features = []
-    eig_available = True
 
     async with httpx.AsyncClient() as client:
-        # Try EIG service first for the first state to check availability
-        first_state = sorted(states_to_process.keys())[0]
-        first_fips = states_to_process[first_state]
-        print(f"Testing EIG feature service availability...")
-        test_features = await download_eligible_tracts_eig(
-            client, first_fips, first_state
-        )
+        for state, fips in sorted(states_to_process.items()):
+            print(f"  [{state}] Downloading QCT 2026 tracts...")
+            features = await download_qct_tracts(client, fips, state)
 
-        if test_features:
-            print(f"  EIG service available! Found {len(test_features)} for {first_state}")
-            # Filter out OZ 1.0 tracts
-            filtered = [f for f in test_features
-                       if f.get("properties", {}).get("GEOID", "") not in oz1_geoids]
-            for f in filtered:
-                f["properties"]["ELIGIBLE_STATUS"] = f["properties"].get("ELIGIBLE_STATUS", "eligible")
-            all_features.extend(filtered)
-            print(f"  After excluding OZ 1.0: {len(filtered)} eligible tracts")
-            print()
+            if features:
+                # Exclude tracts already designated under OZ 1.0
+                filtered = [f for f in features
+                           if f.get("properties", {}).get("GEOID", "") not in oz1_geoids]
 
-            # Continue with remaining states
-            remaining_states = {k: v for k, v in states_to_process.items()
-                               if k != first_state}
-            for state, fips in sorted(remaining_states.items()):
-                print(f"  [{state}] Downloading eligible tracts...")
-                features = await download_eligible_tracts_eig(client, fips, state)
-                if features:
-                    filtered = [f for f in features
-                               if f.get("properties", {}).get("GEOID", "") not in oz1_geoids]
-                    for f in filtered:
-                        f["properties"]["ELIGIBLE_STATUS"] = f["properties"].get("ELIGIBLE_STATUS", "eligible")
-                    all_features.extend(filtered)
-                    print(f"  [{state}] {len(filtered)} eligible tracts (excluded {len(features) - len(filtered)} OZ 1.0)")
-                else:
-                    print(f"  [{state}] No eligible tracts found")
-        else:
-            eig_available = False
-            print("  EIG service not available. Will need manual CSV import.")
-            print()
-            print("  To use EIG data manually:")
-            print("  1. Visit: https://arcgis.com/apps/dashboards/c473c71f0704408f934fbdc342caf1f1")
-            print("  2. Export CSV of eligible tracts")
-            print("  3. Place at: scripts/data/oz2_eligible_tracts.csv")
-            print("  4. Re-run this script")
-            print()
+                # Add eligibility metadata
+                for f in filtered:
+                    f["properties"]["ELIGIBLE_STATUS"] = "qualified"
+                    f["properties"]["STATE_NAME"] = state
 
-            # Check for manual CSV
-            csv_path = Path(__file__).parent / "data" / "oz2_eligible_tracts.csv"
-            if csv_path.exists():
-                print(f"  Found manual CSV at {csv_path}")
-                print("  Processing CSV + fetching geometries from TIGERweb...")
-                # Read CSV GEOIDs
-                import csv
-                eligible_geoids = set()
-                with open(csv_path) as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        geoid = row.get("GEOID", row.get("geoid", row.get("GEOID10", "")))
-                        if geoid and geoid not in oz1_geoids:
-                            eligible_geoids.add(geoid)
-                print(f"  {len(eligible_geoids)} eligible GEOIDs from CSV (excluding OZ 1.0)")
-
-                # Fetch geometries from TIGERweb
-                for state, fips in sorted(states_to_process.items()):
-                    print(f"  [{state}] Fetching tract geometries...")
-                    tracts = await download_tract_geometries_tiger(client, fips, state)
-                    matched = [t for t in tracts
-                              if t.get("properties", {}).get("GEOID", "") in eligible_geoids]
-                    for f in matched:
-                        f["properties"]["ELIGIBLE_STATUS"] = "eligible"
-                        f["properties"]["STATE_NAME"] = state
-                    all_features.extend(matched)
-                    if matched:
-                        print(f"  [{state}] {len(matched)} eligible tracts matched")
+                excluded = len(features) - len(filtered)
+                all_features.extend(filtered)
+                print(f"  [{state}] {len(filtered)} eligible tracts"
+                      + (f" (excluded {excluded} OZ 1.0)" if excluded else ""))
             else:
-                print(f"  No manual CSV found at {csv_path}")
-                print("  Exiting. Please provide EIG data.")
-                sys.exit(1)
+                print(f"  [{state}] No tracts found")
 
     print()
     print(f"Total eligible features: {len(all_features)}")
+
+    if not all_features:
+        print("ERROR: No features downloaded. Check network connectivity.")
+        sys.exit(1)
 
     # Write NDJSON
     print(f"Writing NDJSON to {output_path}...")
@@ -306,11 +206,6 @@ async def main():
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
     print(f"Done! {len(all_features)} features, {file_size_mb:.1f} MB")
-
-    if not eig_available:
-        print()
-        print("NOTE: Used manual CSV import. When EIG updates their service,")
-        print("re-run this script to get the latest eligibility data.")
 
 
 if __name__ == "__main__":
