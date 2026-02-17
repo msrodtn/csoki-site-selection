@@ -123,6 +123,10 @@ interface MapState {
   visibleActivityNodeCategories: Set<ActivityNodeCategory>;
   toggleActivityNodeCategory: (category: ActivityNodeCategory) => void;
 
+  // Opportunity Zone sub-toggles
+  visibleOZTypes: Set<'oz_designated' | 'oz_eligible'>;
+  toggleOZType: (type: 'oz_designated' | 'oz_eligible') => void;
+
   // Demographic metric for choropleth coloring
   demographicMetric: 'population' | 'income' | 'density';
   setDemographicMetric: (metric: 'population' | 'income' | 'density') => void;
@@ -515,6 +519,19 @@ export const useMapStore = create<MapState>((set, get) => ({
         newCats.add(category);
       }
       return { visibleActivityNodeCategories: newCats };
+    }),
+
+  // Opportunity Zone sub-toggles - both visible by default
+  visibleOZTypes: new Set<'oz_designated' | 'oz_eligible'>(['oz_designated', 'oz_eligible']),
+  toggleOZType: (type) =>
+    set((state) => {
+      const newTypes = new Set(state.visibleOZTypes);
+      if (newTypes.has(type)) {
+        newTypes.delete(type);
+      } else {
+        newTypes.add(type);
+      }
+      return { visibleOZTypes: newTypes };
     }),
 
   // Demographic metric for choropleth coloring

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, Loader2, ShoppingBag, Film, UtensilsCrossed } from 'lucide-react';
+import { Layers, Droplets, Car, BarChart2, Flame, LandPlot, Building2, MapPinned, DollarSign, Diamond, MapPin, Search, Grid, SlidersHorizontal, Loader2, ShoppingBag, Film, UtensilsCrossed, Landmark, Shield } from 'lucide-react';
 import { useMapStore } from '../../store/useMapStore';
 import { listingsApi } from '../../services/api';
 
@@ -51,6 +51,14 @@ export const MAP_LAYERS = {
     icon: MapPinned,
     color: '#059669',
     description: 'Color-code parcels by zoning type',
+  },
+  opportunity_zones: {
+    id: 'opportunity_zones',
+    name: 'Opportunity Zones',
+    icon: Landmark,
+    color: '#6366F1',
+    description: 'OZ 1.0 designated + 2.0 eligible tracts',
+    hasSubToggles: true,
   },
   // === Reference layers ===
   traffic: {
@@ -148,6 +156,24 @@ const BOUNDARY_SUB_TOGGLES = [
     icon: BarChart2,
     color: '#8B5CF6', // Purple
     description: 'Demographics choropleth',
+  },
+];
+
+// Sub-toggle definitions for Opportunity Zones layer
+const OZ_SUB_TOGGLES = [
+  {
+    id: 'oz_designated' as const,
+    name: 'Designated (1.0)',
+    icon: Shield,
+    color: '#6366F1', // Indigo
+    description: '8,764 current OZ tracts (through 2028)',
+  },
+  {
+    id: 'oz_eligible' as const,
+    name: 'Eligible (2.0 Preview)',
+    icon: Landmark,
+    color: '#F59E0B', // Amber
+    description: 'EIG eligible tracts - not yet designated',
   },
 ];
 
@@ -302,12 +328,15 @@ export function MapLayers() {
     toggleBoundaryType,
     visibleActivityNodeCategories,
     toggleActivityNodeCategory,
+    visibleOZTypes,
+    toggleOZType,
   } = useMapStore();
 
   const layerArray = Array.from(visibleLayers);
   const propertySourcesArray = Array.from(visiblePropertySources);
   const boundaryTypesArray = Array.from(visibleBoundaryTypes);
   const activityNodeCategoriesArray = Array.from(visibleActivityNodeCategories);
+  const ozTypesArray = Array.from(visibleOZTypes);
 
   return (
     <div className="p-4 border-b border-gray-200">
@@ -462,6 +491,48 @@ export function MapLayers() {
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleActivityNodeCategory(subToggle.id);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-left ${
+                          isSubActive
+                            ? 'bg-gray-50'
+                            : 'hover:bg-gray-50 opacity-60'
+                        }`}
+                      >
+                        <SubIcon
+                          className="w-3.5 h-3.5"
+                          style={{ color: isSubActive ? subToggle.color : '#9CA3AF' }}
+                        />
+                        <span
+                          className={`text-xs font-medium ${
+                            isSubActive ? 'text-gray-700' : 'text-gray-400'
+                          }`}
+                        >
+                          {subToggle.name}
+                        </span>
+                        <div
+                          className={`ml-auto w-1.5 h-1.5 rounded-full ${
+                            isSubActive ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Sub-toggles for Opportunity Zones layer */}
+              {layer.id === 'opportunity_zones' && hasSubToggles && isActive && (
+                <div className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
+                  {OZ_SUB_TOGGLES.map((subToggle) => {
+                    const isSubActive = ozTypesArray.includes(subToggle.id);
+                    const SubIcon = subToggle.icon;
+
+                    return (
+                      <button
+                        key={subToggle.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleOZType(subToggle.id);
                         }}
                         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-left ${
                           isSubActive

@@ -42,6 +42,7 @@ import {
   type ActivityNode,
 } from '../../types/store';
 import { FEMALegend } from './FEMALegend';
+import { OZLegend } from './OZLegend';
 import { HeatMapLegend } from './HeatMapLegend';
 import { ParcelLegend } from './ParcelLegend';
 import { ZoningLegend } from './ZoningLegend';
@@ -104,6 +105,12 @@ const BOUNDARY_TILESETS = {
     id: 'msrodtn.national-tracts',
     sourceLayer: 'national_tracts',
   },
+};
+
+// Opportunity Zones Tileset IDs
+const OZ_TILESETS = {
+  designated: { id: 'msrodtn.national-oz-tracts', sourceLayer: 'national_oz_tracts' },
+  eligible: { id: 'msrodtn.national-oz2-eligible', sourceLayer: 'national_oz2_eligible' },
 };
 
 // Helper to parse WKT to GeoJSON
@@ -655,6 +662,7 @@ export function MapboxMap() {
     visibleLayers,
     visiblePropertySources,
     visibleBoundaryTypes,
+    visibleOZTypes,
     visibleActivityNodeCategories,
     demographicMetric,
     // deck.gl 3D visualization state
@@ -781,6 +789,17 @@ export function MapboxMap() {
   const [hoveredZipInfo, setHoveredZipInfo] = useState<{
     zipCode: string;
     population: number;
+    lngLat: [number, number];
+  } | null>(null);
+
+  // Opportunity Zone hover state
+  const [hoveredOZId, setHoveredOZId] = useState<string | number | null>(null);
+  const [hoveredOZInfo, setHoveredOZInfo] = useState<{
+    type: 'designated' | 'eligible';
+    geoid: string;
+    state: string;
+    county: string;
+    tract: string;
     lngLat: [number, number];
   } | null>(null);
 
@@ -1483,6 +1502,37 @@ export function MapboxMap() {
       }
     }
 
+    // Handle Opportunity Zone layers
+    {
+      const ozLayers: string[] = [];
+      if (map.getLayer('oz-designated-fill')) ozLayers.push('oz-designated-fill');
+      if (map.getLayer('oz-eligible-outline')) ozLayers.push('oz-eligible-outline');
+
+      if (ozLayers.length > 0) {
+        const features = map.queryRenderedFeatures(e.point, { layers: ozLayers });
+
+        if (features && features.length > 0) {
+          const feature = features[0];
+          map.getCanvas().style.cursor = 'pointer';
+          const isDesignated = feature.layer?.id === 'oz-designated-fill';
+          const geoid = feature.properties?.GEOID10 || feature.properties?.GEOID || '';
+          setHoveredOZId(geoid);
+          setHoveredOZInfo({
+            type: isDesignated ? 'designated' : 'eligible',
+            geoid,
+            state: feature.properties?.STATE || '',
+            county: feature.properties?.COUNTY || '',
+            tract: feature.properties?.TRACT || '',
+            lngLat: [e.lngLat.lng, e.lngLat.lat],
+          });
+          return;
+        } else {
+          setHoveredOZId(null);
+          setHoveredOZInfo(null);
+        }
+      }
+    }
+
     map.getCanvas().style.cursor = '';
   }, []);
 
@@ -1501,6 +1551,8 @@ export function MapboxMap() {
     setHoveredZipInfo(null);
     setHoveredTraffic(null);
     setHoveredStreetlightSegment(null);
+    setHoveredOZId(null);
+    setHoveredOZInfo(null);
   }, []);
 
   // Property search when layer is toggled
@@ -1780,6 +1832,7 @@ export function MapboxMap() {
 
       {/* Legends */}
       <FEMALegend isVisible={visibleLayersArray.includes('fema_flood')} />
+      <OZLegend isVisible={visibleLayersArray.includes('opportunity_zones')} />
       <HeatMapLegend isVisible={visibleLayersArray.includes('activity_heat')} />
       <ParcelLegend isVisible={visibleLayersArray.includes('parcels')} />
       <ZoningLegend isVisible={visibleLayersArray.includes('zoning')} />
@@ -1853,6 +1906,8 @@ export function MapboxMap() {
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('counties') ? ['county-demographics-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('cities') ? ['city-boundaries-fill'] : []),
           ...(visibleLayersArray.includes('boundaries') && visibleBoundaryTypes.has('zipcodes') ? ['zipcode-boundaries-fill'] : []),
+          ...(visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_designated') ? ['oz-designated-fill'] : []),
+          ...(visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_eligible') ? ['oz-eligible-outline'] : []),
         ]}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
@@ -2135,6 +2190,34 @@ export function MapboxMap() {
                   Pop: {hoveredZipInfo.population.toLocaleString()}
                 </div>
               )}
+            </div>
+          </Popup>
+        )}
+
+        {/* Opportunity Zone Tooltip */}
+        {hoveredOZInfo && (
+          <Popup
+            longitude={hoveredOZInfo.lngLat[0]}
+            latitude={hoveredOZInfo.lngLat[1]}
+            closeButton={false}
+            closeOnClick={false}
+            anchor="bottom"
+            offset={10}
+            className="!z-[100]"
+          >
+            <div className="text-sm min-w-[160px]">
+              <div className={`font-semibold mb-1 ${hoveredOZInfo.type === 'designated' ? 'text-indigo-700' : 'text-amber-700'}`}>
+                {hoveredOZInfo.type === 'designated' ? 'Opportunity Zone' : 'OZ 2.0 Eligible'}
+              </div>
+              <div className="text-xs text-gray-600">
+                Tract: {hoveredOZInfo.tract}
+              </div>
+              <div className="text-xs text-gray-600">
+                FIPS: {hoveredOZInfo.state}-{hoveredOZInfo.county}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                GEOID: {hoveredOZInfo.geoid}
+              </div>
             </div>
           </Popup>
         )}
@@ -2476,6 +2559,76 @@ export function MapboxMap() {
                   1,
                   0.8,
                 ],
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Opportunity Zones - Designated (1.0) */}
+        {visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_designated') && (
+          <Source id="oz-designated-source" type="vector" url={`mapbox://${OZ_TILESETS.designated.id}`}>
+            <Layer
+              id="oz-designated-fill"
+              type="fill"
+              source-layer={OZ_TILESETS.designated.sourceLayer}
+              minzoom={4}
+              paint={{
+                'fill-color': '#6366F1',
+                'fill-opacity': [
+                  'case',
+                  ['==', ['get', 'GEOID10'], hoveredOZId],
+                  0.45,
+                  0.20,
+                ] as any,
+              }}
+            />
+            <Layer
+              id="oz-designated-outline"
+              type="line"
+              source-layer={OZ_TILESETS.designated.sourceLayer}
+              minzoom={4}
+              paint={{
+                'line-color': '#4F46E5',
+                'line-width': [
+                  'case',
+                  ['==', ['get', 'GEOID10'], hoveredOZId],
+                  3,
+                  ['interpolate', ['linear'], ['zoom'], 4, 0.5, 8, 1, 12, 1.5],
+                ] as any,
+                'line-opacity': [
+                  'case',
+                  ['==', ['get', 'GEOID10'], hoveredOZId],
+                  1,
+                  0.7,
+                ] as any,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Opportunity Zones - Eligible (2.0 Preview) */}
+        {visibleLayersArray.includes('opportunity_zones') && visibleOZTypes.has('oz_eligible') && (
+          <Source id="oz-eligible-source" type="vector" url={`mapbox://${OZ_TILESETS.eligible.id}`}>
+            <Layer
+              id="oz-eligible-outline"
+              type="line"
+              source-layer={OZ_TILESETS.eligible.sourceLayer}
+              minzoom={6}
+              paint={{
+                'line-color': '#F59E0B',
+                'line-width': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredOZId],
+                  2.5,
+                  ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 1, 14, 1.5],
+                ] as any,
+                'line-dasharray': [3, 2],
+                'line-opacity': [
+                  'case',
+                  ['==', ['get', 'GEOID'], hoveredOZId],
+                  1,
+                  0.6,
+                ] as any,
               }}
             />
           </Source>
