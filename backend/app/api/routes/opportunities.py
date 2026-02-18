@@ -36,7 +36,11 @@ from app.services.attom import (
     PropertySource,
     OpportunitySignal,
 )
+from app.services.local_property import (
+    search_properties_by_bounds as local_search_bounds,
+)
 from app.core.config import settings
+from app.core.feature_flags import FeatureFlags, use_local_demographics, use_local_properties
 from app.core.database import get_db
 from app.models.store import Store
 from app.models.scraped_listing import ScrapedListing
@@ -49,7 +53,8 @@ from app.services.viewport_cache import (
     get_cached_attom,
     cache_attom,
 )
-from app.services.arcgis import fetch_demographics
+from app.services.arcgis import fetch_demographics as fetch_arcgis_demographics
+from app.services.census_demographics import fetch_demographics as fetch_census_demographics
 from app.services.mapbox_places import fetch_mapbox_pois
 
 logger = logging.getLogger(__name__)
@@ -811,7 +816,10 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
     and ranks them by site quality: population density, retail anchor proximity,
     corporate gap distance, and size fit.
     """
-    if not settings.ATTOM_API_KEY:
+    use_local_property_source = use_local_properties()
+    use_local_demographics_source = use_local_demographics()
+
+    if not use_local_property_source and not settings.ATTOM_API_KEY:
         raise HTTPException(
             status_code=503,
             detail="ATTOM API key not configured. Please set ATTOM_API_KEY environment variable."
@@ -841,21 +849,46 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
         )
 
     try:
-        # 1. Search ATTOM API (cached 1hr by viewport bounds)
+        # 1. Search property API (ATTOM or local county DB, cached 1hr by viewport bounds)
         type_key = "|".join(sorted(pt.value for pt in property_types))
         cached_attom_props = get_cached_attom(
             request.min_lat, request.max_lat, request.min_lng, request.max_lng, type_key
         )
         if cached_attom_props is not None:
-            logger.info(f"ATTOM cache hit: {len(cached_attom_props)} properties")
+            logger.info(f"Property cache hit: {len(cached_attom_props)} properties")
             attom_properties = cached_attom_props
         else:
-            result: PropertySearchResult = await attom_search_bounds(
-                bounds=bounds,
-                property_types=property_types,
-                min_opportunity_score=0,
-                limit=request.limit * 2,
-            )
+            try:
+                if use_local_property_source:
+                    logger.info("Using local property data for opportunities search")
+                    result: PropertySearchResult = await local_search_bounds(
+                        bounds=bounds,
+                        property_types=property_types,
+                        min_opportunity_score=0,
+                        limit=request.limit * 2,
+                    )
+                else:
+                    result: PropertySearchResult = await attom_search_bounds(
+                        bounds=bounds,
+                        property_types=property_types,
+                        min_opportunity_score=0,
+                        limit=request.limit * 2,
+                    )
+            except Exception as e:
+                if (
+                    use_local_property_source
+                    and FeatureFlags.should_fallback_to_attom()
+                    and settings.ATTOM_API_KEY
+                ):
+                    logger.warning(f"Local property search failed, falling back to ATTOM: {e}")
+                    result = await attom_search_bounds(
+                        bounds=bounds,
+                        property_types=property_types,
+                        min_opportunity_score=0,
+                        limit=request.limit * 2,
+                    )
+                else:
+                    raise
             attom_properties = result.properties
             cache_attom(
                 request.min_lat, request.max_lat, request.min_lng, request.max_lng,
@@ -941,7 +974,14 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                 viewport_population = cached_demo
             else:
                 try:
-                    demo_response = await fetch_demographics(center_lat, center_lng, radii_miles=[1, 3])
+                    if use_local_demographics_source:
+                        demo_response = await fetch_census_demographics(
+                            center_lat, center_lng, radii_miles=[1, 3]
+                        )
+                    else:
+                        demo_response = await fetch_arcgis_demographics(
+                            center_lat, center_lng, radii_miles=[1, 3]
+                        )
                     viewport_population = {
                         "pop_1mi": demo_response.radii[0].total_population,
                         "pop_3mi": demo_response.radii[1].total_population,
@@ -951,7 +991,28 @@ async def search_opportunities(request: OpportunitySearchRequest, db: Session = 
                     }
                     cache_demographics(center_lat, center_lng, viewport_population)
                 except Exception as e:
-                    logger.warning(f"ArcGIS demographics failed (non-fatal): {e}")
+                    if (
+                        use_local_demographics_source
+                        and FeatureFlags.should_fallback_to_arcgis()
+                        and settings.ARCGIS_API_KEY
+                    ):
+                        logger.warning(f"Local demographics failed, falling back to ArcGIS: {e}")
+                        try:
+                            demo_response = await fetch_arcgis_demographics(
+                                center_lat, center_lng, radii_miles=[1, 3]
+                            )
+                            viewport_population = {
+                                "pop_1mi": demo_response.radii[0].total_population,
+                                "pop_3mi": demo_response.radii[1].total_population,
+                                "density_1mi": demo_response.radii[0].population_density,
+                                "density_3mi": demo_response.radii[1].population_density,
+                                "income_3mi": demo_response.radii[1].median_household_income,
+                            }
+                            cache_demographics(center_lat, center_lng, viewport_population)
+                        except Exception as fallback_error:
+                            logger.warning(f"ArcGIS demographics fallback failed (non-fatal): {fallback_error}")
+                    else:
+                        logger.warning(f"Demographics lookup failed (non-fatal): {e}")
 
         if viewport_population:
             for prop in filtered_properties:

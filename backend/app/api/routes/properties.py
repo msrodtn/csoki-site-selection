@@ -26,7 +26,12 @@ from app.services.attom import (
     GeoBounds as ATTOMGeoBounds,
     PropertyType as ATTOMPropertyType,
 )
+from app.services.local_property import (
+    search_properties_by_radius as local_search_radius,
+    search_properties_by_bounds as local_search_bounds,
+)
 from app.core.config import settings
+from app.core.feature_flags import FeatureFlags, use_local_properties
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +282,9 @@ async def search_attom_properties(request: ATTOMSearchRequest):
 
     Returns properties with opportunity signals (likelihood to sell indicators).
     """
-    if not settings.ATTOM_API_KEY:
+    use_local_source = use_local_properties()
+
+    if not use_local_source and not settings.ATTOM_API_KEY:
         raise HTTPException(
             status_code=503,
             detail="ATTOM API key not configured. Please set ATTOM_API_KEY environment variable."
@@ -293,18 +300,41 @@ async def search_attom_properties(request: ATTOMSearchRequest):
                 pass
 
     try:
-        result = await attom_search_radius(
-            latitude=request.latitude,
-            longitude=request.longitude,
-            radius_miles=request.radius_miles,
-            property_types=prop_types,
-            min_opportunity_score=request.min_opportunity_score,
-            limit=request.limit,
-        )
+        if use_local_source:
+            result = await local_search_radius(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                radius_miles=request.radius_miles,
+                property_types=prop_types,
+                min_opportunity_score=request.min_opportunity_score,
+                limit=request.limit,
+            )
+        else:
+            result = await attom_search_radius(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                radius_miles=request.radius_miles,
+                property_types=prop_types,
+                min_opportunity_score=request.min_opportunity_score,
+                limit=request.limit,
+            )
         return result
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
+        if use_local_source and FeatureFlags.should_fallback_to_attom() and settings.ATTOM_API_KEY:
+            logger.warning(f"Local property search failed, falling back to ATTOM: {e}")
+            try:
+                return await attom_search_radius(
+                    latitude=request.latitude,
+                    longitude=request.longitude,
+                    radius_miles=request.radius_miles,
+                    property_types=prop_types,
+                    min_opportunity_score=request.min_opportunity_score,
+                    limit=request.limit,
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Error searching properties: {str(e)}")
 
 
@@ -315,7 +345,9 @@ async def search_attom_properties_by_bounds(request: ATTOMBoundsSearchRequest):
 
     Same as /properties/search/ but uses bounding box instead of radius.
     """
-    if not settings.ATTOM_API_KEY:
+    use_local_source = use_local_properties()
+
+    if not use_local_source and not settings.ATTOM_API_KEY:
         raise HTTPException(
             status_code=503,
             detail="ATTOM API key not configured. Please set ATTOM_API_KEY environment variable."
@@ -338,16 +370,35 @@ async def search_attom_properties_by_bounds(request: ATTOMBoundsSearchRequest):
                 pass
 
     try:
-        result = await attom_search_bounds(
-            bounds=bounds,
-            property_types=prop_types,
-            min_opportunity_score=request.min_opportunity_score,
-            limit=request.limit,
-        )
+        if use_local_source:
+            result = await local_search_bounds(
+                bounds=bounds,
+                property_types=prop_types,
+                min_opportunity_score=request.min_opportunity_score,
+                limit=request.limit,
+            )
+        else:
+            result = await attom_search_bounds(
+                bounds=bounds,
+                property_types=prop_types,
+                min_opportunity_score=request.min_opportunity_score,
+                limit=request.limit,
+            )
         return result
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
+        if use_local_source and FeatureFlags.should_fallback_to_attom() and settings.ATTOM_API_KEY:
+            logger.warning(f"Local property bounds search failed, falling back to ATTOM: {e}")
+            try:
+                return await attom_search_bounds(
+                    bounds=bounds,
+                    property_types=prop_types,
+                    min_opportunity_score=request.min_opportunity_score,
+                    limit=request.limit,
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Error searching properties: {str(e)}")
 
 
