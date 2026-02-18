@@ -19,7 +19,8 @@ from typing import Optional
 from sqlalchemy import text
 
 from app.services.places import fetch_nearby_pois, TradeAreaAnalysis
-from app.services.arcgis import fetch_demographics, DemographicsResponse
+from app.services.arcgis import fetch_demographics as fetch_arcgis_demographics, DemographicsResponse
+from app.services.census_demographics import fetch_demographics as fetch_census_demographics
 from app.services.streetlight import (
     fetch_traffic_counts,
     TrafficAnalysis,
@@ -27,6 +28,7 @@ from app.services.streetlight import (
     SegmentCountEstimate,
 )
 from app.core.config import settings
+from app.core.feature_flags import FeatureFlags, use_local_demographics
 from app.core.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -174,22 +176,44 @@ async def get_demographics(request: DemographicsRequest):
     Returns population, income, employment, and consumer spending data
     for 1-mile, 3-mile, and 5-mile radii around the specified location.
     """
-    if not settings.ARCGIS_API_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="ArcGIS API key not configured. Please set ARCGIS_API_KEY environment variable."
-        )
+    use_local_source = use_local_demographics()
 
     try:
-        result = await fetch_demographics(
-            latitude=request.latitude,
-            longitude=request.longitude,
-            radii_miles=[1, 3, 5]
-        )
+        if use_local_source:
+            result = await fetch_census_demographics(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                radii_miles=[1, 3, 5]
+            )
+        else:
+            if not settings.ARCGIS_API_KEY:
+                raise HTTPException(
+                    status_code=503,
+                    detail="ArcGIS API key not configured. Please set ARCGIS_API_KEY environment variable."
+                )
+            result = await fetch_arcgis_demographics(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                radii_miles=[1, 3, 5]
+            )
         return result
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
+        if (
+            use_local_source
+            and FeatureFlags.should_fallback_to_arcgis()
+            and settings.ARCGIS_API_KEY
+        ):
+            logger.warning(f"Local demographics failed, falling back to ArcGIS: {e}")
+            try:
+                return await fetch_arcgis_demographics(
+                    latitude=request.latitude,
+                    longitude=request.longitude,
+                    radii_miles=[1, 3, 5]
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Error fetching demographics: {str(e)}")
 
 

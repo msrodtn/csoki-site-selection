@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     STREETLIGHT_API_KEY: Optional[str] = None
     CENSUS_API_KEY: Optional[str] = None
+    LOCAL_PROPERTY_DB_URL: Optional[str] = None  # Local property data PostGIS DB
+    LOCAL_CENSUS_DB_URL: Optional[str] = None    # Local census demographics PostGIS DB
     FIRECRAWL_API_KEY: Optional[str] = None
     FIRECRAWL_MONTHLY_BUDGET: int = 400  # free tier = 500, leave 100 buffer
     MISSION_CONTROL_API_KEY: Optional[str] = None  # For Mission Control integration
