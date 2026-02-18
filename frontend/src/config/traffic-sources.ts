@@ -25,8 +25,25 @@ export const ARCGIS_SOURCES = {
     fields: 'AADT,ROUTE_NAME,STATESIGNED',
     maxRecords: 2000,
   },
-  // Add more states here as we find their ArcGIS services
-  // NE: { name: 'Nebraska', url: '...', fields: '...', maxRecords: 2000 },
+  // Note: These endpoints need verification - URLs may have changed
+  NE: { 
+    name: 'Nebraska', 
+    url: 'https://gis.ne.gov/Enterprise/rest/services/AnnualAverageDailyTraffic/FeatureServer/0',
+    fields: 'ADJ_ADT_TOT_NUM,ROUTE_NO,ADT_YEAR', 
+    maxRecords: 2000 
+  },
+  NV: { 
+    name: 'Nevada', 
+    url: 'https://gis.dot.nv.gov/agsphs/rest/services/TRINA_Stations/FeatureServer/0',
+    fields: 'AADT_2024,ROUTE_NAME,Name,LOCATION_D', 
+    maxRecords: 2000 
+  },
+  ID: { 
+    name: 'Idaho', 
+    url: 'https://gis.itd.idaho.gov/arcgisprod/rest/services/ArcGISOnline/IdahoTransportationLayersForOpenData/MapServer/50',
+    fields: 'AADT,Route,Year_', 
+    maxRecords: 2000 
+  },
 };
 
 // Mapbox tileset sources (vector tiles - much faster!)
@@ -37,7 +54,21 @@ export const TILESET_SOURCES = {
     url: 'mapbox://msrodtn.ia-traffic',
     sourceLayer: 'traffic',
   },
-  // NE: { name: 'Nebraska', url: 'mapbox://msrodtn.ne-traffic', sourceLayer: 'traffic' },
+  NE: {
+    name: 'Nebraska', 
+    url: 'mapbox://msrodtn.nebraska-traffic', 
+    sourceLayer: 'traffic',
+  },
+  NV: {
+    name: 'Nevada',
+    url: 'mapbox://msrodtn.nevada-traffic',
+    sourceLayer: 'traffic', 
+  },
+  ID: {
+    name: 'Idaho',
+    url: 'mapbox://msrodtn.idaho-traffic',
+    sourceLayer: 'traffic',
+  },
 };
 
 // Get available states for current mode
